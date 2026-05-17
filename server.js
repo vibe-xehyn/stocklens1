@@ -82,8 +82,11 @@ function _pyExecLong(script) { return _pyExec(script, 120000); }
 // Stooq — US quotes (sidebar + indices, reliable/fast)
 // ─────────────────────────────────────────────────────────────────────────────
 const stooqSym = s => {
-  if(s.startsWith('^')) return s.toLowerCase().replace('^gspc','^spx').replace('^ixic','^ndq').replace('^dji','^dji');
-  return s.toLowerCase()+'.us';
+  const l = s.toLowerCase();
+  if(l.startsWith('^')) return l.replace('^gspc','^spx').replace('^ixic','^ndq');
+  // 원자재/환율/암호화폐/선물: .us 붙이지 않음
+  if(/\.(f|us|fx)$/.test(l) || /^(usd|eur|gbp|jpy|btc|eth|xau|xag|cl|gc|si|dxy|usdkrw|usdjpy|eurusd|btcusd|xauusd|siusd)/.test(l)) return l;
+  return l + '.us';
 };
 
 async function stooqQuote(symbol) {
@@ -551,37 +554,22 @@ app.get('/api/index-chart', async (req, res) => {
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   try {
     const data = await cached(`ic:${symbol}:${range}`, 300_000, async () => {
-      const krSymMap = { KOSPI: '^KS11', KOSDAQ: '^KQ11' };
-      if (krSymMap[symbol]) {
-        const periodMap = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'};
-        const py = `
-import yfinance as yf, json
-t = yf.Ticker('${krSymMap[symbol]}')
-h = t.history(period='${periodMap[range]||'1mo'}')
-rows = [{'date': dt.strftime('%Y-%m-%d'), 'close': round(float(row['Close']),2)} for dt,row in h.iterrows()]
-print(json.dumps(rows))
-`;
-        const rows = await yfRun(py);
-        return {
-          labels: rows.map(r => new Date(r.date).toLocaleDateString('ko',{month:'short',day:'numeric'})),
-          data: rows.map(r => r.close),
-        };
-      }
-      // US — yfinance
-      const yfsym = { 'S&P 500':'^GSPC','NASDAQ':'^IXIC','DOW':'^DJI' }[symbol] || symbol;
-      const periodMap = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'};
-      const py = `
-import yfinance as yf, json
-t = yf.Ticker('${yfsym}')
-h = t.history(period='${periodMap[range]||'1mo'}')
-rows = [{'date': dt.strftime('%Y-%m-%d'), 'close': round(float(row['Close']),2)} for dt,row in h.iterrows()]
-print(json.dumps(rows))
-`;
-      const rows = await yfRun(py);
-      return {
-        labels: rows.map(r => new Date(r.date).toLocaleDateString('ko',{month:'short',day:'numeric'})),
-        data: rows.map(r => r.close),
-      };
+      // Stooq 심볼 매핑
+      const stooqMap = { KOSPI: '^kos', KOSDAQ: '^kosdaq', 'S&P 500': '^spx', NASDAQ: '^ndq', DOW: '^dji' };
+      const stooqS = stooqMap[symbol] || symbol.toLowerCase();
+      const daysMap = {'1wk':8,'1mo':33,'3mo':95,'6mo':188,'1y':368};
+      const days = daysMap[range] || 33;
+      const toDate = new Date();
+      const fromDate = new Date(Date.now() - days * 86400000);
+      const fmt = d => d.toISOString().slice(0,10).replace(/-/g,'');
+      const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqS)}&d1=${fmt(fromDate)}&d2=${fmt(toDate)}&i=d`;
+      const text = await fetchText(url);
+      const lines = text.trim().split('\n').slice(1);
+      if (!lines.length || lines[0].includes('No data')) throw new Error('No index chart data');
+      const rows = lines.map(l => { const c=l.split(','); return {date:c[0],close:parseFloat(c[4])}; }).filter(r=>!isNaN(r.close));
+      const longRange = ['6mo','1y'].includes(range);
+      const fmtOpts = longRange ? {year:'2-digit',month:'short',day:'numeric'} : {month:'short',day:'numeric'};
+      return { labels: rows.map(r=>new Date(r.date).toLocaleDateString('ko',fmtOpts)), data: rows.map(r=>r.close) };
     });
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -815,9 +803,11 @@ app.get('/api/flow', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   try {
-    const data = await cached(`flow:${symbol}`, 1800_000, () => getFlowData(symbol, market === 'kr'));
+    const data = await cached(`flow:${symbol}`, 1800_000, async () => {
+      try { return await getFlowData(symbol, market === 'kr'); } catch { return {}; }
+    });
     res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.json({}); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1164,10 +1154,10 @@ except: pass
 
 print(json.dumps(result, ensure_ascii=False, default=str))
 `;
-      return yfRun(py);
+      try { return await yfRun(py); } catch { return {}; }
     });
     res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.json({}); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1241,10 +1231,10 @@ for peer in peers_list:
 
 print(json.dumps({'sector': sector, 'industry': industry, 'peers': result}, ensure_ascii=False, default=str))
 `;
-      return yfRun(py);
+      try { return await yfRun(py); } catch { return { sector:'', industry:'', peers:[] }; }
     });
     res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.json({ sector:'', industry:'', peers:[] }); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1465,28 +1455,22 @@ print(json.dumps(result))
 app.get('/api/macro', async (_, res) => {
   try {
     const data = await cached('macro', 300_000, async () => {
-      const py = `
-import yfinance as yf, json
-
-result = {}
-items = [
-    ('^VIX','vix'), ('^TNX','us10y'), ('^IRX','us3m'), ('^FVX','us5y'),
-    ('USDKRW=X','usdkrw'), ('DX-Y.NYB','dxy'), ('EURUSD=X','eurusd'), ('USDJPY=X','usdjpy'),
-    ('GC=F','gold'), ('CL=F','oil'), ('SI=F','silver'), ('BTC-USD','btc'),
-    ('^GSPC','sp500'), ('^IXIC','nasdaq'), ('^DJI','dow'),
-]
-for sym, key in items:
-    try:
-        h = yf.Ticker(sym).history(period='2d')
-        if len(h) >= 1:
-            p = float(h['Close'].iloc[-1])
-            prev = float(h['Close'].iloc[-2]) if len(h) >= 2 else p
-            chg = (p-prev)/prev*100 if key not in ('us10y','us3m','us5y','vix') else p-prev
-            result[key] = {'value': round(p,2), 'change': round(chg,2)}
-    except: pass
-print(json.dumps(result))
-`;
-      return yfRun(py);
+      // Stooq 심볼: vix, tnx(10y), irx(3m), usdkrw, dxy, eurusd, usdjpy, xauusd(gold), cl.f(oil), btcusd, ^spx, ^ndq, ^dji
+      const items = [
+        ['^vix','vix',true], ['^tnx','us10y',true], ['^irx','us3m',true],
+        ['usdkrw','usdkrw',false], ['dxy','dxy',false], ['eurusd','eurusd',false], ['usdjpy','usdjpy',false],
+        ['xauusd','gold',false], ['cl.f','oil',false], ['siusd','silver',false], ['btcusd','btc',false],
+        ['^spx','sp500',false], ['^ndq','nasdaq',false], ['^dji','dow',false],
+      ];
+      const result = {};
+      await Promise.allSettled(items.map(async ([sym, key, isDiff]) => {
+        try {
+          const q = await stooqQuote(sym.startsWith('^') ? sym : sym);
+          const chg = isDiff ? (q.change) : q.changePct;
+          result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
+        } catch {}
+      }));
+      return result;
     });
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
