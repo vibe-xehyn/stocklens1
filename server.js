@@ -1496,18 +1496,27 @@ app.get('/api/buy-signals', async (req, res) => {
   if (req.query.force) _c.delete('buy-signals');
   try {
     const data = await cached('buy-signals', 1800_000, async () => {
-      // 1. 스크리너 데이터 가져오기 (캐시 우선, 없으면 직접 fetch)
-      let screener = getC('screener');
-      if (!screener || Object.keys(screener).length < 10) {
-        const r = await fetch(`http://localhost:${PORT}/api/screener-data`);
-        screener = await r.json();
+      // 1. 스크리너 캐시 우선 사용, 없으면 사이드바 캐시로 즉시 구성
+      let screener = getC('screener') || {};
+      if (Object.keys(screener).length < 10) {
+        // 사이드바 캐시에서 빠르게 구성 (이미 워밍업됨)
+        const ALL_TICKERS = [
+          '005930','000660','005380','000270','035420','035720','068270','105560','066570','012450',
+          '086790','006400','096770','373220','207940','003670','034020','247540','033780','015760',
+          '259960','323410','055550','018260',
+          'NVDA','AAPL','MSFT','GOOGL','AMZN','META','TSLA','NFLX','AMD','AVGO',
+          'QCOM','TSM','INTC','JPM','V','MA','LLY','UNH','PLTR','CRM','ORCL','AAPL'
+        ];
+        ALL_TICKERS.forEach(t => {
+          const c = getC(`sb:${t}`);
+          if (c && c.price) screener[t] = { ...c, ticker: t };
+        });
       }
 
-      // 2. 전체 종목에서 데이터 있는 것만 추출 + 정량 점수로 상위 150개 선별
+      // 2. 데이터 있는 종목만 추출 + 정량 점수로 상위 50개 선별
       const scored = Object.entries(screener)
         .filter(([, s]) => s.price && s.price > 0)
         .map(([ticker, s]) => {
-          // 정량 점수: 저PER, 고ROE, 저PBR, 배당, 상승모멘텀
           let score = 0;
           if (s.per && s.per > 0 && s.per < 20) score += (20 - s.per);
           if (s.roe && s.roe > 0) score += Math.min(s.roe, 30);
@@ -1518,7 +1527,7 @@ app.get('/api/buy-signals', async (req, res) => {
           return { ticker, score, ...s };
         })
         .sort((a, b) => b.score - a.score)
-        .slice(0, 150);
+        .slice(0, 50);
 
       // 3. 종목 요약 텍스트 생성 (상위 150개만 AI에 전달)
       const lines = scored.map(s => {
@@ -1649,7 +1658,17 @@ print(json.dumps(out))
     console.log(`  ✓ KR 사이드바 워밍업 완료`);
   }, 5000);
 
-  // 4. 스크리너 데이터 백그라운드 워밍업 (느리지만 캐시해두면 AI 매수 신호 빠름)
+  // 4. AI 매수신호 pre-warm (사이드바 워밍업 직후 실행)
+  setTimeout(async () => {
+    if (!process.env.GROQ_API_KEY) return;
+    try {
+      const r = await fetch(`http://localhost:${PORT}/api/buy-signals`);
+      const d = await r.json();
+      if (d.buys) console.log(`  ✓ AI 매수신호 워밍업 완료 (${d.buys.length}개)`);
+    } catch(e) { console.log('  ⚠ AI 매수신호 워밍업 실패:', e.message); }
+  }, 12000);
+
+  // 5. 스크리너 데이터 백그라운드 워밍업 (선택적, 느림)
   setTimeout(async () => {
     try {
       await cached('screener', 1800_000, async () => {
@@ -1658,5 +1677,5 @@ print(json.dumps(out))
       });
       console.log('  ✓ 스크리너 워밍업 완료');
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
-  }, 8000);
+  }, 20000);
 }
