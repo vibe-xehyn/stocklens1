@@ -41,6 +41,48 @@ async function fetchText(url) {
   return r.text();
 }
 
+// ── Yahoo Finance v8 chart API (yfinance Python 우회) ────────────────────────
+async function yahooChart(symbol, range = '1mo', interval = '1d') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
+  const r = await fetch(url, { headers: { 'User-Agent': UA, 'Accept':'application/json' }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`Yahoo ${r.status}`);
+  const j = await r.json();
+  const result = j?.chart?.result?.[0];
+  if (!result) throw new Error('Yahoo: no result');
+  const meta = result.meta || {};
+  const ts = result.timestamp || [];
+  const closes = result.indicators?.quote?.[0]?.close || [];
+  const opens  = result.indicators?.quote?.[0]?.open  || [];
+  const highs  = result.indicators?.quote?.[0]?.high  || [];
+  const lows   = result.indicators?.quote?.[0]?.low   || [];
+  const vols   = result.indicators?.quote?.[0]?.volume|| [];
+  const rows = ts.map((t,i) => ({
+    date: new Date(t*1000).toISOString().slice(0,10),
+    close: closes[i], open: opens[i], high: highs[i], low: lows[i], volume: vols[i]
+  })).filter(r => r.close != null);
+  return { meta, rows };
+}
+
+async function yahooQuote(symbol) {
+  const { meta, rows } = await yahooChart(symbol, '5d', '1d');
+  const last = rows[rows.length - 1];
+  const prev = rows.length >= 2 ? rows[rows.length - 2] : last;
+  const price = meta.regularMarketPrice ?? last?.close;
+  const prevClose = meta.chartPreviousClose ?? prev?.close ?? price;
+  const change = price - prevClose;
+  const changePct = prevClose ? (change / prevClose) * 100 : 0;
+  return {
+    price: Math.round(price * 100) / 100,
+    change: Math.round(change * 100) / 100,
+    changePct: Math.round(changePct * 10000) / 10000,
+    open: last?.open, high: last?.high, low: last?.low, volume: last?.volume,
+    high52: meta.fiftyTwoWeekHigh, low52: meta.fiftyTwoWeekLow,
+    name: meta.longName || meta.shortName || symbol,
+    currency: meta.currency || 'USD',
+    exchange: meta.fullExchangeName || meta.exchangeName || '',
+  };
+}
+
 // ── yfinance Python helper (병렬 풀, 최대 4개 동시) ────────────────────────────
 let _yfActive = 0;
 const _yfQueue = [];
@@ -255,25 +297,28 @@ async function krIndex(code, name) {
 // 미국 주식 — Stooq (fast quote) + Yahoo Finance via Python (detail/chart)
 // ─────────────────────────────────────────────────────────────────────────────
 async function usQuote(ticker) {
-  // Stooq으로 가격 먼저 (빠르고 안정적)
-  let sq = null;
-  try { sq = await stooqQuote(ticker); } catch {}
+  // 1차: Yahoo v8 chart API (raw fetch, yfinance Python 우회)
+  let base = null;
+  try { base = await yahooQuote(ticker); } catch {}
+  // 2차 fallback: Stooq
+  if (!base) {
+    try {
+      const sq = await stooqQuote(ticker);
+      base = { name: ticker, exchange: 'US', currency: 'USD',
+               price: sq.price, change: sq.change, changePct: sq.changePct,
+               open: sq.open, high: sq.high, low: sq.low, volume: sq.volume };
+    } catch {}
+  }
+  if (!base) throw new Error('데이터를 가져올 수 없습니다');
 
-  // yfinance로 펀더멘탈 (실패해도 Stooq 가격만으로 반환)
+  // 펀더멘탈: yfinance Python — 실패해도 가격 데이터만 반환
   try {
     const py = `
 import yfinance as yf, json
 t = yf.Ticker('${ticker}')
-fi = t.fast_info
 info = t.info
 print(json.dumps({
-  'name': info.get('longName') or info.get('shortName','${ticker}'),
-  'exchange': info.get('exchange',''),
-  'currency': info.get('currency','USD'),
-  'price': fi.last_price,
-  'high52': fi.year_high,
-  'low52': fi.year_low,
-  'marketCap': fi.market_cap,
+  'marketCap': info.get('marketCap'),
   'per': info.get('trailingPE'),
   'forwardPer': info.get('forwardPE'),
   'pbr': info.get('priceToBook'),
@@ -299,16 +344,10 @@ print(json.dumps({
   'numberOfAnalysts': info.get('numberOfAnalystOpinions'),
 }))
 `;
-    const meta = await yfRun(py);
-    if (sq) return { ...meta, price: sq.price, change: sq.change, changePct: sq.changePct,
-                     open: sq.open, high: sq.high, low: sq.low, volume: sq.volume };
-    return { ...meta, change: 0, changePct: 0 };
+    const fund = await yfRun(py);
+    return { ...base, ...fund };
   } catch {
-    // yfinance 실패 → Stooq 기본 데이터만 반환
-    if (sq) return { ticker, name: ticker, exchange: 'US', currency: 'USD',
-                     price: sq.price, change: sq.change, changePct: sq.changePct,
-                     open: sq.open, high: sq.high, low: sq.low, volume: sq.volume };
-    throw new Error('데이터를 가져올 수 없습니다');
+    return base;
   }
 }
 
@@ -337,21 +376,10 @@ else:
 }
 
 async function usChart(ticker, range) {
-  // Stooq 히스토리 CSV
-  const daysMap = {'1wk':7,'1mo':31,'3mo':93,'6mo':186,'1y':365};
-  const days = daysMap[range] || 31;
-  const toDate = new Date();
-  const fromDate = new Date(Date.now() - days * 86400000);
-  const fmt = d => d.toISOString().slice(0,10).replace(/-/g,'');
-  const sym = stooqSym(ticker);
-  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&d1=${fmt(fromDate)}&d2=${fmt(toDate)}&i=d`;
-  const text = await fetchText(url);
-  const lines = text.trim().split('\n').slice(1); // skip header
-  if (!lines.length || lines[0].includes('No data')) throw new Error('No chart data');
-  return lines.map(l => {
-    const cols = l.split(',');
-    return { date: cols[0], close: parseFloat(cols[4]) }; // Date,Open,High,Low,Close,Volume
-  }).filter(r => !isNaN(r.close));
+  // Yahoo v8 chart API
+  const yRange = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'}[range] || '1mo';
+  const { rows } = await yahooChart(ticker, yRange, '1d');
+  return rows.map(r => ({ date: r.date, close: Math.round(r.close * 100) / 100 }));
 }
 
 // News via yfinance
@@ -454,12 +482,14 @@ app.get('/api/sidebar-batch', async (req, res) => {
 
       if (uncached.length) {
         await Promise.allSettled(uncached.map(async sym => {
-          try {
-            const q = await stooqQuote(sym);
+          let q = null;
+          try { q = await yahooQuote(sym); } catch {}
+          if (!q) { try { q = await stooqQuote(sym); } catch {} }
+          if (q) {
             const data = { price: q.price, changePct: q.changePct };
             setC(`sb:${sym}`, data, ttl);
             result[sym] = data;
-          } catch {}
+          }
         }));
       }
     }
@@ -554,22 +584,17 @@ app.get('/api/index-chart', async (req, res) => {
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   try {
     const data = await cached(`ic:${symbol}:${range}`, 300_000, async () => {
-      // Stooq 심볼 매핑
-      const stooqMap = { KOSPI: '^kos', KOSDAQ: '^kosdaq', 'S&P 500': '^spx', NASDAQ: '^ndq', DOW: '^dji' };
-      const stooqS = stooqMap[symbol] || symbol.toLowerCase();
-      const daysMap = {'1wk':8,'1mo':33,'3mo':95,'6mo':188,'1y':368};
-      const days = daysMap[range] || 33;
-      const toDate = new Date();
-      const fromDate = new Date(Date.now() - days * 86400000);
-      const fmt = d => d.toISOString().slice(0,10).replace(/-/g,'');
-      const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqS)}&d1=${fmt(fromDate)}&d2=${fmt(toDate)}&i=d`;
-      const text = await fetchText(url);
-      const lines = text.trim().split('\n').slice(1);
-      if (!lines.length || lines[0].includes('No data')) throw new Error('No index chart data');
-      const rows = lines.map(l => { const c=l.split(','); return {date:c[0],close:parseFloat(c[4])}; }).filter(r=>!isNaN(r.close));
+      // Yahoo v8 심볼 매핑
+      const yMap = { KOSPI: '^KS11', KOSDAQ: '^KQ11', 'S&P 500': '^GSPC', NASDAQ: '^IXIC', DOW: '^DJI' };
+      const yfsym = yMap[symbol] || symbol;
+      const yRange = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'}[range] || '1mo';
+      const { rows } = await yahooChart(yfsym, yRange, '1d');
       const longRange = ['6mo','1y'].includes(range);
       const fmtOpts = longRange ? {year:'2-digit',month:'short',day:'numeric'} : {month:'short',day:'numeric'};
-      return { labels: rows.map(r=>new Date(r.date).toLocaleDateString('ko',fmtOpts)), data: rows.map(r=>r.close) };
+      return {
+        labels: rows.map(r => new Date(r.date).toLocaleDateString('ko', fmtOpts)),
+        data: rows.map(r => Math.round(r.close * 100) / 100),
+      };
     });
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -632,9 +657,12 @@ app.get('/api/chart', async (req, res) => {
 
 async function yfIndex(sym, name) {
   try {
-    const q = await stooqQuote(sym);
+    const q = await yahooQuote(sym);
     return { name, value: q.price, change: q.changePct };
-  } catch { return { name, value: 0, change: 0 }; }
+  } catch {
+    try { const q = await stooqQuote(sym); return { name, value: q.price, change: q.changePct }; }
+    catch { return { name, value: 0, change: 0 }; }
+  }
 }
 
 app.get('/api/indices', async (_, res) => {
@@ -654,21 +682,13 @@ app.get('/api/indices', async (_, res) => {
 app.get('/api/rates', async (_, res) => {
   try {
     const data = await cached('rates', 300_000, async () => {
-      // Stooq으로 환율 조회
-      const pairs = [['usdkrw','usdkrw'],['usdjpy','usdjpy'],['eurusd','eurusd'],['dxy','dxy']];
+      // Yahoo v8 FX
+      const pairs = [['KRW=X','usdkrw'],['JPY=X','usdjpy'],['EURUSD=X','eurusd'],['DX-Y.NYB','dxy']];
       const rates = {};
-      await Promise.allSettled(pairs.map(async ([stooqSym, key]) => {
+      await Promise.allSettled(pairs.map(async ([sym, key]) => {
         try {
-          const url = `https://stooq.com/q/l/?s=${stooqSym}&f=sd2t2ohlcv&h&e=csv`;
-          const text = await (await fetch(url, { headers:{'User-Agent':UA}, signal:AbortSignal.timeout(8000) })).text();
-          const lines = text.trim().split('\n');
-          if (lines.length < 2) return;
-          const cols = lines[1].split(',');
-          const price = parseFloat(cols[5]);
-          const open = parseFloat(cols[2]);
-          if (!price || isNaN(price)) return;
-          const chg = open ? (price - open) / open * 100 : 0;
-          rates[key] = { value: Math.round(price * 100) / 100, change: Math.round(chg * 100) / 100 };
+          const q = await yahooQuote(sym);
+          rates[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
         } catch {}
       }));
       return rates;
@@ -1455,18 +1475,18 @@ print(json.dumps(result))
 app.get('/api/macro', async (_, res) => {
   try {
     const data = await cached('macro', 300_000, async () => {
-      // Stooq 심볼: vix, tnx(10y), irx(3m), usdkrw, dxy, eurusd, usdjpy, xauusd(gold), cl.f(oil), btcusd, ^spx, ^ndq, ^dji
+      // Yahoo v8 심볼 매핑
       const items = [
-        ['^vix','vix',true], ['^tnx','us10y',true], ['^irx','us3m',true],
-        ['usdkrw','usdkrw',false], ['dxy','dxy',false], ['eurusd','eurusd',false], ['usdjpy','usdjpy',false],
-        ['xauusd','gold',false], ['cl.f','oil',false], ['siusd','silver',false], ['btcusd','btc',false],
-        ['^spx','sp500',false], ['^ndq','nasdaq',false], ['^dji','dow',false],
+        ['^VIX','vix',true], ['^TNX','us10y',true], ['^IRX','us3m',true], ['^FVX','us5y',true],
+        ['KRW=X','usdkrw',false], ['DX-Y.NYB','dxy',false], ['EURUSD=X','eurusd',false], ['JPY=X','usdjpy',false],
+        ['GC=F','gold',false], ['CL=F','oil',false], ['SI=F','silver',false], ['BTC-USD','btc',false],
+        ['^GSPC','sp500',false], ['^IXIC','nasdaq',false], ['^DJI','dow',false],
       ];
       const result = {};
       await Promise.allSettled(items.map(async ([sym, key, isDiff]) => {
         try {
-          const q = await stooqQuote(sym.startsWith('^') ? sym : sym);
-          const chg = isDiff ? (q.change) : q.changePct;
+          const q = await yahooQuote(sym);
+          const chg = isDiff ? q.change : q.changePct;
           result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
         } catch {}
       }));
