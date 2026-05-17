@@ -6,6 +6,6 @@
     "python": "3.12"
   },
   "deploy": {
-    "startCommand": "node server.js"
+    "startCommand": "python3 -m pip install --break-system-packages -r requirements.txt 2>&1 | tail -5; node server.js"
   }
 }
