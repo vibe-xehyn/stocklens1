@@ -334,17 +334,21 @@ else:
 }
 
 async function usChart(ticker, range) {
-  const periodMap = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'};
-  const py = `
-import yfinance as yf, json
-t = yf.Ticker('${ticker}')
-h = t.history(period='${periodMap[range]||'1mo'}')
-rows = []
-for dt, row in h.iterrows():
-    rows.append({'date': dt.strftime('%Y-%m-%d'), 'close': round(float(row['Close']), 2)})
-print(json.dumps(rows))
-`;
-  return yfRun(py);
+  // Stooq 히스토리 CSV
+  const daysMap = {'1wk':7,'1mo':31,'3mo':93,'6mo':186,'1y':365};
+  const days = daysMap[range] || 31;
+  const toDate = new Date();
+  const fromDate = new Date(Date.now() - days * 86400000);
+  const fmt = d => d.toISOString().slice(0,10).replace(/-/g,'');
+  const sym = stooqSym(ticker);
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&d1=${fmt(fromDate)}&d2=${fmt(toDate)}&i=d`;
+  const text = await fetchText(url);
+  const lines = text.trim().split('\n').slice(1); // skip header
+  if (!lines.length || lines[0].includes('No data')) throw new Error('No chart data');
+  return lines.map(l => {
+    const cols = l.split(',');
+    return { date: cols[0], close: parseFloat(cols[4]) }; // Date,Open,High,Low,Close,Volume
+  }).filter(r => !isNaN(r.close));
 }
 
 // News via yfinance
