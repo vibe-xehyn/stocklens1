@@ -434,45 +434,28 @@ app.get('/api/sidebar-batch', async (req, res) => {
       });
       await Promise.all(tasks);
     } else {
-      // US: yfinance download (한 번에 여러 종목)
+      // US: Stooq CSV API (Yahoo Finance 차단 우회)
       const uncached = list.filter(s => !getC(`sb:${s}`));
-      // 캐시된 것은 바로 사용
       list.forEach(s => { const c = getC(`sb:${s}`); if (c) result[s] = c; });
 
       if (uncached.length) {
-        const tickers = uncached.join(' ');
-        const data = await yfRun(`
-import yfinance as yf, json
-tickers = '${tickers}'.split()
-df = yf.download(tickers, period='2d', auto_adjust=True, progress=False, group_by='ticker')
-out = {}
-import pandas as pd
-if len(tickers) == 1:
-    sym = tickers[0]
-    cols = df
-    try:
-        price = float(cols['Close'].iloc[-1])
-        prev  = float(cols['Close'].iloc[-2]) if len(cols) >= 2 else price
-        chg   = (price-prev)/prev*100 if prev else 0
-        out[sym] = {'price': round(price,2), 'changePct': round(chg,4)}
-    except: pass
-else:
-    for sym in tickers:
-        try:
-            cols = df[sym]
-            price = float(cols['Close'].iloc[-1])
-            prev  = float(cols['Close'].iloc[-2]) if len(cols) >= 2 else price
-            chg   = (price-prev)/prev*100 if prev else 0
-            out[sym] = {'price': round(price,2), 'changePct': round(chg,4)}
-        except: pass
-print(json.dumps(out))
-`);
-        uncached.forEach(sym => {
-          if (data[sym]) {
-            setC(`sb:${sym}`, data[sym], ttl);
-            result[sym] = data[sym];
-          }
-        });
+        await Promise.allSettled(uncached.map(async sym => {
+          try {
+            const url = `https://stooq.com/q/l/?s=${sym.toLowerCase()}.us&f=sd2t2ohlcvn&h&e=csv`;
+            const text = await (await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) })).text();
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return;
+            const cols = lines[1].split(',');
+            // Date,Time,Open,High,Low,Close,Volume,Name
+            const price = parseFloat(cols[5]);
+            const open = parseFloat(cols[2]);
+            if (!price || isNaN(price)) return;
+            const chg = open ? (price - open) / open * 100 : 0;
+            const data = { price: Math.round(price * 100) / 100, changePct: Math.round(chg * 10000) / 10000 };
+            setC(`sb:${sym}`, data, ttl);
+            result[sym] = data;
+          } catch {}
+        }));
       }
     }
     setC(cacheKey, result, ttl);
@@ -658,22 +641,20 @@ app.get('/api/chart', async (req, res) => {
 });
 
 async function yfIndex(sym, name) {
-  const py = `
-import yfinance as yf, json
-t = yf.Ticker('${sym}')
-h = t.history(period='2d')
-if len(h) >= 2:
-    price = float(h['Close'].iloc[-1])
-    prev  = float(h['Close'].iloc[-2])
-    chg   = (price - prev) / prev * 100
-elif len(h) == 1:
-    price = float(h['Close'].iloc[-1])
-    chg   = 0.0
-else:
-    price, chg = 0.0, 0.0
-print(json.dumps({'name': '${name}', 'value': round(price,2), 'change': round(chg,2)}))
-`;
-  try { return await yfRun(py); } catch { return {name, value:0, change:0}; }
+  // Stooq 심볼 매핑
+  const stooqMap = { '^GSPC': '%5espx', '^IXIC': '%5endq', '^DJI': '%5edji' };
+  const stooqSym = stooqMap[sym] || sym.toLowerCase().replace('^','%5e');
+  try {
+    const url = `https://stooq.com/q/l/?s=${stooqSym}&f=sd2t2ohlcv&h&e=csv`;
+    const text = await (await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) })).text();
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return { name, value: 0, change: 0 };
+    const cols = lines[1].split(',');
+    const price = parseFloat(cols[5]); // Close
+    const open = parseFloat(cols[2]);  // Open
+    const chg = open ? (price - open) / open * 100 : 0;
+    return { name, value: Math.round(price * 100) / 100, change: Math.round(chg * 100) / 100 };
+  } catch { return { name, value: 0, change: 0 }; }
 }
 
 app.get('/api/indices', async (_, res) => {
@@ -693,24 +674,24 @@ app.get('/api/indices', async (_, res) => {
 app.get('/api/rates', async (_, res) => {
   try {
     const data = await cached('rates', 300_000, async () => {
-      const py = `
-import yfinance as yf, json
-
-rates = {}
-pairs = [('USDKRW=X','usdkrw'),('USDJPY=X','usdjpy'),('EURUSD=X','eurusd'),('DX-Y.NYB','dxy')]
-for sym, key in pairs:
-    try:
-        t = yf.Ticker(sym)
-        h = t.history(period='2d')
-        if len(h) >= 1:
-            price = float(h['Close'].iloc[-1])
-            prev  = float(h['Close'].iloc[-2]) if len(h) >= 2 else price
-            chg   = (price - prev) / prev * 100
-            rates[key] = {'value': round(price, 2), 'change': round(chg, 2)}
-    except: pass
-print(json.dumps(rates))
-`;
-      return yfRun(py);
+      // Stooq으로 환율 조회
+      const pairs = [['usdkrw','usdkrw'],['usdjpy','usdjpy'],['eurusd','eurusd'],['dxy','dxy']];
+      const rates = {};
+      await Promise.allSettled(pairs.map(async ([stooqSym, key]) => {
+        try {
+          const url = `https://stooq.com/q/l/?s=${stooqSym}&f=sd2t2ohlcv&h&e=csv`;
+          const text = await (await fetch(url, { headers:{'User-Agent':UA}, signal:AbortSignal.timeout(8000) })).text();
+          const lines = text.trim().split('\n');
+          if (lines.length < 2) return;
+          const cols = lines[1].split(',');
+          const price = parseFloat(cols[5]);
+          const open = parseFloat(cols[2]);
+          if (!price || isNaN(price)) return;
+          const chg = open ? (price - open) / open * 100 : 0;
+          rates[key] = { value: Math.round(price * 100) / 100, change: Math.round(chg * 100) / 100 };
+        } catch {}
+      }));
+      return rates;
     });
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
