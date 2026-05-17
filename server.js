@@ -609,7 +609,7 @@ app.get('/api/sidebar-batch', async (req, res) => {
         try {
           const d = await fetchJSON(`https://polling.finance.naver.com/api/realtime/domestic/stock/${sym}`,{Referer:'https://finance.naver.com/'});
           const rt = d.datas?.[0] ?? {};
-          const data = { price: pKr(rt.closePrice), changePct: parseFloat(rt.fluctuationsRatioRaw ?? '0') };
+          const data = { price: pKr(rt.closePrice), changePct: parseFloat(rt.fluctuationsRatioRaw ?? '0'), name: rt.stockName, market: 'kr' };
           setC(ck, data, ttl);
           result[sym] = data;
         } catch {}
@@ -627,7 +627,7 @@ app.get('/api/sidebar-batch', async (req, res) => {
           if (!q) { try { q = await yahooQuote(sym); } catch {} }
           if (!q) { try { q = await stooqQuote(sym); } catch {} }
           if (q) {
-            const data = { price: q.price, changePct: q.changePct };
+            const data = { price: q.price, changePct: q.changePct, name: q.name, market: 'us' };
             setC(`sb:${sym}`, data, ttl);
             result[sym] = data;
           }
@@ -1767,7 +1767,8 @@ app.get('/api/buy-signals', async (req, res) => {
       // 5. 각 종목에 screener 데이터 병합
       const buys = (parsed.buys || []).map(b => {
         const s = screener[b.ticker] || {};
-        return { ...b, ...s, id: b.ticker, ticker: b.ticker, reason: b.reason, confidence: b.confidence };
+        const name = s.name || b.name || b.ticker;
+        return { ...b, ...s, id: b.ticker, ticker: b.ticker, name, reason: b.reason, confidence: b.confidence };
       });
 
       // 가격 데이터가 없으면 캐시하지 않음 (screener 미준비 상태)
@@ -1799,27 +1800,27 @@ async function warmupCache() {
     } catch {}
   }, 1000);
 
-  // 2. US 주요 종목 사이드바 일괄 (NAVER 병렬)
+  // 2. US 주요 종목 사이드바 일괄 (NAVER 병렬, name 포함)
   setTimeout(async () => {
     const usTop = ['NVDA','AAPL','MSFT','GOOGL','AMZN','META','TSLA','NFLX','AMD','AVGO','QCOM','TSM','INTC','JPM','BRK-B','V','MA','LLY','UNH','PLTR','CRM','ORCL','XOM','WMT'];
     let ok = 0;
     await Promise.allSettled(usTop.map(async sym => {
       try {
         const q = await naverUsQuote(sym);
-        if (q?.price) { setC(`sb:${sym}`, { price: q.price, changePct: q.changePct }, 60_000); ok++; }
+        if (q?.price) { setC(`sb:${sym}`, { price: q.price, changePct: q.changePct, name: q.name, market: 'us' }, 60_000); ok++; }
       } catch {}
     }));
     console.log(`  ✓ US 사이드바 워밍업 완료 (${ok}개)`);
   }, 3000);
 
-  // 3. KR 주요 종목 사이드바 병렬
+  // 3. KR 주요 종목 사이드바 병렬 (name 포함)
   setTimeout(async () => {
     const krTop = ['005930','000660','005380','000270','035420','035720','068270','105560','066570','012450'];
     await Promise.allSettled(krTop.map(async ticker => {
       try {
         const d = await fetchJSON(`https://polling.finance.naver.com/api/realtime/domestic/stock/${ticker}`,{Referer:'https://finance.naver.com/'});
         const rt = d.datas?.[0] ?? {};
-        const data = { price: pKr(rt.closePrice), changePct: parseFloat(rt.fluctuationsRatioRaw ?? '0') };
+        const data = { price: pKr(rt.closePrice), changePct: parseFloat(rt.fluctuationsRatioRaw ?? '0'), name: rt.stockName, market: 'kr' };
         if (data.price) setC(`sb:${ticker}`, data, 60_000);
       } catch {}
     }));

@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "postinstall": "pip install --break-system-packages -r requirements.txt || pip3 install --break-system-packages -r requirements.txt || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
