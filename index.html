@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>주식 투자 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3248;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --accent: #3b82f6;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --purple: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', -apple-system, sans-serif; min-height: 100vh; }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+  .logo span { color: var(--text); }
+  .market-bar { display: flex; gap: 24px; font-size: 13px; }
+  .market-item { display: flex; flex-direction: column; align-items: center; }
+  .market-name { color: var(--muted); font-size: 11px; }
+  .market-val { font-weight: 600; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+  .flat { color: var(--muted); }
+  .header-time { font-size: 12px; color: var(--muted); }
+
+  /* Layout */
+  .container { display: grid; grid-template-columns: 260px 1fr; min-height: calc(100vh - 60px); }
+
+  /* Sidebar */
+  aside {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
+    position: sticky;
+    top: 60px;
+  }
+  .sidebar-search {
+    margin: 0 12px 12px;
+    position: relative;
+  }
+  .sidebar-search input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px 8px 32px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .sidebar-search input:focus { border-color: var(--accent); }
+  .sidebar-search .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; }
+  .market-tabs {
+    display: flex;
+    margin: 0 12px 12px;
+    gap: 4px;
+  }
+  .market-tab {
+    flex: 1;
+    padding: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.2s;
+  }
+  .market-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 8px 16px 4px;
+  }
+  .stock-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-left: 3px solid transparent;
+  }
+  .stock-item:hover { background: var(--surface2); }
+  .stock-item.active { background: var(--surface2); border-left-color: var(--accent); }
+  .stock-left .ticker { font-size: 13px; font-weight: 700; }
+  .stock-left .name { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .stock-right { text-align: right; }
+  .stock-price { font-size: 13px; font-weight: 600; }
+  .stock-change { font-size: 11px; margin-top: 1px; }
+
+  /* Main */
+  main { padding: 24px; overflow-y: auto; }
+
+  /* Stock Header */
+  .stock-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    gap: 16px;
+  }
+  .stock-title h1 { font-size: 28px; font-weight: 800; letter-spacing: -1px; }
+  .stock-title .subtitle { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  .stock-title .badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-right: 6px;
+    margin-top: 6px;
+    font-weight: 600;
+  }
+  .badge-kr { background: #1e3a5f; color: #60a5fa; }
+  .badge-us { background: #1a3a2a; color: #4ade80; }
+  .badge-kospi { background: #1e3a5f; color: #60a5fa; }
+  .badge-kosdaq { background: #2d1f5e; color: #c084fc; }
+  .badge-nasdaq { background: #1a3a2a; color: #4ade80; }
+  .badge-nyse { background: #1f3a2a; color: #34d399; }
+  .price-block { text-align: right; }
+  .current-price { font-size: 36px; font-weight: 800; letter-spacing: -1px; }
+  .price-change { font-size: 16px; font-weight: 600; margin-top: 4px; }
+
+  /* Grid cards */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .card-label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card-value { font-size: 22px; font-weight: 700; margin-top: 6px; }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .indicator-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .indicator-fill { height: 100%; border-radius: 2px; }
+
+  /* Two-col layout */
+  .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  /* Chart */
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .chart-title { font-size: 15px; font-weight: 700; }
+  .chart-tabs { display: flex; gap: 4px; }
+  .chart-tab {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.2s;
+  }
+  .chart-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  canvas { width: 100% !important; }
+
+  /* Indicators table */
+  .indicators-table { width: 100%; border-collapse: collapse; }
+  .indicators-table th {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: left;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .indicators-table td {
+    padding: 10px 0;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  .indicators-table tr:last-child td { border-bottom: none; }
+  .ind-name { color: var(--muted); }
+  .ind-val { font-weight: 600; text-align: right; }
+  .ind-grade { text-align: right; font-size: 11px; font-weight: 700; }
+  .grade-good { color: var(--green); }
+  .grade-neutral { color: var(--yellow); }
+  .grade-bad { color: var(--red); }
+
+  /* News */
+  .news-item {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .news-item:last-child { border-bottom: none; }
+  .news-item:hover .news-title { color: var(--accent); }
+  .news-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .news-source { font-size: 11px; font-weight: 700; color: var(--accent); }
+  .news-time { font-size: 11px; color: var(--muted); }
+  .news-sentiment {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+  }
+  .sent-pos { background: rgba(34,197,94,0.15); color: var(--green); }
+  .sent-neg { background: rgba(239,68,68,0.15); color: var(--red); }
+  .sent-neu { background: rgba(100,116,139,0.15); color: var(--muted); }
+  .news-title { font-size: 13px; font-weight: 600; line-height: 1.4; transition: color 0.15s; }
+  .news-summary { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+
+  /* Financials */
+  .fin-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .fin-row:last-child { border-bottom: none; }
+  .fin-label { color: var(--muted); }
+  .fin-val { font-weight: 600; }
+
+  /* Score ring */
+  .score-section { display: flex; align-items: center; gap: 20px; }
+  .score-ring { position: relative; width: 90px; height: 90px; flex-shrink: 0; }
+  .score-ring svg { transform: rotate(-90deg); }
+  .score-number { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 22px; font-weight: 800; }
+  .score-details { flex: 1; }
+  .score-bar-item { margin-bottom: 8px; }
+  .score-bar-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .score-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.5s; }
+
+  /* Watchlist highlight */
+  .watchlist-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .watchlist-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+  .watchlist-btn.watching { background: rgba(245,158,11,0.1); border-color: var(--yellow); color: var(--yellow); }
+
+  /* Responsive */
+  @media (max-width: 1200px) { .cards-grid { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 900px) {
+    .container { grid-template-columns: 1fr; }
+    aside { display: none; }
+    .two-col, .three-col { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Stock<span>Lens</span></div>
+  <div class="market-bar" id="marketBar"></div>
+  <div class="header-time" id="headerTime"></div>
+</header>
+
+<div class="container">
+  <aside>
+    <div class="sidebar-search">
+      <span class="icon">&#128269;</span>
+      <input type="text" id="searchInput" placeholder="종목 검색..." oninput="filterStocks()">
+    </div>
+    <div class="market-tabs">
+      <button class="market-tab active" onclick="switchMarket('kr', this)">한국</button>
+      <button class="market-tab" onclick="switchMarket('us', this)">미국</button>
+      <button class="market-tab" onclick="switchMarket('all', this)">전체</button>
+    </div>
+    <div id="stockList"></div>
+  </aside>
+
+  <main id="mainContent"></main>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────────
+
+const MARKET_INDEX = [
+  { name: 'KOSPI', value: 2687.34, change: +0.82 },
+  { name: 'KOSDAQ', value: 863.21, change: -0.31 },
+  { name: 'S&P 500', value: 5321.41, change: +0.54 },
+  { name: 'NASDAQ', value: 16742.39, change: +0.91 },
+  { name: 'DOW', value: 39512.84, change: +0.28 },
+];
+
+const STOCKS = [
+  // ── 한국 ──
+  {
+    id: 'samsung', market: 'kr', exchange: 'KOSPI',
+    ticker: '005930', name: '삼성전자',
+    price: 74800, currency: '₩',
+    change: +1200, changePct: +1.63,
+    high52: 88800, low52: 59900,
+    marketCap: '446조', volume: '14.2M',
+    per: 14.2, pbr: 1.3, roe: 9.8, div: 2.8,
+    eps: 5267, bps: 57547,
+    debtRatio: 30.2, operatingMargin: 11.4,
+    score: 72,
+    scoreBreakdown: { 가치: 75, 성장: 65, 수익성: 70, 안전성: 80, 모멘텀: 68 },
+    financials: [
+      { label: '시가총액', val: '446조 원' },
+      { label: '매출액 (TTM)', val: '320조 원' },
+      { label: '영업이익 (TTM)', val: '36.5조 원' },
+      { label: '당기순이익', val: '26.1조 원' },
+      { label: '부채비율', val: '30.2%' },
+      { label: '유보율', val: '3,240%' },
+    ],
+    chartData: generateChart(74800, 30, 'kr'),
+    news: [
+      { source: '한국경제', time: '2시간 전', title: '삼성전자, HBM4 양산 돌입…엔비디아 공급 가시화', summary: '삼성전자가 4세대 HBM 반도체 양산을 시작하며 엔비디아 공급망 진입 기대감이 높아지고 있다.', sentiment: 'pos' },
+      { source: '매일경제', time: '5시간 전', title: '2분기 반도체 업황 회복세…삼성 영업익 10조 기대', summary: 'AI 수요 급증에 따른 메모리 가격 강세로 삼성전자 2분기 실적 개선이 전망된다.', sentiment: 'pos' },
+      { source: '조선비즈', time: '1일 전', title: '삼성 파운드리, TSMC와 격차 좁히기 총력', summary: '삼성전자 파운드리 사업부가 2나노 공정 수율 개선에 집중하며 점유율 확대를 노리고 있다.', sentiment: 'neu' },
+      { source: '블룸버그', time: '2일 전', title: 'Samsung Faces Headwinds in Foundry as Yield Issues Persist', summary: 'Samsung Electronics continues to face yield challenges in its advanced chip manufacturing.', sentiment: 'neg' },
+    ],
+  },
+  {
+    id: 'sk-hynix', market: 'kr', exchange: 'KOSPI',
+    ticker: '000660', name: 'SK하이닉스',
+    price: 196500, currency: '₩',
+    change: +4500, changePct: +2.34,
+    high52: 238000, low52: 115300,
+    marketCap: '143조', volume: '4.8M',
+    per: 22.1, pbr: 2.4, roe: 18.2, div: 0.5,
+    eps: 8891, bps: 81875,
+    debtRatio: 48.3, operatingMargin: 22.8,
+    score: 81,
+    scoreBreakdown: { 가치: 65, 성장: 92, 수익성: 88, 안전성: 62, 모멘텀: 90 },
+    financials: [
+      { label: '시가총액', val: '143조 원' },
+      { label: '매출액 (TTM)', val: '66.2조 원' },
+      { label: '영업이익 (TTM)', val: '15.1조 원' },
+      { label: '당기순이익', val: '12.3조 원' },
+      { label: '부채비율', val: '48.3%' },
+      { label: '유보율', val: '1,890%' },
+    ],
+    chartData: generateChart(196500, 30, 'kr'),
+    news: [
+      { source: '한국경제', time: '1시간 전', title: 'SK하이닉스, HBM3E 엔비디아 독점 공급 연장', summary: 'SK하이닉스가 엔비디아와 HBM3E 공급 계약을 2025년까지 연장하며 AI 반도체 독주 체제를 굳혔다.', sentiment: 'pos' },
+      { source: '이데일리', time: '3시간 전', title: '하이닉스, 1분기 영업익 7.4조…어닝 서프라이즈', summary: 'SK하이닉스의 1분기 영업이익이 시장 예상치를 크게 상회하며 어닝 서프라이즈를 기록했다.', sentiment: 'pos' },
+      { source: '머니투데이', time: '1일 전', title: '고대역폭메모리 가격, 3분기도 강세 전망', summary: 'AI 서버 투자 확대에 힘입어 HBM 가격이 하반기에도 높은 수준을 유지할 것으로 전망된다.', sentiment: 'pos' },
+    ],
+  },
+  {
+    id: 'kakao', market: 'kr', exchange: 'KOSPI',
+    ticker: '035720', name: '카카오',
+    price: 38150, currency: '₩',
+    change: -350, changePct: -0.91,
+    high52: 58400, low52: 32100,
+    marketCap: '16.9조', volume: '2.1M',
+    per: 31.4, pbr: 1.1, roe: 3.5, div: 0.0,
+    eps: 1215, bps: 34682,
+    debtRatio: 82.1, operatingMargin: 4.2,
+    score: 48,
+    scoreBreakdown: { 가치: 40, 성장: 52, 수익성: 38, 안전성: 44, 모멘텀: 35 },
+    financials: [
+      { label: '시가총액', val: '16.9조 원' },
+      { label: '매출액 (TTM)', val: '8.1조 원' },
+      { label: '영업이익 (TTM)', val: '3,400억 원' },
+      { label: '당기순이익', val: '560억 원' },
+      { label: '부채비율', val: '82.1%' },
+      { label: '유보율', val: '420%' },
+    ],
+    chartData: generateChart(38150, 30, 'kr'),
+    news: [
+      { source: '매일경제', time: '4시간 전', title: '카카오, SM·카카오뱅크 지분 매각 검토…리밸런싱', summary: '카카오가 비핵심 자산 정리를 통해 AI 사업 재원을 마련하는 방안을 논의 중인 것으로 전해진다.', sentiment: 'neu' },
+      { source: '조선비즈', time: '8시간 전', title: '카카오 경영진 사법리스크 지속…투자심리 위축', summary: '카카오 창업자의 재판이 진행 중인 가운데 경영 불확실성이 주가에 지속적인 부담을 주고 있다.', sentiment: 'neg' },
+    ],
+  },
+  {
+    id: 'celltrion', market: 'kr', exchange: 'KOSPI',
+    ticker: '068270', name: '셀트리온',
+    price: 168500, currency: '₩',
+    change: +2100, changePct: +1.26,
+    high52: 212000, low52: 139000,
+    marketCap: '24.3조', volume: '890K',
+    per: 28.6, pbr: 3.2, roe: 11.8, div: 0.3,
+    eps: 5892, bps: 52656,
+    debtRatio: 55.4, operatingMargin: 18.6,
+    score: 65,
+    scoreBreakdown: { 가치: 55, 성장: 72, 수익성: 70, 안전성: 58, 모멘텀: 65 },
+    financials: [
+      { label: '시가총액', val: '24.3조 원' },
+      { label: '매출액 (TTM)', val: '3.2조 원' },
+      { label: '영업이익 (TTM)', val: '5,952억 원' },
+      { label: '당기순이익', val: '4,100억 원' },
+      { label: '부채비율', val: '55.4%' },
+      { label: '유보율', val: '1,120%' },
+    ],
+    chartData: generateChart(168500, 30, 'kr'),
+    news: [
+      { source: '바이오스펙테이터', time: '2시간 전', title: '셀트리온 짐펜트라, 美 시장 점유율 빠르게 확대', summary: '피하주사형 인플릭시맙 짐펜트라가 미국에서 월 처방량 기록을 경신하며 빠른 성장세를 보이고 있다.', sentiment: 'pos' },
+      { source: '한국경제', time: '1일 전', title: '셀트리온, 2025년 매출 4조 달성 가능할까', summary: '미국과 유럽 바이오시밀러 판매 호조로 연간 매출 목표 달성 가능성에 시장 관심이 집중되고 있다.', sentiment: 'pos' },
+    ],
+  },
+  {
+    id: 'naver', market: 'kr', exchange: 'KOSPI',
+    ticker: '035420', name: 'NAVER',
+    price: 182000, currency: '₩',
+    change: +500, changePct: +0.28,
+    high52: 230500, low52: 152000,
+    marketCap: '29.8조', volume: '620K',
+    per: 26.8, pbr: 1.8, roe: 7.1, div: 0.3,
+    eps: 6791, bps: 101111,
+    debtRatio: 62.3, operatingMargin: 14.2,
+    score: 60,
+    scoreBreakdown: { 가치: 55, 성장: 62, 수익성: 65, 안전성: 58, 모멘텀: 55 },
+    financials: [
+      { label: '시가총액', val: '29.8조 원' },
+      { label: '매출액 (TTM)', val: '10.4조 원' },
+      { label: '영업이익 (TTM)', val: '1.48조 원' },
+      { label: '당기순이익', val: '1.12조 원' },
+      { label: '부채비율', val: '62.3%' },
+      { label: '유보율', val: '890%' },
+    ],
+    chartData: generateChart(182000, 30, 'kr'),
+    news: [
+      { source: '아이뉴스24', time: '3시간 전', title: '네이버, 하이퍼클로바X 기업 고객 3배 증가', summary: '네이버 자체 AI 모델 하이퍼클로바X의 기업 고객이 빠르게 증가하며 B2B AI 사업이 순항 중이다.', sentiment: 'pos' },
+      { source: '디지털데일리', time: '6시간 전', title: '네이버웹툰 나스닥 상장 1년…주가 부진 지속', summary: '네이버웹툰이 나스닥 상장 이후 주가가 공모가를 하회하며 투자자 실망감이 이어지고 있다.', sentiment: 'neg' },
+    ],
+  },
+
+  // ── 미국 ──
+  {
+    id: 'nvidia', market: 'us', exchange: 'NASDAQ',
+    ticker: 'NVDA', name: 'NVIDIA',
+    price: 924.52, currency: '$',
+    change: +18.34, changePct: +2.02,
+    high52: 974.00, low52: 373.53,
+    marketCap: '$2.27T', volume: '42.1M',
+    per: 68.4, pbr: 42.8, roe: 91.2, div: 0.03,
+    eps: 13.51, bps: 21.61,
+    debtRatio: 41.2, operatingMargin: 61.3,
+    score: 88,
+    scoreBreakdown: { Value: 38, Growth: 99, Profitability: 96, Safety: 65, Momentum: 95 },
+    financials: [
+      { label: 'Market Cap', val: '$2.27T' },
+      { label: 'Revenue (TTM)', val: '$79.8B' },
+      { label: 'Operating Income', val: '$48.9B' },
+      { label: 'Net Income', val: '$33.1B' },
+      { label: 'Debt/Equity', val: '41.2%' },
+      { label: 'Free Cash Flow', val: '$27.0B' },
+    ],
+    chartData: generateChart(924.52, 30, 'us'),
+    news: [
+      { source: 'Bloomberg', time: '1h ago', title: 'Nvidia Surges as Blackwell GPU Demand Exceeds Supply Through 2025', summary: "Nvidia's next-gen Blackwell architecture chips face supply constraints as hyperscalers accelerate AI infrastructure buildout.", sentiment: 'pos' },
+      { source: 'Reuters', time: '3h ago', title: "Nvidia's China Sales Restrictions Drive Asia Supply Rerouting", summary: 'US export controls on advanced AI chips are reshaping semiconductor supply chains across Southeast Asia.', sentiment: 'neg' },
+      { source: 'CNBC', time: '1d ago', title: 'Jensen Huang: Sovereign AI Is the Next Big Market for Nvidia', summary: 'Nvidia CEO Jensen Huang sees nation-states building their own AI infrastructure as a major growth opportunity.', sentiment: 'pos' },
+      { source: 'WSJ', time: '2d ago', title: "Nvidia's Valuation: Priced for Perfection or Just Getting Started?", summary: 'With a P/E ratio above 60x, analysts debate whether current valuations reflect Nvidia\'s true long-term potential.', sentiment: 'neu' },
+    ],
+  },
+  {
+    id: 'apple', market: 'us', exchange: 'NASDAQ',
+    ticker: 'AAPL', name: 'Apple Inc.',
+    price: 213.07, currency: '$',
+    change: -1.23, changePct: -0.57,
+    high52: 237.23, low52: 164.08,
+    marketCap: '$3.24T', volume: '55.8M',
+    per: 33.2, pbr: 45.6, roe: 160.6, div: 0.51,
+    eps: 6.42, bps: 4.67,
+    debtRatio: 178.3, operatingMargin: 31.0,
+    score: 76,
+    scoreBreakdown: { Value: 42, Growth: 68, Profitability: 95, Safety: 72, Momentum: 60 },
+    financials: [
+      { label: 'Market Cap', val: '$3.24T' },
+      { label: 'Revenue (TTM)', val: '$391.0B' },
+      { label: 'Operating Income', val: '$121.4B' },
+      { label: 'Net Income', val: '$100.4B' },
+      { label: 'Debt/Equity', val: '178.3%' },
+      { label: 'Free Cash Flow', val: '$111.4B' },
+    ],
+    chartData: generateChart(213.07, 30, 'us'),
+    news: [
+      { source: 'Bloomberg', time: '2h ago', title: 'Apple Intelligence Rolls Out Globally; AI Feature Adoption Beats Expectations', summary: 'Apple\'s AI suite is gaining traction with users upgrading to newer iPhone models in higher-than-expected numbers.', sentiment: 'pos' },
+      { source: 'FT', time: '5h ago', title: 'Apple Faces EU Scrutiny Over App Store Compliance', summary: 'European regulators are reviewing whether Apple\'s App Store changes fully comply with Digital Markets Act requirements.', sentiment: 'neg' },
+      { source: 'CNBC', time: '1d ago', title: "Apple's Services Revenue Hits Record $26.9B in Q2", summary: 'App Store, iCloud, and Apple TV+ revenue continues to be a bright spot, growing 14% year-over-year.', sentiment: 'pos' },
+    ],
+  },
+  {
+    id: 'microsoft', market: 'us', exchange: 'NASDAQ',
+    ticker: 'MSFT', name: 'Microsoft Corp.',
+    price: 415.32, currency: '$',
+    change: +5.18, changePct: +1.26,
+    high52: 468.35, low52: 309.45,
+    marketCap: '$3.09T', volume: '21.4M',
+    per: 37.8, pbr: 14.2, roe: 39.5, div: 0.75,
+    eps: 10.98, bps: 29.24,
+    debtRatio: 35.8, operatingMargin: 44.6,
+    score: 84,
+    scoreBreakdown: { Value: 55, Growth: 82, Profitability: 90, Safety: 92, Momentum: 78 },
+    financials: [
+      { label: 'Market Cap', val: '$3.09T' },
+      { label: 'Revenue (TTM)', val: '$245.1B' },
+      { label: 'Operating Income', val: '$109.4B' },
+      { label: 'Net Income', val: '$88.1B' },
+      { label: 'Debt/Equity', val: '35.8%' },
+      { label: 'Free Cash Flow', val: '$74.1B' },
+    ],
+    chartData: generateChart(415.32, 30, 'us'),
+    news: [
+      { source: 'Reuters', time: '30m ago', title: 'Microsoft Azure AI Revenue Grows 33% as Copilot Adoption Surges', summary: 'Azure cloud services powered by AI workloads continue to be Microsoft\'s fastest-growing revenue segment.', sentiment: 'pos' },
+      { source: 'WSJ', time: '4h ago', title: 'Microsoft Expands Data Center Investment to $80B for FY2025', summary: 'Microsoft is accelerating its global data center buildout to meet surging demand for AI compute capacity.', sentiment: 'pos' },
+      { source: 'Bloomberg', time: '2d ago', title: 'Activision Integration Costs Weigh on Near-Term Margins', summary: 'Gaming division restructuring costs from the Activision Blizzard acquisition continue to pressure margins.', sentiment: 'neg' },
+    ],
+  },
+  {
+    id: 'meta', market: 'us', exchange: 'NASDAQ',
+    ticker: 'META', name: 'Meta Platforms',
+    price: 524.16, currency: '$',
+    change: +9.42, changePct: +1.83,
+    high52: 589.60, low52: 349.21,
+    marketCap: '$1.33T', volume: '14.9M',
+    per: 27.4, pbr: 7.8, roe: 35.2, div: 0.50,
+    eps: 19.13, bps: 67.20,
+    debtRatio: 22.1, operatingMargin: 37.9,
+    score: 82,
+    scoreBreakdown: { Value: 68, Growth: 88, Profitability: 88, Safety: 80, Momentum: 85 },
+    financials: [
+      { label: 'Market Cap', val: '$1.33T' },
+      { label: 'Revenue (TTM)', val: '$155.0B' },
+      { label: 'Operating Income', val: '$58.7B' },
+      { label: 'Net Income', val: '$50.7B' },
+      { label: 'Debt/Equity', val: '22.1%' },
+      { label: 'Free Cash Flow', val: '$47.3B' },
+    ],
+    chartData: generateChart(524.16, 30, 'us'),
+    news: [
+      { source: 'CNBC', time: '1h ago', title: "Meta's Llama 4 Gains Enterprise Traction, Rivaling OpenAI", summary: "Meta's open-source LLM strategy is paying off as enterprise adoption of Llama models accelerates globally.", sentiment: 'pos' },
+      { source: 'Bloomberg', time: '6h ago', title: 'Facebook & Instagram Ad Revenue Beats Q1 Forecasts by 8%', summary: "Meta's core advertising business continues to outperform as AI-driven ad targeting boosts ROI for advertisers.", sentiment: 'pos' },
+      { source: 'FT', time: '1d ago', title: "Meta's Reality Labs Burns $4.2B in Q1 as VR Adoption Lags", summary: 'Meta continues to invest heavily in its metaverse division despite slow consumer adoption of VR headsets.', sentiment: 'neg' },
+    ],
+  },
+  {
+    id: 'tesla', market: 'us', exchange: 'NASDAQ',
+    ticker: 'TSLA', name: 'Tesla Inc.',
+    price: 176.89, currency: '$',
+    change: -4.21, changePct: -2.32,
+    high52: 299.29, low52: 138.80,
+    marketCap: '$564.2B', volume: '98.4M',
+    per: 58.9, pbr: 9.2, roe: 16.2, div: 0.0,
+    eps: 3.00, bps: 19.23,
+    debtRatio: 18.4, operatingMargin: 6.2,
+    score: 52,
+    scoreBreakdown: { Value: 28, Growth: 55, Profitability: 48, Safety: 75, Momentum: 30 },
+    financials: [
+      { label: 'Market Cap', val: '$564.2B' },
+      { label: 'Revenue (TTM)', val: '$97.7B' },
+      { label: 'Operating Income', val: '$6.1B' },
+      { label: 'Net Income', val: '$7.1B' },
+      { label: 'Debt/Equity', val: '18.4%' },
+      { label: 'Free Cash Flow', val: '$3.6B' },
+    ],
+    chartData: generateChart(176.89, 30, 'us'),
+    news: [
+      { source: 'Reuters', time: '2h ago', title: "Tesla's Q1 Deliveries Miss Estimates; Musk Backlash Cited", summary: 'Tesla delivered fewer vehicles than expected in Q1 2025, with analysts pointing to brand damage from CEO controversies.', sentiment: 'neg' },
+      { source: 'Bloomberg', time: '5h ago', title: "Tesla's Robotaxi Launch Timeline Slips Again to Late 2025", summary: 'Regulatory hurdles and software challenges have pushed Tesla\'s fully autonomous robotaxi service launch further back.', sentiment: 'neg' },
+      { source: 'CNBC', time: '1d ago', title: 'Tesla Cuts Model 3 Price in Key Markets to Boost Demand', summary: 'Tesla has implemented fresh price cuts in Europe and Asia as competition from Chinese EV makers intensifies.', sentiment: 'neu' },
+    ],
+  },
+];
+
+// ── UTILS ──────────────────────────────────────────────────────────────────────
+
+function generateChart(basePrice, days, market) {
+  const labels = [];
+  const data = [];
+  const now = new Date();
+  let price = basePrice * 0.88;
+  for (let i = days; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    if (market === 'kr') {
+      labels.push(d.toLocaleDateString('ko', { month: 'short', day: 'numeric' }));
+    } else {
+      labels.push(d.toLocaleDateString('en', { month: 'short', day: 'numeric' }));
+    }
+    price *= (1 + (Math.random() - 0.46) * 0.025);
+    data.push(parseFloat(price.toFixed(market === 'kr' ? 0 : 2)));
+  }
+  data[data.length - 1] = basePrice;
+  return { labels, data };
+}
+
+function fmt(n) { return n >= 0 ? `+${n}` : `${n}`; }
+function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
+function scoreColor(s) {
+  if (s >= 75) return '#22c55e';
+  if (s >= 55) return '#f59e0b';
+  return '#ef4444';
+}
+function gradeClass(val, metric) {
+  const thresholds = {
+    per: { good: 15, ok: 25 },
+    pbr: { good: 1.5, ok: 3 },
+    roe: { good: 15, ok: 10, invert: true },
+    div: { good: 3, ok: 1, invert: true },
+    operatingMargin: { good: 20, ok: 10, invert: true },
+    debtRatio: { good: 40, ok: 80 },
+  };
+  const t = thresholds[metric];
+  if (!t) return '';
+  if (t.invert) {
+    if (val >= t.good) return 'grade-good';
+    if (val >= t.ok) return 'grade-neutral';
+    return 'grade-bad';
+  } else {
+    if (val <= t.good) return 'grade-good';
+    if (val <= t.ok) return 'grade-neutral';
+    return 'grade-bad';
+  }
+}
+function gradeLabel(cls) {
+  if (cls === 'grade-good') return '우수';
+  if (cls === 'grade-neutral') return '보통';
+  return '주의';
+}
+
+// ── STATE ──────────────────────────────────────────────────────────────────────
+
+let currentMarket = 'kr';
+let currentStock = STOCKS[0];
+let watchlist = new Set();
+let currentChartPeriod = '1M';
+let priceChart = null;
+
+// ── HEADER ──────────────────────────────────────────────────────────────────────
+
+function renderHeader() {
+  document.getElementById('marketBar').innerHTML = MARKET_INDEX.map(m => `
+    <div class="market-item">
+      <span class="market-name">${m.name}</span>
+      <span class="market-val ${m.change >= 0 ? 'up' : 'down'}">${m.value.toLocaleString()} <small>${fmtPct(m.change)}</small></span>
+    </div>
+  `).join('');
+
+  function tick() {
+    const now = new Date();
+    document.getElementById('headerTime').textContent =
+      now.toLocaleString('ko', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ── SIDEBAR ──────────────────────────────────────────────────────────────────────
+
+function renderSidebar(filter = '') {
+  const list = document.getElementById('stockList');
+  const markets = currentMarket === 'all' ? ['kr', 'us'] : [currentMarket];
+  const labels = { kr: '한국 주식', us: '미국 주식' };
+
+  let html = '';
+  markets.forEach(m => {
+    const items = STOCKS.filter(s =>
+      s.market === m &&
+      (s.name.toLowerCase().includes(filter.toLowerCase()) ||
+       s.ticker.toLowerCase().includes(filter.toLowerCase()))
+    );
+    if (!items.length) return;
+    html += `<div class="section-label">${labels[m]}</div>`;
+    items.forEach(s => {
+      const up = s.changePct >= 0;
+      html += `
+        <div class="stock-item ${s.id === currentStock.id ? 'active' : ''}" onclick="selectStock('${s.id}')">
+          <div class="stock-left">
+            <div class="ticker">${s.ticker}</div>
+            <div class="name">${s.name}</div>
+          </div>
+          <div class="stock-right">
+            <div class="stock-price ${up ? 'up' : 'down'}">${s.currency}${s.price.toLocaleString()}</div>
+            <div class="stock-change ${up ? 'up' : 'down'}">${fmtPct(s.changePct)}</div>
+          </div>
+        </div>`;
+    });
+  });
+  list.innerHTML = html;
+}
+
+function switchMarket(m, btn) {
+  currentMarket = m;
+  document.querySelectorAll('.market-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderSidebar();
+}
+
+function filterStocks() {
+  renderSidebar(document.getElementById('searchInput').value);
+}
+
+function selectStock(id) {
+  currentStock = STOCKS.find(s => s.id === id);
+  renderSidebar(document.getElementById('searchInput').value);
+  renderMain();
+}
+
+// ── MAIN ──────────────────────────────────────────────────────────────────────
+
+function renderMain() {
+  const s = currentStock;
+  const up = s.changePct >= 0;
+  const isKr = s.market === 'kr';
+  const scoreKeys = Object.keys(s.scoreBreakdown);
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="stock-header">
+      <div class="stock-title">
+        <h1>${s.ticker} &nbsp;<span style="font-size:20px;color:var(--muted);font-weight:400">${s.name}</span></h1>
+        <div style="margin-top:6px">
+          <span class="badge ${isKr ? 'badge-kr' : 'badge-us'}">${isKr ? '한국' : 'US'}</span>
+          <span class="badge badge-${s.exchange.toLowerCase()}">${s.exchange}</span>
+        </div>
+        <div class="subtitle" style="margin-top:8px">시가총액 ${s.marketCap} &nbsp;·&nbsp; 거래량 ${s.volume}</div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <button class="watchlist-btn ${watchlist.has(s.id) ? 'watching' : ''}" onclick="toggleWatch('${s.id}', this)">
+          ${watchlist.has(s.id) ? '★ 관심종목' : '☆ 관심종목 추가'}
+        </button>
+        <div class="price-block">
+          <div class="current-price ${up ? 'up' : 'down'}">${s.currency}${s.price.toLocaleString()}</div>
+          <div class="price-change ${up ? 'up' : 'down'}">${fmt(s.change)} (${fmtPct(s.changePct)})</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">
+            52주 ${s.currency}${s.low52.toLocaleString()} – ${s.currency}${s.high52.toLocaleString()}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Key metrics -->
+    <div class="cards-grid">
+      ${metricCard('PER', s.per.toFixed(1) + 'x', isKr ? '주가수익비율' : 'Price/Earnings', gradeClass(s.per, 'per'), s.per, 0, 50)}
+      ${metricCard('PBR', s.pbr.toFixed(1) + 'x', isKr ? '주가순자산비율' : 'Price/Book', gradeClass(s.pbr, 'pbr'), s.pbr, 0, 5)}
+      ${metricCard('ROE', s.roe.toFixed(1) + '%', isKr ? '자기자본이익률' : 'Return on Equity', gradeClass(s.roe, 'roe'), s.roe, 0, 40)}
+      ${metricCard(isKr ? '배당수익률' : 'Div Yield', s.div.toFixed(2) + '%', isKr ? '연간 배당' : 'Annual Dividend', gradeClass(s.div, 'div'), s.div, 0, 6)}
+    </div>
+
+    <!-- Chart + Score -->
+    <div class="two-col">
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title">주가 추이</span>
+          <div class="chart-tabs">
+            ${['1W','1M','3M'].map(p => `<button class="chart-tab ${p === currentChartPeriod ? 'active' : ''}" onclick="changeChartPeriod('${p}', this)">${p}</button>`).join('')}
+          </div>
+        </div>
+        <canvas id="priceChart" height="180"></canvas>
+      </div>
+
+      <div class="card" style="display:flex;flex-direction:column;gap:16px">
+        <div class="chart-title">종합 투자 점수</div>
+        <div class="score-section">
+          <div class="score-ring">
+            <svg width="90" height="90" viewBox="0 0 90 90">
+              <circle cx="45" cy="45" r="36" fill="none" stroke="var(--border)" stroke-width="8"/>
+              <circle cx="45" cy="45" r="36" fill="none" stroke="${scoreColor(s.score)}" stroke-width="8"
+                stroke-dasharray="${2 * Math.PI * 36}" stroke-dashoffset="${2 * Math.PI * 36 * (1 - s.score / 100)}"
+                stroke-linecap="round"/>
+            </svg>
+            <div class="score-number" style="color:${scoreColor(s.score)}">${s.score}</div>
+          </div>
+          <div class="score-details">
+            ${scoreKeys.map(k => `
+              <div class="score-bar-item">
+                <div class="score-bar-label"><span>${k}</span><span>${s.scoreBreakdown[k]}</span></div>
+                <div class="score-bar-track"><div class="score-bar-fill" style="width:${s.scoreBreakdown[k]}%;background:${scoreColor(s.scoreBreakdown[k])}"></div></div>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Indicators + Financials + News -->
+    <div class="three-col">
+      <div class="card">
+        <div class="chart-title" style="margin-bottom:12px">투자 지표</div>
+        <table class="indicators-table">
+          <tr><th>지표</th><th></th><th style="text-align:right">값</th><th style="text-align:right">평가</th></tr>
+          ${indicatorRow('PER', s.per.toFixed(1) + 'x', 'per', s.per)}
+          ${indicatorRow('PBR', s.pbr.toFixed(1) + 'x', 'pbr', s.pbr)}
+          ${indicatorRow('ROE', s.roe.toFixed(1) + '%', 'roe', s.roe)}
+          ${indicatorRow(isKr ? '배당수익률' : 'Div Yield', s.div.toFixed(2) + '%', 'div', s.div)}
+          ${indicatorRow(isKr ? '영업이익률' : 'Op Margin', s.operatingMargin.toFixed(1) + '%', 'operatingMargin', s.operatingMargin)}
+          ${indicatorRow(isKr ? '부채비율' : 'D/E Ratio', s.debtRatio.toFixed(1) + '%', 'debtRatio', s.debtRatio)}
+          ${indicatorRow('EPS', s.currency + s.eps.toLocaleString(), '', null)}
+          ${indicatorRow('BPS', s.currency + s.bps.toLocaleString(), '', null)}
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="chart-title" style="margin-bottom:12px">${isKr ? '재무 현황' : 'Financials'}</div>
+        ${s.financials.map(f => `
+          <div class="fin-row">
+            <span class="fin-label">${f.label}</span>
+            <span class="fin-val">${f.val}</span>
+          </div>`).join('')}
+        <div style="margin-top:16px">
+          <div class="chart-title" style="margin-bottom:8px;font-size:12px">52주 범위</div>
+          <div style="position:relative;height:20px;background:var(--border);border-radius:10px;overflow:hidden">
+            <div style="position:absolute;left:0;top:0;height:100%;width:${((s.price - s.low52) / (s.high52 - s.low52) * 100).toFixed(1)}%;background:linear-gradient(90deg,var(--accent),#22c55e);border-radius:10px"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px">
+            <span>${s.currency}${s.low52.toLocaleString()}</span>
+            <span style="color:var(--text);font-weight:700">${s.currency}${s.price.toLocaleString()}</span>
+            <span>${s.currency}${s.high52.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-title" style="margin-bottom:4px">관련 뉴스</div>
+        ${s.news.map(n => `
+          <div class="news-item">
+            <div class="news-meta">
+              <span class="news-source">${n.source}</span>
+              <span class="news-time">${n.time}</span>
+              <span class="news-sentiment sent-${n.sentiment}">${n.sentiment === 'pos' ? '긍정' : n.sentiment === 'neg' ? '부정' : '중립'}</span>
+            </div>
+            <div class="news-title">${n.title}</div>
+            <div class="news-summary">${n.summary}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+  `;
+
+  drawChart(s, currentChartPeriod);
+}
+
+function metricCard(label, val, sub, cls, raw, min, max) {
+  const pct = Math.min(100, Math.max(0, ((raw - min) / (max - min)) * 100));
+  const color = cls === 'grade-good' ? 'var(--green)' : cls === 'grade-neutral' ? 'var(--yellow)' : 'var(--red)';
+  return `
+    <div class="card">
+      <div class="card-label">${label}</div>
+      <div class="card-value" style="color:${cls ? color : 'var(--text)'}">${val}</div>
+      <div class="card-sub">${sub}</div>
+      <div class="indicator-bar"><div class="indicator-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+}
+
+function indicatorRow(name, val, metric, raw) {
+  const cls = metric ? gradeClass(raw, metric) : '';
+  return `
+    <tr>
+      <td class="ind-name">${name}</td>
+      <td></td>
+      <td class="ind-val">${val}</td>
+      <td class="ind-grade ${cls}">${cls ? gradeLabel(cls) : '-'}</td>
+    </tr>`;
+}
+
+// ── CHART ──────────────────────────────────────────────────────────────────────
+
+function drawChart(s, period) {
+  let { labels, data } = s.chartData;
+  const n = period === '1W' ? 7 : period === '1M' ? 30 : 90;
+  // For 3M generate more data from base
+  let displayLabels = labels.slice(-Math.min(n, labels.length));
+  let displayData = data.slice(-Math.min(n, data.length));
+
+  if (period === '3M') {
+    const extra = generateChart(s.price, 90, s.market);
+    displayLabels = extra.labels;
+    displayData = extra.data;
+  }
+
+  const up = displayData[displayData.length - 1] >= displayData[0];
+  const color = up ? '#22c55e' : '#ef4444';
+
+  if (priceChart) priceChart.destroy();
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+  gradient.addColorStop(0, up ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+  priceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: displayLabels,
+      datasets: [{
+        data: displayData,
+        borderColor: color,
+        borderWidth: 2,
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(26,29,39,0.95)',
+          borderColor: '#2e3248',
+          borderWidth: 1,
+          titleColor: '#8892a4',
+          bodyColor: '#e2e8f0',
+          callbacks: {
+            label: ctx => ` ${s.currency}${ctx.parsed.y.toLocaleString()}`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(46,50,72,0.5)' },
+          ticks: { color: '#8892a4', maxTicksLimit: 6, font: { size: 11 } },
+        },
+        y: {
+          grid: { color: 'rgba(46,50,72,0.5)' },
+          ticks: { color: '#8892a4', font: { size: 11 }, callback: v => s.currency + v.toLocaleString() },
+          position: 'right',
+        }
+      }
+    }
+  });
+}
+
+function changeChartPeriod(period, btn) {
+  currentChartPeriod = period;
+  document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  drawChart(currentStock, period);
+}
+
+// ── WATCHLIST ──────────────────────────────────────────────────────────────────
+
+function toggleWatch(id, btn) {
+  if (watchlist.has(id)) {
+    watchlist.delete(id);
+    btn.textContent = '☆ 관심종목 추가';
+    btn.classList.remove('watching');
+  } else {
+    watchlist.add(id);
+    btn.textContent = '★ 관심종목';
+    btn.classList.add('watching');
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+
+renderHeader();
+renderSidebar();
+renderMain();
+</script>
+</body>
+</html>
