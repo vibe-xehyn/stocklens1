@@ -448,17 +448,8 @@ app.get('/api/sidebar-batch', async (req, res) => {
       if (uncached.length) {
         await Promise.allSettled(uncached.map(async sym => {
           try {
-            const url = `https://stooq.com/q/l/?s=${sym.toLowerCase()}.us&f=sd2t2ohlcvn&h&e=csv`;
-            const text = await (await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) })).text();
-            const lines = text.trim().split('\n');
-            if (lines.length < 2) return;
-            const cols = lines[1].split(',');
-            // Date,Time,Open,High,Low,Close,Volume,Name
-            const price = parseFloat(cols[5]);
-            const open = parseFloat(cols[2]);
-            if (!price || isNaN(price)) return;
-            const chg = open ? (price - open) / open * 100 : 0;
-            const data = { price: Math.round(price * 100) / 100, changePct: Math.round(chg * 10000) / 10000 };
+            const q = await stooqQuote(sym);
+            const data = { price: q.price, changePct: q.changePct };
             setC(`sb:${sym}`, data, ttl);
             result[sym] = data;
           } catch {}
@@ -648,19 +639,9 @@ app.get('/api/chart', async (req, res) => {
 });
 
 async function yfIndex(sym, name) {
-  // Stooq 심볼 매핑
-  const stooqMap = { '^GSPC': '%5espx', '^IXIC': '%5endq', '^DJI': '%5edji' };
-  const stooqSym = stooqMap[sym] || sym.toLowerCase().replace('^','%5e');
   try {
-    const url = `https://stooq.com/q/l/?s=${stooqSym}&f=sd2t2ohlcv&h&e=csv`;
-    const text = await (await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) })).text();
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return { name, value: 0, change: 0 };
-    const cols = lines[1].split(',');
-    const price = parseFloat(cols[5]); // Close
-    const open = parseFloat(cols[2]);  // Open
-    const chg = open ? (price - open) / open * 100 : 0;
-    return { name, value: Math.round(price * 100) / 100, change: Math.round(chg * 100) / 100 };
+    const q = await stooqQuote(sym);
+    return { name, value: q.price, change: q.changePct };
   } catch { return { name, value: 0, change: 0 }; }
 }
 
