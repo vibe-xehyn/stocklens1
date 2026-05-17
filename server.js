@@ -41,7 +41,134 @@ async function fetchText(url) {
   return r.text();
 }
 
-// ── Yahoo Finance v8 chart API (yfinance Python 우회) ────────────────────────
+// ── NAVER Finance API (Railway에서 안정적으로 작동) ─────────────────────────
+const NAVER_REF = { Referer: 'https://m.stock.naver.com/' };
+const _nNum = s => parseFloat(String(s ?? '').replace(/,/g, '')) || 0;
+const _nDate = d => d.slice(0,4) + '-' + d.slice(4,6) + '-' + d.slice(6,8);
+const _usSuffixCache = new Map(); // ticker -> suffix that worked (.O or '')
+
+function _dayRange(range) {
+  const days = { '1wk':14, '1mo':45, '3mo':100, '6mo':200, '1y':380 }[range] || 45;
+  const fmt = d => d.toISOString().slice(0,10).replace(/-/g,'') + '0000';
+  return { start: fmt(new Date(Date.now() - days*86400_000)), end: fmt(new Date()) };
+}
+
+async function _naverWorldQuote(symbolWithSfx) {
+  const d = await fetchJSON(`https://polling.finance.naver.com/api/realtime/worldstock/stock/${encodeURIComponent(symbolWithSfx)}`, NAVER_REF);
+  const r = d.datas?.[0];
+  if (!r) return null;
+  const price = _nNum(r.closePriceRaw ?? r.closePrice);
+  const change = _nNum(r.compareToPreviousClosePriceRaw ?? r.compareToPreviousClosePrice);
+  return {
+    price, change,
+    changePct: parseFloat(r.fluctuationsRatioRaw ?? r.fluctuationsRatio ?? '0'),
+    open: _nNum(r.openPriceRaw ?? r.openPrice),
+    high: _nNum(r.highPriceRaw ?? r.highPrice),
+    low:  _nNum(r.lowPriceRaw  ?? r.lowPrice),
+    volume: _nNum(r.accumulatedTradingVolumeRaw ?? r.accumulatedTradingVolume),
+    marketCap: _nNum(r.marketValueFullRaw ?? r.marketValueFull),
+    name: r.stockName || symbolWithSfx.split('.')[0],
+    currency: r.currencyType?.code || 'USD',
+    exchange: r.stockExchangeType?.nameEng || 'US',
+  };
+}
+
+async function naverUsQuote(ticker) {
+  const tried = _usSuffixCache.get(ticker);
+  const order = tried !== undefined ? [tried] : ['.O', ''];
+  for (const sfx of order) {
+    try {
+      const q = await _naverWorldQuote(ticker + sfx);
+      if (q && q.price) { _usSuffixCache.set(ticker, sfx); return q; }
+    } catch {}
+  }
+  // fallback to opposite suffix on first call if cached lookup failed
+  if (tried !== undefined) {
+    for (const sfx of ['.O', ''].filter(s => s !== tried)) {
+      try {
+        const q = await _naverWorldQuote(ticker + sfx);
+        if (q && q.price) { _usSuffixCache.set(ticker, sfx); return q; }
+      } catch {}
+    }
+  }
+  throw new Error('NAVER: no data for ' + ticker);
+}
+
+async function naverUsChart(ticker, range = '1mo') {
+  const { start, end } = _dayRange(range);
+  const tried = _usSuffixCache.get(ticker);
+  const order = tried !== undefined ? [tried] : ['.O', ''];
+  const tryFetch = async sfx => {
+    const rows = await fetchJSON(
+      `https://api.stock.naver.com/chart/foreign/item/${encodeURIComponent(ticker + sfx)}/day?startDateTime=${start}&endDateTime=${end}`,
+      NAVER_REF
+    );
+    return Array.isArray(rows) && rows.length ? rows : null;
+  };
+  for (const sfx of order) {
+    try { const rows = await tryFetch(sfx); if (rows) { _usSuffixCache.set(ticker, sfx); return rows.map(r => ({ date:_nDate(String(r.localDate)), close:r.closePrice, open:r.openPrice, high:r.highPrice, low:r.lowPrice, volume:r.accumulatedTradingVolume })); } } catch {}
+  }
+  if (tried !== undefined) {
+    for (const sfx of ['.O',''].filter(s=>s!==tried)) {
+      try { const rows = await tryFetch(sfx); if (rows) { _usSuffixCache.set(ticker, sfx); return rows.map(r => ({ date:_nDate(String(r.localDate)), close:r.closePrice, open:r.openPrice, high:r.highPrice, low:r.lowPrice, volume:r.accumulatedTradingVolume })); } } catch {}
+    }
+  }
+  throw new Error('NAVER: no chart for ' + ticker);
+}
+
+async function naverUsIndex(reutersCode, name) {
+  try {
+    const d = await fetchJSON(`https://polling.finance.naver.com/api/realtime/worldstock/index/${encodeURIComponent(reutersCode)}`, NAVER_REF);
+    const r = d.datas?.[0]; if (!r) throw new Error('empty');
+    return { name, value: _nNum(r.closePriceRaw ?? r.closePrice), change: parseFloat(r.fluctuationsRatioRaw ?? r.fluctuationsRatio ?? '0') };
+  } catch { return { name, value: 0, change: 0 }; }
+}
+
+async function naverUsIndexFull(reutersCode) {
+  const d = await fetchJSON(`https://polling.finance.naver.com/api/realtime/worldstock/index/${encodeURIComponent(reutersCode)}`, NAVER_REF);
+  const r = d.datas?.[0]; if (!r) throw new Error('empty');
+  return { price: _nNum(r.closePriceRaw ?? r.closePrice), changePct: parseFloat(r.fluctuationsRatioRaw ?? r.fluctuationsRatio ?? '0'), change: _nNum(r.compareToPreviousClosePriceRaw ?? r.compareToPreviousClosePrice) };
+}
+
+async function naverUsIndexChart(reutersCode, range = '1mo') {
+  const { start, end } = _dayRange(range);
+  const rows = await fetchJSON(
+    `https://api.stock.naver.com/chart/foreign/index/${encodeURIComponent(reutersCode)}/day?startDateTime=${start}&endDateTime=${end}`,
+    NAVER_REF
+  );
+  if (!Array.isArray(rows) || !rows.length) throw new Error('NAVER index: no data');
+  return rows.map(r => ({ date: _nDate(String(r.localDate)), close: r.closePrice }));
+}
+
+async function naverKrIndexChart(code, range = '1mo') {
+  const { start, end } = _dayRange(range);
+  const rows = await fetchJSON(
+    `https://api.stock.naver.com/chart/domestic/index/${encodeURIComponent(code)}/day?startDateTime=${start}&endDateTime=${end}`,
+    NAVER_REF
+  );
+  if (!Array.isArray(rows) || !rows.length) throw new Error('NAVER kr-index: no data');
+  return rows.map(r => ({ date: _nDate(String(r.localDate)), close: r.closePrice }));
+}
+
+async function naverKrItemChart(ticker, range = '1mo') {
+  const { start, end } = _dayRange(range);
+  const rows = await fetchJSON(
+    `https://api.stock.naver.com/chart/domestic/item/${encodeURIComponent(ticker)}/day?startDateTime=${start}&endDateTime=${end}`,
+    NAVER_REF
+  );
+  if (!Array.isArray(rows) || !rows.length) throw new Error('NAVER kr-item: no data');
+  return rows.map(r => ({ date: _nDate(String(r.localDate)), close: Math.round(r.closePrice) }));
+}
+
+async function naverFutures(code) {
+  try {
+    const d = await fetchJSON(`https://polling.finance.naver.com/api/realtime/worldstock/futures/${encodeURIComponent(code)}`, NAVER_REF);
+    const r = d.datas?.[0]; if (!r) return null;
+    return { price: _nNum(r.closePriceRaw ?? r.closePrice), changePct: parseFloat(r.fluctuationsRatioRaw ?? r.fluctuationsRatio ?? '0'), change: _nNum(r.compareToPreviousClosePriceRaw ?? r.compareToPreviousClosePrice) };
+  } catch { return null; }
+}
+
+// ── Yahoo Finance v8 chart API (best-effort fallback, Railway에서 자주 차단됨) ─
 async function yahooChart(symbol, range = '1mo', interval = '1d') {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
   const r = await fetch(url, { headers: { 'User-Agent': UA, 'Accept':'application/json' }, signal: AbortSignal.timeout(10000) });
@@ -272,8 +399,12 @@ async function krFinancials(ticker) {
 }
 
 async function krChart(ticker, range) {
-  const periodMap = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'};
-  const py = `
+  // NAVER 차트 (yfinance Python 우회 — Railway에서 안정)
+  try { return await naverKrItemChart(ticker, range); }
+  catch {
+    // Fallback: yfinance
+    const periodMap = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'};
+    const py = `
 import yfinance as yf, json
 t = yf.Ticker('${ticker}.KS')
 h = t.history(period='${periodMap[range]||'1mo'}')
@@ -282,7 +413,8 @@ for dt, row in h.iterrows():
     rows.append({'date': dt.strftime('%Y-%m-%d'), 'close': round(float(row['Close']), 0)})
 print(json.dumps(rows))
 `;
-  return yfRun(py);
+    return yfRun(py);
+  }
 }
 
 async function krIndex(code, name) {
@@ -297,10 +429,12 @@ async function krIndex(code, name) {
 // 미국 주식 — Stooq (fast quote) + Yahoo Finance via Python (detail/chart)
 // ─────────────────────────────────────────────────────────────────────────────
 async function usQuote(ticker) {
-  // 1차: Yahoo v8 chart API (raw fetch, yfinance Python 우회)
+  // 1차: NAVER (Railway에서 안정)
   let base = null;
-  try { base = await yahooQuote(ticker); } catch {}
-  // 2차 fallback: Stooq
+  try { base = await naverUsQuote(ticker); } catch {}
+  // 2차: Yahoo v8 (로컬에서는 잘 됨)
+  if (!base) { try { base = await yahooQuote(ticker); } catch {} }
+  // 3차: Stooq
   if (!base) {
     try {
       const sq = await stooqQuote(ticker);
@@ -352,7 +486,8 @@ print(json.dumps({
 }
 
 async function usQuickQuote(ticker) {
-  // stooq 먼저 시도, 실패 시 yfinance fast_info로 fallback
+  // NAVER 우선, 실패시 stooq, 마지막으로 yfinance fast_info
+  try { const q = await naverUsQuote(ticker); return { price: q.price, change: q.change, changePct: q.changePct, open: q.open, high: q.high, low: q.low, volume: q.volume }; } catch {}
   try { return await stooqQuote(ticker); } catch {}
   try {
     return await yfRun(`
@@ -376,10 +511,15 @@ else:
 }
 
 async function usChart(ticker, range) {
-  // Yahoo v8 chart API
-  const yRange = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'}[range] || '1mo';
-  const { rows } = await yahooChart(ticker, yRange, '1d');
-  return rows.map(r => ({ date: r.date, close: Math.round(r.close * 100) / 100 }));
+  // 1차: NAVER chart, 2차: Yahoo v8 fallback
+  try {
+    const rows = await naverUsChart(ticker, range);
+    return rows.map(r => ({ date: r.date, close: Math.round(r.close * 100) / 100 }));
+  } catch {
+    const yRange = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'}[range] || '1mo';
+    const { rows } = await yahooChart(ticker, yRange, '1d');
+    return rows.map(r => ({ date: r.date, close: Math.round(r.close * 100) / 100 }));
+  }
 }
 
 // News via yfinance
@@ -483,7 +623,8 @@ app.get('/api/sidebar-batch', async (req, res) => {
       if (uncached.length) {
         await Promise.allSettled(uncached.map(async sym => {
           let q = null;
-          try { q = await yahooQuote(sym); } catch {}
+          try { q = await naverUsQuote(sym); } catch {}
+          if (!q) { try { q = await yahooQuote(sym); } catch {} }
           if (!q) { try { q = await stooqQuote(sym); } catch {} }
           if (q) {
             const data = { price: q.price, changePct: q.changePct };
@@ -584,11 +725,22 @@ app.get('/api/index-chart', async (req, res) => {
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   try {
     const data = await cached(`ic:${symbol}:${range}`, 300_000, async () => {
-      // Yahoo v8 심볼 매핑
-      const yMap = { KOSPI: '^KS11', KOSDAQ: '^KQ11', 'S&P 500': '^GSPC', NASDAQ: '^IXIC', DOW: '^DJI' };
-      const yfsym = yMap[symbol] || symbol;
-      const yRange = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'}[range] || '1mo';
-      const { rows } = await yahooChart(yfsym, yRange, '1d');
+      // NAVER index chart (Railway에서 안정)
+      const usMap  = { 'S&P 500': '.INX', NASDAQ: '.IXIC', DOW: '.DJI' };
+      const krSet  = new Set(['KOSPI','KOSDAQ']);
+      let rows = [];
+      try {
+        if (krSet.has(symbol))       rows = await naverKrIndexChart(symbol, range);
+        else if (usMap[symbol])      rows = await naverUsIndexChart(usMap[symbol], range);
+      } catch {}
+      // Fallback: Yahoo v8
+      if (!rows.length) {
+        const yMap = { KOSPI: '^KS11', KOSDAQ: '^KQ11', 'S&P 500': '^GSPC', NASDAQ: '^IXIC', DOW: '^DJI' };
+        const yfsym = yMap[symbol] || symbol;
+        const yRange = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'}[range] || '1mo';
+        const r = await yahooChart(yfsym, yRange, '1d');
+        rows = r.rows.map(x => ({ date: x.date, close: x.close }));
+      }
       const longRange = ['6mo','1y'].includes(range);
       const fmtOpts = longRange ? {year:'2-digit',month:'short',day:'numeric'} : {month:'short',day:'numeric'};
       return {
@@ -655,14 +807,20 @@ app.get('/api/chart', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// US 지수 → NAVER reutersCode 매핑
+const US_INDEX_NAVER = { '^GSPC': '.INX', '^IXIC': '.IXIC', '^DJI': '.DJI', '^VIX': '.VIX' };
+
 async function yfIndex(sym, name) {
-  try {
-    const q = await yahooQuote(sym);
-    return { name, value: q.price, change: q.changePct };
-  } catch {
-    try { const q = await stooqQuote(sym); return { name, value: q.price, change: q.changePct }; }
-    catch { return { name, value: 0, change: 0 }; }
+  // 1차: NAVER (Railway에서 안정)
+  const naverCode = US_INDEX_NAVER[sym];
+  if (naverCode) {
+    try { const q = await naverUsIndexFull(naverCode); return { name, value: q.price, change: q.changePct }; } catch {}
   }
+  // 2차: Yahoo v8
+  try { const q = await yahooQuote(sym); return { name, value: q.price, change: q.changePct }; } catch {}
+  // 3차: Stooq
+  try { const q = await stooqQuote(sym); return { name, value: q.price, change: q.changePct }; } catch {}
+  return { name, value: 0, change: 0 };
 }
 
 app.get('/api/indices', async (_, res) => {
@@ -682,14 +840,20 @@ app.get('/api/indices', async (_, res) => {
 app.get('/api/rates', async (_, res) => {
   try {
     const data = await cached('rates', 300_000, async () => {
-      // Yahoo v8 FX
-      const pairs = [['KRW=X','usdkrw'],['JPY=X','usdjpy'],['EURUSD=X','eurusd'],['DX-Y.NYB','dxy']];
+      // Stooq primary (Yahoo 차단됨)
+      const pairs = [['usdkrw','usdkrw'],['usdjpy','usdjpy'],['eurusd','eurusd'],['dx.f','dxy']];
       const rates = {};
       await Promise.allSettled(pairs.map(async ([sym, key]) => {
         try {
-          const q = await yahooQuote(sym);
+          const q = await stooqQuote(sym);
           rates[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
-        } catch {}
+        } catch {
+          try {
+            const yMap = { usdkrw:'KRW=X', usdjpy:'JPY=X', eurusd:'EURUSD=X', dxy:'DX-Y.NYB' };
+            const q = await yahooQuote(yMap[key]);
+            rates[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
+          } catch {}
+        }
       }));
       return rates;
     });
@@ -1475,21 +1639,46 @@ print(json.dumps(result))
 app.get('/api/macro', async (_, res) => {
   try {
     const data = await cached('macro', 300_000, async () => {
-      // Yahoo v8 심볼 매핑
-      const items = [
-        ['^VIX','vix',true], ['^TNX','us10y',true], ['^IRX','us3m',true], ['^FVX','us5y',true],
-        ['KRW=X','usdkrw',false], ['DX-Y.NYB','dxy',false], ['EURUSD=X','eurusd',false], ['JPY=X','usdjpy',false],
-        ['GC=F','gold',false], ['CL=F','oil',false], ['SI=F','silver',false], ['BTC-USD','btc',false],
-        ['^GSPC','sp500',false], ['^IXIC','nasdaq',false], ['^DJI','dow',false],
-      ];
       const result = {};
-      await Promise.allSettled(items.map(async ([sym, key, isDiff]) => {
+
+      // 1차: NAVER (지수 + VIX + 원자재 futures)
+      const naverJobs = [
+        ['.INX','sp500','index',false], ['.IXIC','nasdaq','index',false], ['.DJI','dow','index',false],
+        ['.VIX','vix','index',true],
+        ['GCcv1','gold','futures',false], ['CLcv1','oil','futures',false], ['SIcv1','silver','futures',false],
+      ];
+      await Promise.allSettled(naverJobs.map(async ([code, key, type, isDiff]) => {
+        try {
+          const q = type === 'index' ? await naverUsIndexFull(code) : await naverFutures(code);
+          if (!q) return;
+          const chg = isDiff ? q.change : q.changePct;
+          result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
+        } catch {}
+      }));
+
+      // 2차: Stooq (FX + DXY — Yahoo blocked, NAVER doesn't expose JSON)
+      const stooqJobs = [
+        ['usdkrw','usdkrw',false], ['usdjpy','usdjpy',false], ['eurusd','eurusd',false], ['dx.f','dxy',false],
+        ['btcusd','btc',false],
+      ];
+      await Promise.allSettled(stooqJobs.map(async ([sym, key, isDiff]) => {
+        try {
+          const q = await stooqQuote(sym);
+          const chg = isDiff ? q.change : q.changePct;
+          result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
+        } catch {}
+      }));
+
+      // 3차: Yahoo best-effort (treasuries — 거의 안 됨)
+      const yahooJobs = [['^TNX','us10y',true], ['^IRX','us3m',true], ['^FVX','us5y',true]];
+      await Promise.allSettled(yahooJobs.map(async ([sym, key, isDiff]) => {
         try {
           const q = await yahooQuote(sym);
           const chg = isDiff ? q.change : q.changePct;
           result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
         } catch {}
       }));
+
       return result;
     });
     res.json(data);
@@ -1598,58 +1787,29 @@ app.listen(PORT, () => {
 });
 
 async function warmupCache() {
-  // 1. 지수 + 환율 먼저 (빠름)
+  // 1. 지수 + macro 먼저 (NAVER + Stooq, 빠름)
   setTimeout(async () => {
-    try { await Promise.all([
-      cached('indices', 60_000, () => Promise.all([
+    try {
+      await cached('indices', 60_000, () => Promise.all([
         krIndex('KOSPI','KOSPI'), krIndex('KOSDAQ','KOSDAQ'),
         yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'),
-      ])),
-      cached('macro', 300_000, () => yfRun(`
-import yfinance as yf, json
-result = {}
-items = [('^VIX','vix'),('^TNX','us10y'),('^IRX','us3m'),('^FVX','us5y'),
-         ('USDKRW=X','usdkrw'),('DX-Y.NYB','dxy'),('EURUSD=X','eurusd'),('USDJPY=X','usdjpy'),
-         ('GC=F','gold'),('CL=F','oil'),('SI=F','silver'),('BTC-USD','btc'),
-         ('^GSPC','sp500'),('^IXIC','nasdaq'),('^DJI','dow')]
-for sym, key in items:
-    try:
-        h = yf.Ticker(sym).history(period='2d')
-        if len(h) >= 1:
-            p = float(h['Close'].iloc[-1])
-            prev = float(h['Close'].iloc[-2]) if len(h) >= 2 else p
-            chg = (p-prev)/prev*100 if key not in ('us10y','us3m','us5y','vix') else p-prev
-            result[key] = {'value': round(p,2), 'change': round(chg,2)}
-    except: pass
-print(json.dumps(result))
-`)),
-    ]); } catch {}
+      ]));
+      // /api/macro 자체를 호출해 미리 캐시
+      try { await fetch(`http://localhost:${PORT}/api/macro`); } catch {}
+    } catch {}
   }, 1000);
 
-  // 2. US 주요 종목 사이드바 일괄 (yfinance download)
+  // 2. US 주요 종목 사이드바 일괄 (NAVER 병렬)
   setTimeout(async () => {
     const usTop = ['NVDA','AAPL','MSFT','GOOGL','AMZN','META','TSLA','NFLX','AMD','AVGO','QCOM','TSM','INTC','JPM','BRK-B','V','MA','LLY','UNH','PLTR','CRM','ORCL','XOM','WMT'];
-    try {
-      const tickers = usTop.join(' ');
-      const data = await yfRun(`
-import yfinance as yf, json
-df = yf.download('${tickers}', period='2d', auto_adjust=True, progress=False, group_by='ticker')
-out = {}
-tickers = '${tickers}'.split()
-for sym in tickers:
-    try:
-        cols = df[sym]
-        price = float(cols['Close'].iloc[-1])
-        prev  = float(cols['Close'].iloc[-2]) if len(cols) >= 2 else price
-        chg   = (price-prev)/prev*100 if prev else 0
-        out[sym] = {'price': round(price,2), 'changePct': round(chg,4)}
-    except: pass
-print(json.dumps(out))
-`);
-      const ttl = 60_000;
-      Object.entries(data).forEach(([sym, d]) => { if (d?.price) setC(`sb:${sym}`, d, ttl); });
-      console.log(`  ✓ US 사이드바 워밍업 완료 (${Object.keys(data).length}개)`);
-    } catch(e) { console.log('  ⚠ US 워밍업 실패:', e.message); }
+    let ok = 0;
+    await Promise.allSettled(usTop.map(async sym => {
+      try {
+        const q = await naverUsQuote(sym);
+        if (q?.price) { setC(`sb:${sym}`, { price: q.price, changePct: q.changePct }, 60_000); ok++; }
+      } catch {}
+    }));
+    console.log(`  ✓ US 사이드바 워밍업 완료 (${ok}개)`);
   }, 3000);
 
   // 3. KR 주요 종목 사이드바 병렬
