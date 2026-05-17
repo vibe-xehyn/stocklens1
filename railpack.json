@@ -1,0 +1,21 @@
+{
+  "builders": [
+    {
+      "name": "node",
+      "version": "20"
+    },
+    {
+      "name": "python",
+      "version": "3.12"
+    }
+  ],
+  "install": {
+    "cmds": [
+      "npm install",
+      "pip install -r requirements.txt"
+    ]
+  },
+  "start": {
+    "cmd": "node server.js"
+  }
+}
