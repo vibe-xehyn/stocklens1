@@ -252,7 +252,13 @@ async function krIndex(code, name) {
 // 미국 주식 — Stooq (fast quote) + Yahoo Finance via Python (detail/chart)
 // ─────────────────────────────────────────────────────────────────────────────
 async function usQuote(ticker) {
-  const py = `
+  // Stooq으로 가격 먼저 (빠르고 안정적)
+  let sq = null;
+  try { sq = await stooqQuote(ticker); } catch {}
+
+  // yfinance로 펀더멘탈 (실패해도 Stooq 가격만으로 반환)
+  try {
+    const py = `
 import yfinance as yf, json
 t = yf.Ticker('${ticker}')
 fi = t.fast_info
@@ -290,15 +296,16 @@ print(json.dumps({
   'numberOfAnalysts': info.get('numberOfAnalystOpinions'),
 }))
 `;
-  const meta = await yfRun(py);
-  // Enrich with live Stooq price (more real-time)
-  try {
-    const sq = await stooqQuote(ticker);
-    return { ...meta, price: sq.price, change: sq.change, changePct: sq.changePct,
-             open: sq.open, high: sq.high, low: sq.low, volume: sq.volume };
-  } catch {
-    const prev = meta.price;
+    const meta = await yfRun(py);
+    if (sq) return { ...meta, price: sq.price, change: sq.change, changePct: sq.changePct,
+                     open: sq.open, high: sq.high, low: sq.low, volume: sq.volume };
     return { ...meta, change: 0, changePct: 0 };
+  } catch {
+    // yfinance 실패 → Stooq 기본 데이터만 반환
+    if (sq) return { ticker, name: ticker, exchange: 'US', currency: 'USD',
+                     price: sq.price, change: sq.change, changePct: sq.changePct,
+                     open: sq.open, high: sq.high, low: sq.low, volume: sq.volume };
+    throw new Error('데이터를 가져올 수 없습니다');
   }
 }
 
