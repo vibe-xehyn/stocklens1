@@ -995,6 +995,82 @@ app.get('/api/flow', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 결정론적 시그널 계산 (룰 기반, 같은 입력 → 같은 출력)
+// AI는 해석/설명만 담당, 매수/중립/매도 결정은 이 함수가 한다
+// ─────────────────────────────────────────────────────────────────────────────
+function computeSignal(t = {}, q = {}, flow = {}) {
+  let score = 0;
+  const reasons = [];
+
+  // ─ 기술적 지표 (최대 ±75점) ─
+  if (typeof t.rsi === 'number') {
+    if (t.rsi < 30)      { score += 20; reasons.push('RSI 과매도'); }
+    else if (t.rsi < 40) { score += 8; }
+    else if (t.rsi > 70) { score -= 20; reasons.push('RSI 과매수'); }
+    else if (t.rsi > 60) { score -= 8; }
+  }
+  if (typeof t.macd === 'number' && typeof t.macd_signal === 'number') {
+    if (t.macd > t.macd_signal) { score += 15; reasons.push('MACD 골든'); }
+    else                        { score -= 15; reasons.push('MACD 데드'); }
+  }
+  if (typeof t.bb_pct === 'number') {
+    if (t.bb_pct < 20)      score += 10;
+    else if (t.bb_pct > 80) score -= 10;
+  }
+  if (typeof t.stoch_k === 'number') {
+    if (t.stoch_k < 20)      score += 8;
+    else if (t.stoch_k > 80) score -= 8;
+  }
+  if (typeof t.adx === 'number' && typeof t.pdi === 'number' && typeof t.mdi === 'number' && t.adx > 25) {
+    if (t.pdi > t.mdi) { score += 12; reasons.push('+DI 우위'); }
+    else               { score -= 12; reasons.push('-DI 우위'); }
+  }
+  if (q.price && t.ma20) score += (q.price > t.ma20 ? 5 : -5);
+  if (q.price && t.ma50) score += (q.price > t.ma50 ? 5 : -5);
+
+  // ─ 가치 지표 (최대 ±35점) ─
+  if (typeof q.per === 'number' && q.per > 0) {
+    if (q.per < 10)      score += 10;
+    else if (q.per < 20) score += 5;
+    else if (q.per > 50) score -= 8;
+  }
+  if (typeof q.pbr === 'number' && q.pbr > 0) {
+    if (q.pbr < 1)      score += 8;
+    else if (q.pbr < 2) score += 4;
+    else if (q.pbr > 5) score -= 6;
+  }
+  if (typeof q.roe === 'number') {
+    if (q.roe > 20)      score += 10;
+    else if (q.roe > 10) score += 5;
+    else if (q.roe < 0)  score -= 8;
+  }
+  if (typeof q.revenueGrowth === 'number') {
+    if (q.revenueGrowth > 20)       score += 5;
+    else if (q.revenueGrowth < -10) score -= 5;
+  }
+
+  // ─ 수급 (최대 ±10점) ─
+  if (typeof flow.shortPct === 'number' && flow.shortPct > 10) score -= 5;
+  if (typeof flow.institutionPct === 'number' && flow.institutionPct > 70) score += 3;
+
+  // ─ 시그널 결정 ─
+  let signal, confidence;
+  const abs = Math.abs(score);
+  if (score >= 25)       { signal = '매수'; confidence = Math.min(95, 55 + abs / 2); }
+  else if (score <= -25) { signal = '매도'; confidence = Math.min(95, 55 + abs / 2); }
+  else                   { signal = '중립'; confidence = Math.max(50, 70 - abs); }
+
+  return { signal, confidence: Math.round(confidence), score: Math.round(score), reasons };
+}
+
+// 종목별 결정론적 seed (Groq의 seed 파라미터용)
+function hashSeed(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 기술적 지표 계산 (Python/yfinance, 6개월 데이터)
 // ─────────────────────────────────────────────────────────────────────────────
 async function calcTechnicalsYF(yfticker) {
@@ -1073,7 +1149,7 @@ app.get('/api/analysis', async (req, res) => {
   if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'GROQ_API_KEY not set' });
 
   try {
-    const data = await cached(`ai:${symbol}`, 600_000, async () => {
+    const data = await cached(`ai:${symbol}`, 3600_000, async () => {
       const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
       const isKr = market === 'kr';
 
@@ -1209,11 +1285,16 @@ ${newsText || '관련 뉴스 없음'}
   "risk": "구체적인 리스크 요인 및 주의사항"
 }`;
 
+      // ── 결정론적 시그널 계산 (지표 기반, AI 출력과 무관하게 일관성 유지) ──
+      const { signal: detSignal, confidence: detConf, score: detScore } = computeSignal(t, q, flow);
+
       const msg = await getGrok().chat.completions.create({
         model: 'llama-3.3-70b-versatile',
+        temperature: 0,
+        seed: hashSeed(symbol),
         max_tokens: 1024,
         messages: [
-          { role: 'system', content: '당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.' },
+          { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 이미 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 점수 ${detScore}). 당신의 분석은 이 결정의 근거를 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하세요.` },
           { role: 'user', content: prompt }
         ],
       });
@@ -1222,6 +1303,9 @@ ${newsText || '관련 뉴스 없음'}
       const m = raw.match(/\{[\s\S]*\}/);
       if (!m) throw new Error('AI response parsing failed');
       const parsed = JSON.parse(m[0]);
+      // AI signal/confidence는 결정론적 결과로 덮어쓰기
+      parsed.signal = detSignal;
+      parsed.confidence = detConf;
       // 비한국어 문자 제거 (한글, 영문, 숫자, 기본 특수문자만 허용)
       const sanitize = v => typeof v === 'string'
         ? v.replace(/[^\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F a-zA-Z0-9%.,·()\-+~:/?!\n""''【】]/g, '')
