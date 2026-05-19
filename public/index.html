@@ -1898,14 +1898,14 @@ async function renderHome(opts = {}) {
         ${renderAlertsCard(all)}
       </div>
 
-      <!-- AI 매수 신호 -->
+      <!-- 매수신호 -->
       <div id="buySignalsCard">${renderBuySignalsCard(null)}</div>
 
       <!-- 가치투자 스크리너 -->
       ${renderScreenerCard(all)}
     </div>`;
 
-  // AI 매수 신호 비동기 로딩 (홈 렌더링 후 백그라운드)
+  // 매수신호 비동기 로딩 (홈 렌더링 후 백그라운드)
   loadBuySignals();
 }
 
@@ -2023,17 +2023,38 @@ function renderAlertsCard(allStocks) {
   </div>`;
 }
 
-function renderBuySignalsCard(data) {
+let _buySignalTab = '전체';
+
+function renderBuySignalsCard(data, tab) {
+  tab = tab || _buySignalTab || '전체';
   const loading = !data;
   const updatedAt = data?.updatedAt ? new Date(data.updatedAt).toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '';
-  const buys = data?.buys || [];
+  const allBuys = data?.buys || [];
 
   const SIG_STYLE = {
-    '강력매수': { border:'rgba(22,163,74,0.5)',  bg:'rgba(22,163,74,0.08)',  color:'#16a34a', label:'강력매수', icon:'▲▲' },
-    '매수':     { border:'rgba(34,197,94,0.3)',  bg:'rgba(34,197,94,0.05)',  color:'#22c55e', label:'매수',     icon:'▲' },
-    '약매수':   { border:'rgba(134,239,172,0.3)',bg:'rgba(134,239,172,0.04)',color:'#86efac', label:'약매수',   icon:'△' },
+    '강력매수': { border:'rgba(22,163,74,0.5)',  bg:'rgba(22,163,74,0.08)',  color:'#16a34a', icon:'▲▲' },
+    '매수':     { border:'rgba(34,197,94,0.3)',  bg:'rgba(34,197,94,0.05)',  color:'#22c55e', icon:'▲' },
+    '약매수':   { border:'rgba(134,239,172,0.3)',bg:'rgba(134,239,172,0.04)',color:'#86efac', icon:'△' },
   };
-  const cards = buys.map(d => {
+
+  const TABS = ['전체', '강력매수', '매수', '약매수'];
+  const counts = {};
+  TABS.slice(1).forEach(t => { counts[t] = allBuys.filter(d => d.signal === t).length; });
+  counts['전체'] = allBuys.length;
+
+  const filtered = tab === '전체' ? allBuys : allBuys.filter(d => d.signal === tab);
+
+  const tabBar = `<div style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;margin-bottom:14px">
+    ${TABS.map(t => {
+      const active = t === tab;
+      const ss = SIG_STYLE[t];
+      return `<button onclick="_buySignalTab='${t}';renderBuySignalsTabOnly()" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${active?(ss?ss.bg:'var(--accent2)'):'transparent'};color:${active?(ss?ss.color:'#fff'):'var(--muted)'};${active&&ss?'border:1px solid '+ss.border:'border:1px solid transparent'}">
+        ${t} <span style="font-size:10px;opacity:0.8">${counts[t]||0}</span>
+      </button>`;
+    }).join('')}
+  </div>`;
+
+  const cards = filtered.map(d => {
     const up = (d.changePct || 0) >= 0;
     const isUs = d.market === 'us';
     const sym = isUs ? '$' : '₩';
@@ -2042,7 +2063,7 @@ function renderBuySignalsCard(data) {
     return `<div onclick="selectStock('${d.ticker}')" style="background:${ss.bg};border-radius:10px;padding:12px 14px;cursor:pointer;border:1px solid ${ss.border};flex:1;min-width:140px;max-width:200px" onmouseover="this.style.borderColor='${ss.color}'" onmouseout="this.style.borderColor='${ss.border}'">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <span style="font-weight:700;font-size:13px">${def.displayTicker || d.ticker}</span>
-        <span style="font-size:10px;font-weight:800;color:${ss.color}">${ss.icon} ${ss.label}</span>
+        <span style="font-size:10px;font-weight:800;color:${ss.color}">${ss.icon} ${d.signal}</span>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${d.name || def.name || ''}</div>
       <div style="font-weight:700;color:${up?'var(--green)':'var(--red)'};font-size:14px">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
@@ -2054,19 +2075,25 @@ function renderBuySignalsCard(data) {
 
   return `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div class="home-section-title">AI 매수 신호</div>
+      <div class="home-section-title">매수신호</div>
       <div style="display:flex;align-items:center;gap:10px">
         ${updatedAt ? `<span style="font-size:10px;color:var(--muted)">${updatedAt} 기준</span>` : ''}
         <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">새로고침</button>
       </div>
     </div>
     ${loading
-      ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> AI가 전체 종목을 분석 중입니다... (약 10~20초)</div>`
-      : buys.length
-        ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:10px">${cards}</div>`
-        : `<div style="color:var(--muted);font-size:13px">현재 매수 신호 종목이 없습니다</div>`
+      ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> 전체 종목 분석 중... (약 10~20초)</div>`
+      : `${tabBar}${filtered.length
+          ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:10px">${cards}</div>`
+          : `<div style="color:var(--muted);font-size:13px">해당 신호 종목이 없습니다</div>`}`
     }
   </div>`;
+}
+
+let _buySignalsData = null;
+function renderBuySignalsTabOnly() {
+  const el = document.getElementById('buySignalsCard');
+  if (el && _buySignalsData) el.innerHTML = renderBuySignalsCard(_buySignalsData);
 }
 
 let _loadingBuySignals = false;
@@ -2087,6 +2114,7 @@ async function loadBuySignals(force = false) {
         // screener 아직 준비 중 — 15초 후 재시도
         if (attempt < 3) { await new Promise(r => setTimeout(r, 15000)); continue; }
       }
+      if (data.buys) { _buySignalsData = data; }
       if (el) el.innerHTML = renderBuySignalsCard(data.buys ? data : null);
       if (data.buys) { _loadingBuySignals = false; return; }
     } catch {}
@@ -2094,7 +2122,7 @@ async function loadBuySignals(force = false) {
   }
   if (el) el.innerHTML = `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div class="home-section-title">AI 매수 신호</div>
+      <div class="home-section-title">매수신호</div>
       <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">재시도</button>
     </div>
     <div style="color:var(--muted);font-size:13px">데이터 준비 중입니다. 잠시 후 재시도 버튼을 클릭하세요.</div>
