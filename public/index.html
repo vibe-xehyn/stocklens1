@@ -120,7 +120,7 @@
 
   .stock-header {
     display: flex; align-items: flex-start; justify-content: space-between;
-    margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 24px; gap: 16px; flex-wrap: nowrap;
   }
   .stock-title h1 { font-size: 28px; font-weight: 800; letter-spacing: -1px; }
   .stock-title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
@@ -910,16 +910,16 @@ function renderMain(def, q, chart, news) {
           시가총액 ${formatMarketCap(q.marketCap, isKr)} &nbsp;·&nbsp; 거래량 ${formatVolume(q.volume)}
           ${q.revenueGrowth ? `&nbsp;·&nbsp; 매출성장 <span class="${q.revenueGrowth>=0?'up':'down'}">${q.revenueGrowth>=0?'+':''}${q.revenueGrowth.toFixed(1)}%</span>` : ''}
         </div>
-      </div>
-      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-        <button class="watchlist-btn ${watchlist.has(def.id)?'watching':''}" onclick="toggleWatch('${def.id}',this)">
-          ${watchlist.has(def.id) ? '★ 관심종목' : '☆ 관심종목'}
-        </button>
-        <button onclick="showAddToPortfolio()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">포트폴리오 추가</button>
-        <button onclick="showAddAlert()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">알림 설정</button>
-        <div class="price-block" id="priceBlock">
-          ${priceBlockHTML(q, up, sym)}
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px">
+          <button class="watchlist-btn ${watchlist.has(def.id)?'watching':''}" onclick="toggleWatch('${def.id}',this)">
+            ${watchlist.has(def.id) ? '★ 관심종목' : '☆ 관심종목'}
+          </button>
+          <button onclick="showAddToPortfolio()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">포트폴리오 추가</button>
+          <button onclick="showAddAlert()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">알림 설정</button>
         </div>
+      </div>
+      <div class="price-block" id="priceBlock">
+        ${priceBlockHTML(q, up, sym)}
       </div>
     </div>
 
