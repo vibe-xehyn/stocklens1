@@ -316,10 +316,12 @@ async function stooqIndex(symbol, name) {
 async function krQuote(ticker) {
   const nv={Referer:'https://m.stock.naver.com/'}, pv={Referer:'https://finance.naver.com/'};
   const [basic, rtRes] = await Promise.all([
-    fetchJSON(`https://m.stock.naver.com/api/stock/${ticker}/basic`,nv),
+    fetchJSON(`https://m.stock.naver.com/api/stock/${ticker}/basic`,nv).catch(()=>({})),
     fetchJSON(`https://polling.finance.naver.com/api/realtime/domestic/stock/${ticker}`,pv).catch(()=>({datas:[]})),
   ]);
   const rt=rtRes.datas?.[0]??{}, info=basic.stockTradingInfo??{};
+  // 두 API 모두 실패한 경우 (price 없음) → 예외 발생
+  if (!rt.closePrice && !basic.closePrice) throw new Error('NAVER 주가 데이터 없음');
 
   // yfinance로 펀더멘탈 보완 (.KS 접미사)
   const yfPy = `
@@ -379,7 +381,7 @@ print(json.dumps({'pbr': pbr, 'bps': bps}))
   try { yfbs = await cached(`yfkrbs:${ticker}`, 86400_000, () => yfRun(yfBsPy)); } catch {}
 
   return {
-    name:basic.stockName, exchange:basic.stockExchangeType?.nameKor??'KOSPI', currency:'KRW',
+    name:basic.stockName??rt.stockName??ticker, exchange:basic.stockExchangeType?.nameKor??'KOSPI', currency:'KRW',
     price:   pKr(rt.closePrice??basic.closePrice),
     change:  pKr(rt.compareToPreviousClosePrice??basic.compareToPreviousClosePrice),
     changePct:parseFloat(rt.fluctuationsRatioRaw??rt.fluctuationsRatio??basic.fluctuationsRatio??'0'),
