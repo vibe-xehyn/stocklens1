@@ -3,7 +3,7 @@ import compression from 'compression';
 import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import OpenAI from 'openai';
 
 // Load .env file if present
@@ -2290,6 +2290,33 @@ async function fetchTopByMarketCap(limit = 700) {
 const _signalStore = new Map();
 let _signalsUpdatedAt = 0;
 let _signalsComputing = null; // 진행 중인 Promise (race 방지)
+const SIGNAL_CACHE_FILE = join(__dirname, '.signal-cache.json');
+const SIGNAL_CACHE_TTL = 4 * 60 * 60 * 1000; // 4시간
+
+function _saveSignalCache() {
+  try {
+    const data = { updatedAt: _signalsUpdatedAt, entries: [..._signalStore.entries()] };
+    writeFileSync(SIGNAL_CACHE_FILE, JSON.stringify(data), 'utf-8');
+  } catch(e) { console.log('  ⚠ 시그널 캐시 저장 실패:', e.message); }
+}
+
+function _loadSignalCache() {
+  try {
+    if (!existsSync(SIGNAL_CACHE_FILE)) return false;
+    const data = JSON.parse(readFileSync(SIGNAL_CACHE_FILE, 'utf-8'));
+    if (!data.updatedAt || !data.entries?.length) return false;
+    if (Date.now() - data.updatedAt > SIGNAL_CACHE_TTL) {
+      console.log('  ℹ 시그널 캐시 만료됨 — 재계산 필요');
+      return false;
+    }
+    _signalStore.clear();
+    for (const [k, v] of data.entries) _signalStore.set(k, v);
+    _signalsUpdatedAt = data.updatedAt;
+    const age = Math.round((Date.now() - data.updatedAt) / 60000);
+    console.log(`  ✓ 시그널 캐시 로드 (${_signalStore.size}개, ${age}분 전 계산)`);
+    return true;
+  } catch(e) { console.log('  ⚠ 시그널 캐시 로드 실패:', e.message); return false; }
+}
 
 async function computeSignalForTicker(ticker, market, opts = {}) {
   const isKr = market === 'kr';
@@ -2366,6 +2393,7 @@ async function precomputeAllSignals() {
       for (const r of _signalStore.values()) counts[r.signal] = (counts[r.signal]||0) + 1;
       const c = s => counts[s]||0;
       console.log(`  ✓ 시그널 사전 계산 완료 (${ok}/${universe.length}, 강력매수:${c('강력매수')} 매수:${c('매수')} 약매수:${c('약매수')} 중립:${c('중립')} 약매도:${c('약매도')} 매도:${c('매도')} 강력매도:${c('강력매도')})`);
+      _saveSignalCache(); // 디스크에 저장 (서버 재시작 시 재사용)
     } finally {
       _signalsComputing = null;
     }
@@ -2468,11 +2496,16 @@ async function warmupCache() {
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
   }, 8000);
 
-  // 5. 전체 시그널 사전 계산 (서버 시작 시 1회 + 이후 20분마다 갱신)
+  // 5. 전체 시그널 사전 계산 (파일 캐시 우선 로드, 만료 시 재계산, 이후 4시간마다 갱신)
   setTimeout(async () => {
-    try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
+    const loaded = _loadSignalCache();
+    if (!loaded) {
+      // 캐시 없거나 만료 → 즉시 계산
+      try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
+    }
+    // 4시간마다 갱신 (캐시 만료 시점에 맞춰 재계산)
     setInterval(() => {
       precomputeAllSignals().catch(e => console.log('  ⚠ 시그널 갱신 실패:', e.message));
-    }, 20 * 60 * 1000);
+    }, SIGNAL_CACHE_TTL);
   }, 25000);
 }
