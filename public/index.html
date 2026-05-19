@@ -7,84 +7,111 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   :root {
-    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
-    --border: #2e3248; --text: #e2e8f0; --muted: #8892a4;
-    --accent: #3b82f6; --green: #22c55e; --red: #ef4444; --yellow: #f59e0b;
+    --bg: #0d0f18; --surface: #161929; --surface2: #1e2236; --surface3: #252840;
+    --border: #2a2e45; --border2: #343858;
+    --text: #e1e7f0; --text2: #a0abc0; --muted: #6b7a95;
+    --accent: #4f8ef7; --accent2: #3b7aec;
+    --green: #22c55e; --green2: #16a34a;
+    --red: #ef4444; --red2: #b91c1c;
+    --yellow: #f59e0b;
+    --radius: 10px; --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 8px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', -apple-system, sans-serif; min-height: 100vh; }
+  html, body { overflow-x: hidden; max-width: 100vw; background: var(--bg); }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; min-height: 100vh; line-height: 1.5; }
+
+  /* ── 스크롤바 ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  /* 모바일: 가로 스크롤은 명시적으로 표시된 영역(.h-scroll)에서만 발생 */
+  .h-scroll {
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+  .h-scroll::-webkit-scrollbar { height: 6px; }
+  .h-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .h-scroll > * { scroll-snap-align: start; }
 
   header {
     background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 0 24px; display: flex; align-items: center; justify-content: space-between;
-    height: 60px; position: sticky; top: 0; z-index: 100;
+    padding: 0 20px; display: flex; align-items: center; justify-content: space-between;
+    height: 56px; position: sticky; top: 0; z-index: 100; gap: 12px;
   }
-  .logo { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
-  .logo span { color: var(--text); }
-  .market-bar { display: flex; gap: 20px; font-size: 12px; }
+  .logo { font-size: 18px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; flex-shrink: 0; }
+  .logo span { color: var(--text); font-weight: 600; }
+  .market-bar { display: flex; gap: 16px; font-size: 12px; }
   .market-item { display: flex; flex-direction: column; align-items: center; }
-  .market-name { color: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; }
-  .market-val { font-weight: 700; font-size: 13px; margin-top: 2px; }
+  .market-name { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .market-val { font-weight: 700; font-size: 12px; margin-top: 1px; }
   .up { color: var(--green); } .down { color: var(--red); }
-  .header-right { display: flex; align-items: center; gap: 12px; }
-  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .header-time { font-size: 12px; color: var(--muted); }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .market-status { display: flex; align-items: center; gap: 8px; }
+  .market-status-item { display: inline-flex; align-items: center; gap: 4px; }
+  .market-status-label { font-size: 10px; color: var(--text2); letter-spacing: 0.5px; font-weight: 700; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .header-time { font-size: 11px; color: var(--muted); }
   .refresh-btn {
-    padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+    padding: 5px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border);
     background: transparent; color: var(--muted); font-size: 12px; cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.18s;
   }
-  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(79,142,247,0.06); }
   .refresh-btn.spinning { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .container { display: grid; grid-template-columns: 260px 1fr; min-height: calc(100vh - 60px); }
+  .container { display: grid; grid-template-columns: 252px 1fr; min-height: calc(100vh - 56px); }
 
   aside {
     background: var(--surface); border-right: 1px solid var(--border);
-    padding: 16px 0; overflow-y: auto;
-    height: calc(100vh - 60px); position: sticky; top: 60px;
+    padding: 14px 0; overflow-y: auto;
+    height: calc(100vh - 56px); position: sticky; top: 56px;
   }
-  .sidebar-search { margin: 0 12px 12px; position: relative; }
+  .sidebar-search { margin: 0 10px 10px; position: relative; }
   .sidebar-search input {
     width: 100%; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 8px 12px 8px 32px; color: var(--text); font-size: 13px; outline: none;
+    border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text); font-size: 13px; outline: none;
+    transition: border-color 0.15s;
   }
-  .sidebar-search input:focus { border-color: var(--accent); }
-  .sidebar-search .si { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
-  .market-tabs { display: flex; margin: 0 12px 12px; gap: 4px; }
+  .sidebar-search input::placeholder { color: var(--muted); }
+  .sidebar-search input:focus { border-color: var(--accent); background: var(--surface3); }
+  .market-tabs { display: flex; margin: 0 10px 10px; gap: 3px; background: var(--surface2); border-radius: var(--radius-sm); padding: 3px; }
   .market-tab {
-    flex: 1; padding: 6px; font-size: 12px; font-weight: 600; text-align: center;
-    border-radius: 6px; cursor: pointer; border: 1px solid var(--border);
-    background: transparent; color: var(--muted); transition: all 0.2s;
+    flex: 1; padding: 5px; font-size: 11px; font-weight: 700; text-align: center;
+    border-radius: 4px; cursor: pointer; border: none;
+    background: transparent; color: var(--muted); transition: all 0.18s;
   }
-  .market-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .search-results { }
+  .market-tab.active { background: var(--accent2); color: #fff; }
+  .market-tab:not(.active):hover { color: var(--text); }
   .search-result-item {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 9px 16px; cursor: pointer; transition: background 0.15s;
-    border-left: 3px solid transparent;
+    padding: 9px 14px; cursor: pointer; transition: background 0.12s;
+    border-left: 2px solid transparent;
   }
   .search-result-item:hover { background: var(--surface2); border-left-color: var(--accent); }
-  .result-type { font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 700; margin-left: 5px; }
-  .type-ETF { background: rgba(245,158,11,0.15); color: #f59e0b; }
-  .type-EQUITY, .type-stock { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .result-type { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700; margin-left: 5px; }
+  .type-ETF { background: rgba(245,158,11,0.12); color: #f59e0b; }
+  .type-EQUITY, .type-stock { background: rgba(79,142,247,0.12); color: #7bb3fa; }
   .section-label {
     font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase;
-    letter-spacing: 1px; padding: 8px 16px 4px;
+    letter-spacing: 0.8px; padding: 10px 14px 4px;
   }
   .stock-item {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 16px; cursor: pointer; transition: background 0.15s;
-    border-left: 3px solid transparent;
+    padding: 9px 14px; cursor: pointer; transition: background 0.12s;
+    border-left: 2px solid transparent;
   }
   .stock-item:hover { background: var(--surface2); }
   .stock-item.active { background: var(--surface2); border-left-color: var(--accent); }
-  .stock-left .ticker { font-size: 13px; font-weight: 700; }
+  .stock-left .ticker { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; }
   .stock-left .sname { font-size: 11px; color: var(--muted); margin-top: 1px; }
   .stock-right { text-align: right; }
-  .stock-price { font-size: 13px; font-weight: 600; }
+  .stock-price { font-size: 12px; font-weight: 600; }
   .stock-chg { font-size: 11px; margin-top: 1px; }
   .skeleton { background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%); background-size: 200%; animation: shimmer 1.5s infinite; border-radius: 4px; }
   @keyframes shimmer { to { background-position: -200% 0; } }
@@ -113,27 +140,28 @@
     background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: var(--accent);
   }
 
-  .cards-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-  .card-label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-  .card-value { font-size: 22px; font-weight: 700; margin-top: 6px; }
-  .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .cards-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .card-label { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
+  .card-value { font-size: 20px; font-weight: 700; margin-top: 5px; letter-spacing: -0.5px; }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
   .indicator-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
   .indicator-fill { height: 100%; border-radius: 2px; transition: width 0.6s; }
 
   .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
   .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
 
-  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .chart-title { font-size: 15px; font-weight: 700; }
-  .chart-tabs { display: flex; gap: 4px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .chart-title { font-size: 14px; font-weight: 700; letter-spacing: -0.2px; }
+  .chart-tabs { display: flex; gap: 3px; background: var(--surface2); border-radius: var(--radius-sm); padding: 2px; }
   .chart-tab {
-    padding: 4px 10px; font-size: 12px; font-weight: 600; border-radius: 6px;
-    cursor: pointer; border: 1px solid var(--border); background: transparent;
-    color: var(--muted); transition: all 0.2s;
+    padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 4px;
+    cursor: pointer; border: none; background: transparent;
+    color: var(--muted); transition: all 0.15s;
   }
-  .chart-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .chart-tab.active { background: var(--accent2); color: #fff; }
+  .chart-tab:not(.active):hover { color: var(--text); }
 
   .indicators-table { width: 100%; border-collapse: collapse; }
   .indicators-table th {
@@ -178,23 +206,28 @@
   .watchlist-btn.watching { background: rgba(245,158,11,0.1); border-color: var(--yellow); color: var(--yellow); }
 
   /* Home Screen */
-  .home-wrap { padding: 32px 24px; }
-  .home-hero { text-align: center; padding: 48px 0 40px; }
-  .home-hero h1 { font-size: 48px; font-weight: 900; letter-spacing: -2px; margin-bottom: 12px; }
+  .home-wrap { padding: 28px 24px; }
+  .home-hero { text-align: center; padding: 32px 0 28px; }
+  .home-hero h1 { font-size: 40px; font-weight: 900; letter-spacing: -2px; margin-bottom: 8px; }
   .home-hero h1 span { color: var(--accent); }
-  .home-hero p { color: var(--muted); font-size: 16px; }
-  .home-indices { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; margin-bottom: 32px; }
+  .home-hero p { color: var(--muted); font-size: 14px; }
+  .home-indices { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 24px; }
   @media(max-width:900px){ .home-indices { grid-template-columns: repeat(3,1fr); } }
-  .home-idx-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; }
-  .home-idx-name { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
-  .home-idx-val { font-size: 20px; font-weight: 800; }
-  .home-idx-chg { font-size: 12px; font-weight: 600; margin-top: 4px; }
-  .home-stocks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+  .home-idx-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; text-align: center; box-shadow: var(--shadow);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .home-idx-card:hover { border-color: var(--border2); box-shadow: var(--shadow-md); }
+  .home-idx-name { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .home-idx-val { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
+  .home-idx-chg { font-size: 12px; font-weight: 600; margin-top: 3px; }
+  .home-stocks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
   @media(max-width:700px){ .home-stocks-grid { grid-template-columns: 1fr; } }
-  .home-section-title { font-size: 16px; font-weight: 800; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-  .home-stock-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: opacity 0.15s; }
+  .home-section-title { font-size: 14px; font-weight: 800; margin-bottom: 14px; color: var(--text); letter-spacing: -0.2px; }
+  .home-stock-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.12s; margin: 0 -4px; padding-left: 4px; padding-right: 4px; border-radius: 4px; }
   .home-stock-row:last-child { border-bottom: none; }
-  .home-stock-row:hover { opacity: 0.75; }
+  .home-stock-row:hover { background: var(--surface2); border-bottom-color: transparent; }
   .home-stock-info { display: flex; flex-direction: column; }
   .home-stock-ticker { font-size: 13px; font-weight: 700; }
   .home-stock-name { font-size: 11px; color: var(--muted); }
@@ -225,9 +258,13 @@
     display: inline-flex; align-items: center; gap: 6px;
     padding: 6px 16px; border-radius: 20px; font-size: 16px; font-weight: 800; letter-spacing: 0.5px;
   }
-  .signal-buy { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
-  .signal-neutral { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
-  .signal-sell { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+  .signal-strong-buy  { background: rgba(34,197,94,0.25);  color: #16a34a; border: 1px solid rgba(34,197,94,0.5);  font-weight:800; }
+  .signal-buy         { background: rgba(34,197,94,0.15);  color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+  .signal-weak-buy    { background: rgba(134,239,172,0.12); color: #86efac; border: 1px solid rgba(134,239,172,0.3); }
+  .signal-neutral     { background: rgba(245,158,11,0.15);  color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+  .signal-weak-sell   { background: rgba(251,146,60,0.12);  color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
+  .signal-sell        { background: rgba(239,68,68,0.15);   color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+  .signal-strong-sell { background: rgba(239,68,68,0.25);   color: #b91c1c; border: 1px solid rgba(239,68,68,0.5);  font-weight:800; }
   .confidence-bar-wrap { flex: 1; max-width: 120px; }
   .confidence-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; display: flex; justify-content: space-between; }
   .confidence-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
@@ -321,6 +358,32 @@
     .stock-header { margin-bottom: 16px; }
     .mobile-drawer { top: 52px; }
     .mobile-search-drawer { top: 52px; }
+
+    /* 인라인 그리드를 모바일에서 1열로 강제 */
+    div[style*="grid-template-columns:1fr 1fr"],
+    div[style*="grid-template-columns: 1fr 1fr"],
+    div[style*="grid-template-columns:repeat(3,1fr)"],
+    div[style*="grid-template-columns:repeat(3, 1fr)"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* 카드 strip(매수신호/스크리너): wrap 대신 가로 스크롤 strip으로 전환 */
+    .card-strip {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scroll-snap-type: x mandatory;
+      padding-bottom: 6px;
+    }
+    .card-strip > * {
+      flex: 0 0 auto !important;
+      scroll-snap-align: start;
+    }
+    .card-strip::-webkit-scrollbar { height: 4px; }
+    .card-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* 와이드 테이블: 컨테이너 안에서만 가로 스크롤 (모바일에서 컬럼 압축 방지) */
+    .h-scroll-table { min-width: 560px; }
   }
 </style>
 </head>
@@ -332,7 +395,10 @@
     <div class="market-item"><span class="market-name">로딩중</span><span class="market-val">...</span></div>
   </div>
   <div class="header-right">
-    <div class="live-dot"></div>
+    <div class="market-status" title="장 상태">
+      <span class="market-status-item"><span class="market-status-label">KR</span><span class="live-dot" id="dotKr"></span></span>
+      <span class="market-status-item"><span class="market-status-label">US</span><span class="live-dot" id="dotUs"></span></span>
+    </div>
     <span class="header-time" id="headerTime"></span>
     <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">↻ 새로고침</button>
   </div>
@@ -341,7 +407,7 @@
 <div class="container">
   <aside>
     <div class="sidebar-search">
-      <span class="si">&#128269;</span>
+      
       <input type="text" id="searchInput" placeholder="종목명 / 티커 검색..." oninput="onSearchInput(this.value)" autocomplete="off">
     </div>
     <div class="market-tabs">
@@ -479,6 +545,8 @@ async function api(path) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 let ratesCache = {};
+let indicesCache = [];
+let macroCache = {};
 
 async function loadRates() {
   try {
@@ -518,13 +586,14 @@ async function fetchTradingStatus() {
 }
 
 function currentInterval() {
-  const isKr = currentDef.market === 'kr';
-  const active = isKr ? tradingStatus.kr : tradingStatus.us;
-  return active ? 5_000 : 60_000;
+  const krActive = tradingStatus.kr;
+  const usActive = tradingStatus.us;
+  // 어느 쪽이든 장중이면 15초, 둘 다 장마감이면 90초
+  return (krActive || usActive) ? 15_000 : 90_000;
 }
 
 function scheduleAutoRefresh() {
-  clearInterval(autoRefreshTimer);
+  clearTimeout(autoRefreshTimer);
 
   const tick = async () => {
     await fetchTradingStatus();
@@ -532,7 +601,6 @@ function scheduleAutoRefresh() {
     renderSidebar();
     renderPriceBlock(currentDef);
     updateTradingBadge();
-    // 다음 틱 간격을 동적으로 결정
     autoRefreshTimer = setTimeout(tick, currentInterval());
   };
 
@@ -542,12 +610,17 @@ function scheduleAutoRefresh() {
 function updateTradingBadge() {
   const krActive = tradingStatus.kr;
   const usActive = tradingStatus.us;
-  const dot = document.querySelector('.live-dot');
-  const isKr = currentDef.market === 'kr';
-  const active = isKr ? krActive : usActive;
-  if (dot) {
-    dot.style.background = active ? 'var(--green)' : 'var(--red)';
-    dot.title = active ? '장중' : '장마감';
+  const dotKr = document.getElementById('dotKr');
+  const dotUs = document.getElementById('dotUs');
+  if (dotKr) {
+    dotKr.style.background = krActive ? 'var(--green)' : 'var(--red)';
+    dotKr.style.animation = krActive ? 'pulse 2s infinite' : 'none';
+    dotKr.title = krActive ? '한국 장중' : '한국 장마감';
+  }
+  if (dotUs) {
+    dotUs.style.background = usActive ? 'var(--green)' : 'var(--red)';
+    dotUs.style.animation = usActive ? 'pulse 2s infinite' : 'none';
+    dotUs.title = usActive ? '미국 장중' : '미국 장마감';
   }
   // 기존 뱃지 제거
   const old = document.getElementById('tradingBadge');
@@ -556,6 +629,7 @@ function updateTradingBadge() {
 
 async function refreshAll() {
   const btn = document.getElementById('refreshBtn');
+  if (btn.classList.contains('spinning')) return; // 중복 클릭 방지
   btn.classList.add('spinning');
   clearTimeout(autoRefreshTimer);
   delete quoteCache[currentDef.id];
@@ -571,8 +645,8 @@ async function refreshAll() {
 // ── 지수 로딩 ─────────────────────────────────────────────────────────────────
 async function loadIndices() {
   try {
-    const indices = await api('/api/indices');
-    document.getElementById('marketBar').innerHTML = indices.map(m => {
+    indicesCache = await api('/api/indices');
+    document.getElementById('marketBar').innerHTML = indicesCache.map(m => {
       const up = m.change >= 0;
       return `<div class="market-item" onclick="viewIndex(${JSON.stringify(m).replace(/"/g,'&quot;')})" style="cursor:pointer;padding:4px 6px;border-radius:6px;transition:background 0.15s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
         <span class="market-name">${m.name}</span>
@@ -669,7 +743,7 @@ function onSearchInput(q) {
 async function doSearch(q) {
   const el = document.getElementById('searchResultsList');
   try {
-    const results = await api(`/api/search?q=${encodeURIComponent(q)}&market=${currentMarket}`);
+    const results = await api(`/api/search?q=${encodeURIComponent(q)}&market=all`);
     if (!results.length) {
       el.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--muted)">검색 결과 없음</div>`;
       return;
@@ -812,8 +886,8 @@ function renderMain(def, q, chart, news) {
         <button class="watchlist-btn ${watchlist.has(def.id)?'watching':''}" onclick="toggleWatch('${def.id}',this)">
           ${watchlist.has(def.id) ? '★ 관심종목' : '☆ 관심종목'}
         </button>
-        <button onclick="showAddToPortfolio()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">💼 포트폴리오 추가</button>
-        <button onclick="showAddAlert()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">🔔 알림 설정</button>
+        <button onclick="showAddToPortfolio()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">포트폴리오 추가</button>
+        <button onclick="showAddAlert()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">알림 설정</button>
         <div class="price-block" id="priceBlock">
           ${priceBlockHTML(q, up, sym)}
         </div>
@@ -823,7 +897,7 @@ function renderMain(def, q, chart, news) {
     <!-- AI Analysis -->
     <div class="ai-card" id="aiCard">
       <div class="ai-header">
-        <div class="ai-title">🤖 AI 투자 의견 <span class="ai-badge">Groq AI</span></div>
+        <div class="ai-title">AI 투자 의견 <span class="ai-badge">Groq AI</span></div>
       </div>
       <div class="ai-loading"><div class="spinner"></div> AI 분석 중... (기술적 지표 및 뉴스 종합 분석)</div>
     </div>
@@ -867,7 +941,7 @@ function renderMain(def, q, chart, news) {
 
       <!-- 가치 지표 -->
       <div class="card">
-        <div class="chart-title" style="margin-bottom:12px">💰 가치 지표</div>
+        <div class="chart-title" style="margin-bottom:12px">가치 지표</div>
         <table class="indicators-table">
           <tr><th>지표</th><th style="text-align:right">값</th><th style="text-align:right">평가</th></tr>
           ${indRow('PER (trailing)', q.per != null ? q.per.toFixed(1)+'x' : null, 'per', q.per)}
@@ -882,7 +956,7 @@ function renderMain(def, q, chart, news) {
 
       <!-- 수익성 지표 -->
       <div class="card">
-        <div class="chart-title" style="margin-bottom:12px">📈 수익성 지표</div>
+        <div class="chart-title" style="margin-bottom:12px">수익성 지표</div>
         <table class="indicators-table">
           <tr><th>지표</th><th style="text-align:right">값</th><th style="text-align:right">평가</th></tr>
           ${indRow('ROE', q.roe != null ? q.roe.toFixed(1)+'%' : null, 'roe', q.roe)}
@@ -896,7 +970,7 @@ function renderMain(def, q, chart, news) {
 
       <!-- 안전성 지표 -->
       <div class="card">
-        <div class="chart-title" style="margin-bottom:12px">🛡️ 안전성 지표</div>
+        <div class="chart-title" style="margin-bottom:12px">안전성 지표</div>
         <table class="indicators-table">
           <tr><th>지표</th><th style="text-align:right">값</th><th style="text-align:right">평가</th></tr>
           ${indRow('부채비율 (D/E)', q.debtToEquity != null ? q.debtToEquity.toFixed(1) : null, 'debtRatio', q.debtToEquity)}
@@ -910,7 +984,7 @@ function renderMain(def, q, chart, news) {
 
       <!-- 시장/기타 -->
       <div class="card">
-        <div class="chart-title" style="margin-bottom:12px">📊 시장 정보</div>
+        <div class="chart-title" style="margin-bottom:12px">시장 정보</div>
         <table class="indicators-table">
           <tr><th>지표</th><th style="text-align:right">값</th><th style="text-align:right">평가</th></tr>
           ${indRow('시가총액', formatLargeNum(q.marketCap, isKr), '', null)}
@@ -938,25 +1012,25 @@ function renderMain(def, q, chart, news) {
 
     <!-- 분기 실적 -->
     <div class="card" style="margin-bottom:24px">
-      <div class="chart-title" style="margin-bottom:12px">📊 분기 실적 & 애널리스트 추정</div>
+      <div class="chart-title" style="margin-bottom:12px">분기 실적 & 애널리스트 추정</div>
       <div id="earningsContainer"><div class="loading-overlay" style="min-height:60px"><div class="spinner"></div></div></div>
     </div>
 
     <!-- 동종업계 비교 -->
     <div class="card" style="margin-bottom:24px">
-      <div class="chart-title" style="margin-bottom:12px">⚖️ 동종업계 비교</div>
+      <div class="chart-title" style="margin-bottom:12px">동종업계 비교</div>
       <div id="peersContainer"><div class="loading-overlay" style="min-height:60px"><div class="spinner"></div></div></div>
     </div>
 
     <!-- 수급 분석 -->
     <div class="card" style="margin-bottom:24px">
-      <div class="chart-title" style="margin-bottom:12px">🏦 수급 / 주주 분석</div>
+      <div class="chart-title" style="margin-bottom:12px">수급 / 주주 분석</div>
       <div id="flowContainer"><div class="loading-overlay" style="min-height:60px"><div class="spinner"></div></div></div>
     </div>
 
     <!-- 뉴스 -->
     <div class="card" style="margin-bottom:24px">
-      <div class="chart-title" style="margin-bottom:4px">📰 관련 뉴스</div>
+      <div class="chart-title" style="margin-bottom:4px">관련 뉴스</div>
       <div id="newsContainer"><div class="loading-overlay" style="min-height:80px"><div class="spinner"></div></div></div>
     </div>
   `;
@@ -1065,8 +1139,8 @@ function renderPeersHTML(d, sym) {
 
   return `<div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px">섹터: ${d.sector||'-'} / 업종: ${d.industry||'-'}</div>
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <div class="h-scroll">
+      <table class="h-scroll-table" style="width:100%;border-collapse:collapse;font-size:12px">
         <thead>
           <tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase">
             <th style="text-align:left;padding:6px 8px">종목</th>
@@ -1238,13 +1312,29 @@ async function loadAIAnalysis(def) {
     analysisCache[def.ticker] = { data, ts: Date.now() };
     const q = quoteCache[def.id] || {};
     const up = (q.changePct ?? 0) >= 0;
-    const sigClass = { '매수': 'signal-buy', '중립': 'signal-neutral', '매도': 'signal-sell' }[data.signal] || 'signal-neutral';
-    const sigIcon = { '매수': '▲', '중립': '◆', '매도': '▼' }[data.signal] || '◆';
-    const sigSub = { '매수': '지금 매수 고려', '중립': '관망 — 추가 확인 후 진입', '매도': '보유 시 매도 고려' }[data.signal] || '관망';
+    const sigClass = {
+      '강력매수': 'signal-strong-buy', '매수': 'signal-buy', '약매수': 'signal-weak-buy',
+      '중립': 'signal-neutral',
+      '약매도': 'signal-weak-sell', '매도': 'signal-sell', '강력매도': 'signal-strong-sell'
+    }[data.signal] || 'signal-neutral';
+    const sigIcon = {
+      '강력매수': '▲▲', '매수': '▲', '약매수': '△',
+      '중립': '◆',
+      '약매도': '▽', '매도': '▼', '강력매도': '▼▼'
+    }[data.signal] || '◆';
+    const sigSub = {
+      '강력매수': '강한 매수 신호 — 적극 매수 고려',
+      '매수': '매수 우위 — 분할 매수 고려',
+      '약매수': '소폭 매수 우위 — 소량 진입 고려',
+      '중립': '관망 — 추가 신호 확인 후 진입',
+      '약매도': '소폭 매도 우위 — 신규 진입 자제',
+      '매도': '매도 우위 — 비중 축소 고려',
+      '강력매도': '강한 매도 신호 — 손절/매도 고려'
+    }[data.signal] || '관망';
     const confColor = data.confidence >= 70 ? '#22c55e' : data.confidence >= 50 ? '#f59e0b' : '#ef4444';
     el.innerHTML = `
       <div class="ai-header">
-        <div class="ai-title">🤖 AI 투자 의견 <span class="ai-badge">Groq AI</span></div>
+        <div class="ai-title">AI 투자 의견 <span class="ai-badge">Groq AI</span></div>
         <div class="ai-signal">
           <div>
             <span class="signal-pill ${sigClass}">${sigIcon} ${data.signal}</span>
@@ -1265,15 +1355,15 @@ async function loadAIAnalysis(def) {
       </div>` : ''}
       <div class="ai-summary">${data.summary}</div>
       <div class="ai-breakdown">
-        ${data.technical ? `<div class="ai-reason"><div class="ai-reason-title">📊 기술적 분석</div><div class="ai-reason-text">${data.technical}</div></div>` : ''}
-        ${data.fundamental ? `<div class="ai-reason"><div class="ai-reason-title">💰 펀더멘탈</div><div class="ai-reason-text">${data.fundamental}</div></div>` : ''}
-        ${data.flow ? `<div class="ai-reason"><div class="ai-reason-title">🏦 수급/주주</div><div class="ai-reason-text">${data.flow}</div></div>` : ''}
-        ${data.sentiment ? `<div class="ai-reason"><div class="ai-reason-title">📰 뉴스/심리</div><div class="ai-reason-text">${data.sentiment}</div></div>` : ''}
-        ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">⚠️ 리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
+        ${data.technical ? `<div class="ai-reason"><div class="ai-reason-title">기술적 분석</div><div class="ai-reason-text">${data.technical}</div></div>` : ''}
+        ${data.fundamental ? `<div class="ai-reason"><div class="ai-reason-title">펀더멘탈</div><div class="ai-reason-text">${data.fundamental}</div></div>` : ''}
+        ${data.flow ? `<div class="ai-reason"><div class="ai-reason-title">수급/주주</div><div class="ai-reason-text">${data.flow}</div></div>` : ''}
+        ${data.sentiment ? `<div class="ai-reason"><div class="ai-reason-title">뉴스/심리</div><div class="ai-reason-text">${data.sentiment}</div></div>` : ''}
+        ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
       </div>`;
   } catch(e) {
     if (el) el.innerHTML = `
-      <div class="ai-header"><div class="ai-title">🤖 AI 투자 의견 <span class="ai-badge">Groq AI</span></div></div>
+      <div class="ai-header"><div class="ai-title">AI 투자 의견 <span class="ai-badge">Groq AI</span></div></div>
       <div class="ai-error">${e.message.includes('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY 환경변수를 설정해주세요.' : 'AI 분석을 불러올 수 없습니다: ' + e.message}</div>`;
   }
 }
@@ -1677,7 +1767,7 @@ function addToPortfolio(def, price, qty) {
 function removeFromPortfolio(idx) {
   portfolio.splice(idx, 1);
   savePortfolio();
-  renderHome();
+  renderHome({ skipFetch: true });
 }
 
 function addAlert(def, targetPrice, type) {
@@ -1689,7 +1779,7 @@ function addAlert(def, targetPrice, type) {
 function removeAlert(idx) {
   priceAlerts.splice(idx, 1);
   saveAlerts();
-  renderHome();
+  renderHome({ skipFetch: true });
 }
 
 function checkAlerts(allStocks) {
@@ -1699,7 +1789,7 @@ function checkAlerts(allStocks) {
     const hit = alert.type === 'above' ? stock.price >= alert.targetPrice : stock.price <= alert.targetPrice;
     if (hit) {
       const sym = alert.market === 'kr' ? '₩' : '$';
-      const notif = `🔔 ${alert.name}: ${alert.type==='above'?'목표가 도달':'손절가 도달'} (${sym}${alert.targetPrice.toLocaleString()})`;
+      const notif = `${alert.name}: ${alert.type==='above'?'목표가 도달':'손절가 도달'} (${sym}${alert.targetPrice.toLocaleString()})`;
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('StockLens 알림', { body: notif });
       }
@@ -1707,14 +1797,21 @@ function checkAlerts(allStocks) {
   });
 }
 
-async function renderHome() {
+async function renderHome(opts = {}) {
   document.getElementById('mainContent').innerHTML =
     `<div class="loading-overlay"><div class="spinner"></div> 시장 데이터 로딩 중...</div>`;
 
-  // 지수 + 매크로 병렬 로딩
-  let indices = [], macro = {};
-  try { [indices, macro] = await Promise.all([api('/api/indices'), api('/api/macro')]); } catch {
-    try { indices = await api('/api/indices'); } catch {}
+  // 캐시가 있으면 재사용, 없으면 fetch (skipFetch=true이면 캐시만 사용)
+  let indices = indicesCache;
+  let macro = macroCache;
+  if (!opts.skipFetch) {
+    try {
+      [indices, macro] = await Promise.all([api('/api/indices'), api('/api/macro')]);
+      if (indices?.length) indicesCache = indices;
+      if (macro && Object.keys(macro).length) macroCache = macro;
+    } catch {
+      // 실패 시 기존 캐시 사용
+    }
   }
 
   const all = STOCK_DEFS.map(d => ({ ...d, ...(sidebarCache[d.id] || {}) })).filter(d => d.price);
@@ -1765,12 +1862,12 @@ async function renderHome() {
 
       <!-- 등락 상위 -->
       <div class="home-stocks-grid" style="margin-bottom:24px">
-        ${stocksSection('🔺 상승 상위', gainers)}
-        ${stocksSection('🔻 하락 상위', losers)}
+        ${stocksSection('상승 상위', gainers)}
+        ${stocksSection('하락 상위', losers)}
       </div>
 
       <!-- 한국 주식 전체 -->
-      <div class="home-section-title" style="margin-bottom:12px">🇰🇷 한국 주식</div>
+      <div class="home-section-title" style="margin-bottom:12px">한국 주식</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
         ${chunkArray(krAll, Math.ceil(krAll.length/3)).map(group =>
           `<div class="card" style="padding:12px 16px">${group.map(stockRowHTML).join('')}</div>`
@@ -1781,7 +1878,7 @@ async function renderHome() {
       ${renderMacroDashboard(macro)}
 
       <!-- 미국 주식 전체 -->
-      <div class="home-section-title" style="margin-bottom:12px">🇺🇸 미국 주식</div>
+      <div class="home-section-title" style="margin-bottom:12px">미국 주식</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
         ${chunkArray(usAll, Math.ceil(usAll.length/3)).map(group =>
           `<div class="card" style="padding:12px 16px">${group.map(stockRowHTML).join('')}</div>`
@@ -1821,7 +1918,7 @@ function renderMacroDashboard(m) {
   const vixLevel = vix ? (vix.value < 15 ? {label:'극도 탐욕',color:'var(--green)'} : vix.value < 20 ? {label:'탐욕',color:'#86efac'} : vix.value < 30 ? {label:'중립',color:'var(--yellow)'} : vix.value < 40 ? {label:'공포',color:'var(--red)'} : {label:'극도 공포',color:'#ef4444'}) : null;
 
   return `<div class="card" style="margin-bottom:24px">
-    <div class="home-section-title" style="margin-bottom:12px">🌐 글로벌 매크로 대시보드</div>
+    <div class="home-section-title" style="margin-bottom:12px">글로벌 매크로 대시보드</div>
     ${vixLevel && vix ? `<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;background:var(--surface2);border-radius:10px;padding:12px 16px">
       <div>
         <div style="font-size:10px;color:var(--muted);font-weight:700">VIX 공포/탐욕 지수</div>
@@ -1882,7 +1979,7 @@ function renderPortfolioCard(allStocks) {
   }, 0);
 
   return `<div class="card">
-    <div class="home-section-title" style="margin-bottom:12px">💼 포트폴리오</div>
+    <div class="home-section-title" style="margin-bottom:12px">포트폴리오</div>
     ${portfolio.length ? `
       <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:12px">
         <div style="font-size:11px;color:var(--muted)">총 손익 (원화 환산)</div>
@@ -1906,16 +2003,16 @@ function renderAlertsCard(allStocks) {
         <div style="font-size:11px;color:var(--muted)">${sym(a)}${a.targetPrice.toLocaleString()} | 현재 ${cur ? sym(a)+cur.toLocaleString(undefined,{maximumFractionDigits:2}) : '로딩'}</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        ${hit ? '<span style="font-size:11px;color:var(--green);font-weight:700">🔔 달성!</span>' : ''}
+        ${hit ? '<span style="font-size:11px;color:var(--green);font-weight:700">달성!</span>' : ''}
         <button onclick="removeAlert(${i})" style="font-size:10px;color:var(--red);background:none;border:none;cursor:pointer">삭제</button>
       </div>
     </div>`;
   });
 
   return `<div class="card">
-    <div class="home-section-title" style="margin-bottom:12px">🔔 가격 알림</div>
+    <div class="home-section-title" style="margin-bottom:12px">가격 알림</div>
     ${priceAlerts.length ? rows.join('') : '<div style="color:var(--muted);font-size:13px;padding:8px 0">종목 상세에서 알림을 설정하세요</div>'}
-    <button onclick="requestNotificationPermission()" style="margin-top:12px;width:100%;padding:8px;border-radius:6px;border:1px dashed var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer">🔔 브라우저 알림 허용</button>
+    <button onclick="requestNotificationPermission()" style="margin-top:12px;width:100%;padding:8px;border-radius:6px;border:1px dashed var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer">브라우저 알림 허용</button>
   </div>`;
 }
 
@@ -1924,27 +2021,33 @@ function renderBuySignalsCard(data) {
   const updatedAt = data?.updatedAt ? new Date(data.updatedAt).toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '';
   const buys = data?.buys || [];
 
+  const SIG_STYLE = {
+    '강력매수': { border:'rgba(22,163,74,0.5)',  bg:'rgba(22,163,74,0.08)',  color:'#16a34a', label:'강력매수', icon:'▲▲' },
+    '매수':     { border:'rgba(34,197,94,0.3)',  bg:'rgba(34,197,94,0.05)',  color:'#22c55e', label:'매수',     icon:'▲' },
+    '약매수':   { border:'rgba(134,239,172,0.3)',bg:'rgba(134,239,172,0.04)',color:'#86efac', label:'약매수',   icon:'△' },
+  };
   const cards = buys.map(d => {
     const up = (d.changePct || 0) >= 0;
     const isUs = d.market === 'us';
     const sym = isUs ? '$' : '₩';
-    const confColor = d.confidence >= 80 ? 'var(--green)' : d.confidence >= 65 ? '#f59e0b' : 'var(--muted)';
+    const ss = SIG_STYLE[d.signal] || SIG_STYLE['약매수'];
     const def = STOCK_DEFS.find(s => s.id === d.ticker) || {};
-    return `<div onclick="selectStock('${d.ticker}')" style="background:var(--surface2);border-radius:10px;padding:12px 14px;cursor:pointer;min-width:150px;border:1px solid rgba(34,197,94,0.2);flex:1;min-width:140px;max-width:200px" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='rgba(34,197,94,0.2)'">
+    return `<div onclick="selectStock('${d.ticker}')" style="background:${ss.bg};border-radius:10px;padding:12px 14px;cursor:pointer;border:1px solid ${ss.border};flex:1;min-width:140px;max-width:200px" onmouseover="this.style.borderColor='${ss.color}'" onmouseout="this.style.borderColor='${ss.border}'">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <span style="font-weight:700;font-size:13px">${def.displayTicker || d.ticker}</span>
-        <span style="font-size:10px;font-weight:700;color:${confColor}">확신 ${d.confidence}%</span>
+        <span style="font-size:10px;font-weight:800;color:${ss.color}">${ss.icon} ${ss.label}</span>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${d.name || def.name || ''}</div>
       <div style="font-weight:700;color:${up?'var(--green)':'var(--red)'};font-size:14px">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
       <div style="font-size:11px;color:${up?'var(--green)':'var(--red)'};margin-bottom:6px">${up?'+':''}${(d.changePct||0).toFixed(2)}%</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px">확신 ${d.confidence}%</div>
       <div style="font-size:11px;color:var(--muted);line-height:1.4;border-top:1px solid var(--border);padding-top:6px">${d.reason || ''}</div>
     </div>`;
   }).join('');
 
   return `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div class="home-section-title">🤖 AI 매수 신호</div>
+      <div class="home-section-title">AI 매수 신호</div>
       <div style="display:flex;align-items:center;gap:10px">
         ${updatedAt ? `<span style="font-size:10px;color:var(--muted)">${updatedAt} 기준</span>` : ''}
         <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">새로고침</button>
@@ -1953,15 +2056,18 @@ function renderBuySignalsCard(data) {
     ${loading
       ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> AI가 전체 종목을 분석 중입니다... (약 10~20초)</div>`
       : buys.length
-        ? `<div style="display:flex;flex-wrap:wrap;gap:10px">${cards}</div>`
+        ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:10px">${cards}</div>`
         : `<div style="color:var(--muted);font-size:13px">현재 매수 신호 종목이 없습니다</div>`
     }
   </div>`;
 }
 
+let _loadingBuySignals = false;
 async function loadBuySignals(force = false) {
+  if (_loadingBuySignals && !force) return;
+  _loadingBuySignals = true;
   const el = document.getElementById('buySignalsCard');
-  if (!el) return;
+  if (!el) { _loadingBuySignals = false; return; }
   el.innerHTML = renderBuySignalsCard(null);
 
   const url = force ? '/api/buy-signals?force=1' : '/api/buy-signals';
@@ -1975,17 +2081,18 @@ async function loadBuySignals(force = false) {
         if (attempt < 3) { await new Promise(r => setTimeout(r, 15000)); continue; }
       }
       if (el) el.innerHTML = renderBuySignalsCard(data.buys ? data : null);
-      if (data.buys) return;
+      if (data.buys) { _loadingBuySignals = false; return; }
     } catch {}
     if (attempt < 3) await new Promise(r => setTimeout(r, 10000));
   }
   if (el) el.innerHTML = `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div class="home-section-title">🤖 AI 매수 신호</div>
+      <div class="home-section-title">AI 매수 신호</div>
       <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">재시도</button>
     </div>
     <div style="color:var(--muted);font-size:13px">데이터 준비 중입니다. 잠시 후 재시도 버튼을 클릭하세요.</div>
   </div>`;
+  _loadingBuySignals = false;
 }
 
 function renderScreenerCard(allStocks) {
@@ -2001,7 +2108,7 @@ function renderScreenerCard(allStocks) {
   const quoteAll = allStocks.map(s => ({ ...s, ...(quoteCache[s.id] || {}) }));
 
   return `<div class="card" style="margin-bottom:24px">
-    <div class="home-section-title" style="margin-bottom:12px">🔍 가치투자 스크리너</div>
+    <div class="home-section-title" style="margin-bottom:12px">가치투자 스크리너</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
       ${criteria.map((c,i) => `<button onclick="applyScreener(${i})" id="screenerBtn${i}"
         style="padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;transition:all 0.2s"
@@ -2052,7 +2159,7 @@ async function applyScreener(idx) {
 
   if (!matched.length) { el.innerHTML = '<div style="color:var(--muted)">조건에 맞는 종목 없음</div>'; return; }
 
-  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px">${matched.map(d => {
+  el.innerHTML = `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:8px">${matched.map(d => {
     const up = (d.changePct||0) >= 0;
     const isUs = d.market === 'us';
     const sym = isUs ? '$' : '₩';
@@ -2102,7 +2209,7 @@ function showPortfolioAdd() {
   const qty = parseFloat(prompt('수량:'));
   if (isNaN(price) || isNaN(qty)) return;
   addToPortfolio(def, price, qty);
-  renderHome();
+  renderHome({ skipFetch: true });
 }
 
 function requestNotificationPermission() {
@@ -2190,28 +2297,57 @@ function mobileSelectStock(id) {
   selectStock(id);
 }
 
+let _mobileSearchTimer = null;
 function onMobileSearch(val) {
   const res = document.getElementById('mobileSearchResults');
   if (!val.trim()) { res.innerHTML = ''; return; }
-  const q = val.toLowerCase();
-  const matches = STOCK_DEFS.filter(s =>
-    s.ticker.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.displayTicker||'').toLowerCase().includes(q)
-  ).slice(0, 30);
-  res.innerHTML = matches.map(s => `<div class="stock-item" onclick="mobileSearchSelect('${s.id}')">
-    <div class="stock-left"><div class="ticker">${s.displayTicker||s.ticker}</div><div class="sname">${s.name}</div></div>
-    <div class="stock-right"><span class="result-type type-${s.exchange||'stock'}">${s.exchange||''}</span></div>
-  </div>`).join('') || '<div style="padding:20px;color:var(--muted);text-align:center">검색 결과 없음</div>';
+  clearTimeout(_mobileSearchTimer);
+  res.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">검색 중...</div>';
+  _mobileSearchTimer = setTimeout(() => doMobileSearch(val.trim()), 300);
 }
 
-function mobileSearchSelect(id) {
+async function doMobileSearch(q) {
+  const res = document.getElementById('mobileSearchResults');
+  try {
+    const results = await api(`/api/search?q=${encodeURIComponent(q)}&market=all`);
+    if (!results.length) {
+      res.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">검색 결과 없음</div>';
+      return;
+    }
+    res.innerHTML = results.map(r => {
+      const cached = sidebarCache[r.ticker] || {};
+      const sym = r.market === 'kr' ? '₩' : '$';
+      const price = cached.price ? `${sym}${cached.price.toLocaleString(undefined,{maximumFractionDigits:2})}` : '';
+      const chg = cached.changePct != null ? `${cached.changePct>=0?'+':''}${cached.changePct.toFixed(2)}%` : '';
+      const mktLabel = r.market === 'kr' ? 'KR' : 'US';
+      return `<div class="stock-item" onclick="mobileSearchSelectResult(${JSON.stringify(r).replace(/"/g,'&quot;')})">
+        <div class="stock-left">
+          <div class="ticker">${r.ticker} <span class="result-type" style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--surface2);color:var(--muted)">${mktLabel}</span></div>
+          <div class="sname">${r.name}</div>
+        </div>
+        <div class="stock-right">${price ? `<div class="stock-price ${(cached.changePct||0)>=0?'up':'down'}">${price}</div><div class="stock-chg ${(cached.changePct||0)>=0?'up':'down'}">${chg}</div>` : ''}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    res.innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px">오류: ${e.message}</div>`;
+  }
+}
+
+function mobileSearchSelectResult(r) {
+  let def = STOCK_DEFS.find(s => s.ticker === r.ticker);
+  if (!def) {
+    def = { id: r.ticker, market: r.market, exchange: r.exchange || (r.market==='kr'?'KOSPI':'NASDAQ'), ticker: r.ticker, displayTicker: r.ticker, name: r.name };
+    STOCK_DEFS.push(def);
+  }
   document.getElementById('mobileSearchDrawer').classList.remove('open');
   document.getElementById('mobileSearchInput').value = '';
   document.getElementById('mobileSearchResults').innerHTML = '';
   document.getElementById('bnavHome').classList.add('active');
   document.getElementById('bnavSearch').classList.remove('active');
   _mobileTab = 'home';
-  selectStock(id);
+  selectStock(def.id);
 }
+
 
 function closeMobileSearch() {
   document.getElementById('mobileSearchDrawer').classList.remove('open');

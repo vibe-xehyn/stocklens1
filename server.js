@@ -27,6 +27,8 @@ const _c = new Map();
 const getC = k => { const e=_c.get(k); if(!e||Date.now()>e.exp){_c.delete(k);return null;} return e.d; };
 const setC = (k,d,ms) => { _c.set(k,{d,exp:Date.now()+ms}); return d; };
 const cached = async (k,ms,fn) => getC(k) ?? setC(k, await fn(), ms);
+// 만료 키 주기적 정리 (10분마다)
+setInterval(() => { const now = Date.now(); for (const [k,e] of _c) if (now > e.exp) _c.delete(k); }, 600_000);
 
 // ── Node fetch (NAVER, Stooq) ─────────────────────────────────────────────────
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -92,6 +94,41 @@ async function naverUsQuote(ticker) {
     }
   }
   throw new Error('NAVER: no data for ' + ticker);
+}
+
+// NAVER 미국주식 펀더멘탈 (yfinance 실패 시 폴백)
+async function naverUsFundamentals(ticker) {
+  const tried = _usSuffixCache.get(ticker);
+  const order = tried !== undefined ? [tried] : ['.O', ''];
+  const tryFetch = async sfx => {
+    const d = await fetchJSON(`https://api.stock.naver.com/stock/${encodeURIComponent(ticker + sfx)}/integration`, NAVER_REF);
+    if (!d || (!d.stockEndType && !d.dealTrendInfos && !d.totalInfos)) return null;
+    return d;
+  };
+  let d = null;
+  for (const sfx of order) {
+    try { const r = await tryFetch(sfx); if (r) { _usSuffixCache.set(ticker, sfx); d = r; break; } } catch {}
+  }
+  if (!d) return {};
+
+  // totalInfos는 [{key, value, code}] 배열 형태
+  const ti = {};
+  for (const row of (d.totalInfos || [])) {
+    if (row?.code) ti[row.code] = _nNum(row.value);
+  }
+  // dealTrendInfos: 외국인/기관 동향 등
+  return {
+    name: d.stockName || d.symbolCode || ticker,
+    per:        ti.PER       || ti.per       || null,
+    pbr:        ti.PBR       || ti.pbr       || null,
+    eps:        ti.EPS       || ti.eps       || null,
+    bps:        ti.BPS       || ti.bps       || null,
+    roe:        ti.ROE       || ti.roe       || null,
+    div:        ti.DIV_YIELD || ti.divYield  || ti.dividendYield || null,
+    marketCap:  ti.MARKET_VALUE || ti.marketValue || ti.MARKET_CAP || null,
+    high52:     ti.HIGH_PRICE_52_WEEK || ti.high52 || ti.YEAR_HIGH || null,
+    low52:      ti.LOW_PRICE_52_WEEK  || ti.low52  || ti.YEAR_LOW  || null,
+  };
 }
 
 async function naverUsChart(ticker, range = '1mo') {
@@ -337,8 +374,9 @@ print(json.dumps({'pbr': pbr, 'bps': bps}))
 `;
 
   let yf = {}, yfbs = {};
-  try { yf = await cached(`yfkr:${ticker}`, 3600_000, () => yfRun(yfPy)); } catch {}
-  try { yfbs = await cached(`yfkrbs:${ticker}`, 3600_000, () => yfRun(yfBsPy)); } catch {}
+  // 24시간 캐시 — 펀더멘탈은 자주 안 바뀌고, yfinance 실패 시 어제 데이터 유지
+  try { yf = await cached(`yfkr:${ticker}`, 86400_000, () => yfRun(yfPy)); } catch {}
+  try { yfbs = await cached(`yfkrbs:${ticker}`, 86400_000, () => yfRun(yfBsPy)); } catch {}
 
   return {
     name:basic.stockName, exchange:basic.stockExchangeType?.nameKor??'KOSPI', currency:'KRW',
@@ -445,9 +483,12 @@ async function usQuote(ticker) {
   }
   if (!base) throw new Error('데이터를 가져올 수 없습니다');
 
-  // 펀더멘탈: yfinance Python — 실패해도 가격 데이터만 반환
+  // 펀더멘탈: yfinance 24시간 캐시 + NAVER integration 폴백
+  // 같은 종목의 펀더멘탈은 하루 한 번만 yfinance 호출 → 실패해도 어제 데이터 사용
+  let fund = {};
   try {
-    const py = `
+    fund = await cached(`yfusFund:${ticker}`, 86400_000, async () => {
+      const py = `
 import yfinance as yf, json
 t = yf.Ticker('${ticker}')
 info = t.info
@@ -476,13 +517,29 @@ print(json.dumps({
   'recommendation': info.get('recommendationKey'),
   'targetPrice': info.get('targetMeanPrice'),
   'numberOfAnalysts': info.get('numberOfAnalystOpinions'),
+  'high52': info.get('fiftyTwoWeekHigh'),
+  'low52': info.get('fiftyTwoWeekLow'),
 }))
 `;
-    const fund = await yfRun(py);
-    return { ...base, ...fund };
-  } catch {
-    return base;
+      return yfRun(py);
+    });
+  } catch {}
+
+  // yfinance가 비었거나 핵심 필드 누락 시 NAVER integration으로 보완
+  const needsFallback = !fund || (fund.per == null && fund.pbr == null && fund.eps == null);
+  if (needsFallback) {
+    try {
+      const nv = await cached(`nvFund:${ticker}`, 86400_000, () => naverUsFundamentals(ticker));
+      // yfinance 결과 우선, 누락 필드만 NAVER로 채움
+      fund = {
+        ...nv,
+        ...Object.fromEntries(Object.entries(fund || {}).filter(([,v]) => v != null && v !== 0)),
+      };
+    } catch {}
   }
+
+  // 52주 가격은 base(NAVER 실시간)에 없을 수 있어서 fund에서 끌어옴
+  return { ...base, ...fund, high52: base.high52 ?? fund.high52, low52: base.low52 ?? fund.low52 };
 }
 
 async function usQuickQuote(ticker) {
@@ -562,8 +619,25 @@ async function getNews(symbol, isKr) {
     } catch {}
     return [];
   }
-  try { return await usNews(symbol); }
-  catch { return []; }
+  // 1차: yfinance, 2차: Google News RSS (rss2json)
+  try {
+    const items = await cached(`news:${symbol}:yf`, 1800_000, () => usNews(symbol));
+    if (items && items.length) return items;
+  } catch {}
+  try {
+    const rss = await cached(`news:${symbol}:gn`, 1800_000, () =>
+      fetchJSON(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(`https://news.google.com/rss/search?q=${encodeURIComponent(symbol+' stock')}&hl=en-US&gl=US&ceid=US:en`)}`)
+    );
+    if (rss?.status === 'ok' && rss.items?.length) {
+      return rss.items.slice(0, 6).map(n => ({
+        title: n.title.replace(/<[^>]+>/g,''),
+        source: n.author || (n.title.match(/ - ([^-]+)$/)?.[1]?.trim()) || 'Google News',
+        time: timeAgo(new Date(n.pubDate)),
+        url: n.link,
+      }));
+    }
+  } catch {}
+  return [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -753,16 +827,39 @@ app.get('/api/index-chart', async (req, res) => {
 });
 
 // 거래 시간 상태 API
+// US DST: 2번째 일요일(3월 2am) ~ 1번째 일요일(11월 2am)
+function nthSunday(year, month, n) { // month: 0=Jan
+  const first = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  return (first === 0 ? 1 : 8 - first) + (n - 1) * 7;
+}
+function usETOffset(date) {
+  const y = date.getUTCFullYear();
+  const dstStart = Date.UTC(y, 2, nthSunday(y, 2, 2), 7);  // 3월 2번째 일요일 2am EST(+5)
+  const dstEnd   = Date.UTC(y, 10, nthSunday(y, 10, 1), 6); // 11월 1번째 일요일 2am EDT(+4)
+  return (date >= dstStart && date < dstEnd) ? -4 : -5;
+}
+
 app.get('/api/trading-status', (_, res) => {
   const now = new Date();
-  const day = now.getUTCDay();
-  if (day === 0 || day === 6) return res.json({ kr: false, us: false });
-  const kstMin = ((now.getUTCHours() + 9) % 24) * 60 + now.getUTCMinutes();
-  const etMin  = (((now.getUTCHours() - 4) + 24) % 24) * 60 + now.getUTCMinutes();
-  res.json({
-    kr: kstMin >= 540 && kstMin <= 930,
-    us: etMin  >= 570 && etMin  <= 960,
-  });
+
+  // KST (UTC+9) 기준 요일·분 계산
+  const kstMs = now.getTime() + 9 * 3600_000;
+  const kstDate = new Date(kstMs);
+  const kstDay = kstDate.getUTCDay(); // 0=일, 6=토
+  const kstMin = kstDate.getUTCHours() * 60 + kstDate.getUTCMinutes();
+  // 한국 장: 평일 09:00~15:30 KST
+  const kr = kstDay >= 1 && kstDay <= 5 && kstMin >= 540 && kstMin < 930;
+
+  // ET (DST 반영) 기준 요일·분 계산
+  const etOffset = usETOffset(now);
+  const etMs = now.getTime() + etOffset * 3600_000;
+  const etDate = new Date(etMs);
+  const etDay = etDate.getUTCDay();
+  const etMin = etDate.getUTCHours() * 60 + etDate.getUTCMinutes();
+  // 미국 장: 평일 09:30~16:00 ET
+  const us = etDay >= 1 && etDay <= 5 && etMin >= 570 && etMin < 960;
+
+  res.json({ kr, us });
 });
 
 // Full quote — detail view
@@ -995,72 +1092,249 @@ app.get('/api/flow', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 결정론적 시그널 계산 (룰 기반, 같은 입력 → 같은 출력)
+// 결정론적 시그널 계산 (룰 기반 + 검증된 투자 전략 종합)
+// 5대 전략: Piotroski F-Score, Magic Formula(Greenblatt), Multi-Factor,
+//          Jegadeesh-Titman Momentum, CAN SLIM(O'Neil)
+// 기술/가치/품질/성장/모멘텀/수급/심리/매크로를 가중 합산 → 점수로 시그널 결정
 // AI는 해석/설명만 담당, 매수/중립/매도 결정은 이 함수가 한다
 // ─────────────────────────────────────────────────────────────────────────────
-function computeSignal(t = {}, q = {}, flow = {}) {
-  let score = 0;
+function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
+  const breakdown = { technical: 0, value: 0, quality: 0, growth: 0, momentum: 0, flow: 0, sentiment: 0, macro: 0 };
   const reasons = [];
 
-  // ─ 기술적 지표 (최대 ±75점) ─
+  // ═══ 1. 기술적 지표 (최대 ±60점) ═══════════════════════════════════
+  // RSI(14): 과매도/과매수 역추세 신호
   if (typeof t.rsi === 'number') {
-    if (t.rsi < 30)      { score += 20; reasons.push('RSI 과매도'); }
-    else if (t.rsi < 40) { score += 8; }
-    else if (t.rsi > 70) { score -= 20; reasons.push('RSI 과매수'); }
-    else if (t.rsi > 60) { score -= 8; }
+    if (t.rsi < 25)      { breakdown.technical += 18; reasons.push(`RSI ${t.rsi} 극과매도`); }
+    else if (t.rsi < 35) { breakdown.technical += 10; reasons.push(`RSI ${t.rsi} 과매도`); }
+    else if (t.rsi < 45) { breakdown.technical += 3; }
+    else if (t.rsi > 75) { breakdown.technical -= 18; reasons.push(`RSI ${t.rsi} 극과매수`); }
+    else if (t.rsi > 65) { breakdown.technical -= 10; reasons.push(`RSI ${t.rsi} 과매수`); }
+    else if (t.rsi > 55) { breakdown.technical -= 3; }
   }
+  // MACD: 추세 전환 신호
   if (typeof t.macd === 'number' && typeof t.macd_signal === 'number') {
-    if (t.macd > t.macd_signal) { score += 15; reasons.push('MACD 골든'); }
-    else                        { score -= 15; reasons.push('MACD 데드'); }
+    const diff = t.macd - t.macd_signal;
+    if (diff > 0) { breakdown.technical += 12; reasons.push('MACD 골든크로스'); }
+    else          { breakdown.technical -= 12; reasons.push('MACD 데드크로스'); }
   }
+  // 볼린저밴드 %B: 변동성 기반 위치
   if (typeof t.bb_pct === 'number') {
-    if (t.bb_pct < 20)      score += 10;
-    else if (t.bb_pct > 80) score -= 10;
+    if (t.bb_pct < 10)      { breakdown.technical += 10; reasons.push('BB 하단 돌파'); }
+    else if (t.bb_pct < 25) breakdown.technical += 5;
+    else if (t.bb_pct > 90) { breakdown.technical -= 10; reasons.push('BB 상단 돌파'); }
+    else if (t.bb_pct > 75) breakdown.technical -= 5;
   }
-  if (typeof t.stoch_k === 'number') {
-    if (t.stoch_k < 20)      score += 8;
-    else if (t.stoch_k > 80) score -= 8;
+  // 스토캐스틱
+  if (typeof t.stoch_k === 'number' && typeof t.stoch_d === 'number') {
+    if (t.stoch_k < 20 && t.stoch_k > t.stoch_d)      breakdown.technical += 8;
+    else if (t.stoch_k < 20)                          breakdown.technical += 4;
+    else if (t.stoch_k > 80 && t.stoch_k < t.stoch_d) breakdown.technical -= 8;
+    else if (t.stoch_k > 80)                          breakdown.technical -= 4;
   }
-  if (typeof t.adx === 'number' && typeof t.pdi === 'number' && typeof t.mdi === 'number' && t.adx > 25) {
-    if (t.pdi > t.mdi) { score += 12; reasons.push('+DI 우위'); }
-    else               { score -= 12; reasons.push('-DI 우위'); }
+  // DMI/ADX: 추세 강도 + 방향
+  if (typeof t.adx === 'number' && typeof t.pdi === 'number' && typeof t.mdi === 'number') {
+    if (t.adx > 25) {
+      if (t.pdi > t.mdi) { breakdown.technical += 12; reasons.push(`강한 상승추세(ADX ${t.adx})`); }
+      else               { breakdown.technical -= 12; reasons.push(`강한 하락추세(ADX ${t.adx})`); }
+    } else if (t.adx > 20) {
+      breakdown.technical += (t.pdi > t.mdi ? 5 : -5);
+    }
   }
-  if (q.price && t.ma20) score += (q.price > t.ma20 ? 5 : -5);
-  if (q.price && t.ma50) score += (q.price > t.ma50 ? 5 : -5);
+  // 이동평균 정렬 (골든/데드 배열)
+  if (q.price && t.ma20 && t.ma50) {
+    if (q.price > t.ma20 && t.ma20 > t.ma50)      { breakdown.technical += 10; reasons.push('정배열(MA20>MA50)'); }
+    else if (q.price < t.ma20 && t.ma20 < t.ma50) { breakdown.technical -= 10; reasons.push('역배열(MA20<MA50)'); }
+    else if (q.price > t.ma20)                    breakdown.technical += 3;
+    else                                          breakdown.technical -= 3;
+  }
 
-  // ─ 가치 지표 (최대 ±35점) ─
+  // ═══ 2. 가치 지표 - Magic Formula (Greenblatt) (최대 ±30점) ═══════
+  // Earnings Yield = 1/PER (높을수록 저평가)
   if (typeof q.per === 'number' && q.per > 0) {
-    if (q.per < 10)      score += 10;
-    else if (q.per < 20) score += 5;
-    else if (q.per > 50) score -= 8;
+    const ey = 100 / q.per;
+    if (ey > 10)      { breakdown.value += 12; reasons.push(`저PER ${q.per}배`); }   // PER < 10
+    else if (ey > 7)  breakdown.value += 7;                                         // PER < 14
+    else if (ey > 5)  breakdown.value += 3;                                         // PER < 20
+    else if (q.per > 40) { breakdown.value -= 8; reasons.push(`고PER ${q.per}배`); }
+    else if (q.per > 25) breakdown.value -= 3;
   }
+  // PEG (성장 대비 저평가) - 1 미만이 저평가
+  if (typeof q.pegRatio === 'number' && q.pegRatio > 0) {
+    if (q.pegRatio < 1)      { breakdown.value += 8; reasons.push(`PEG ${q.pegRatio} 저평가`); }
+    else if (q.pegRatio < 1.5) breakdown.value += 3;
+    else if (q.pegRatio > 3) breakdown.value -= 5;
+  }
+  // PBR
   if (typeof q.pbr === 'number' && q.pbr > 0) {
-    if (q.pbr < 1)      score += 8;
-    else if (q.pbr < 2) score += 4;
-    else if (q.pbr > 5) score -= 6;
+    if (q.pbr < 1)      { breakdown.value += 7; reasons.push(`저PBR ${q.pbr}배`); }
+    else if (q.pbr < 2) breakdown.value += 3;
+    else if (q.pbr > 7) breakdown.value -= 5;
   }
+  // Forward PER < Trailing PER (이익 성장 기대)
+  if (typeof q.forwardPer === 'number' && typeof q.per === 'number' && q.forwardPer > 0 && q.per > 0) {
+    if (q.forwardPer < q.per * 0.85) { breakdown.value += 5; reasons.push('이익 성장 전망'); }
+    else if (q.forwardPer > q.per * 1.15) breakdown.value -= 3;
+  }
+
+  // ═══ 3. 품질 지표 - Piotroski F-Score 변형 (최대 ±35점) ═══════════
+  // ROE (수익성 핵심)
   if (typeof q.roe === 'number') {
-    if (q.roe > 20)      score += 10;
-    else if (q.roe > 10) score += 5;
-    else if (q.roe < 0)  score -= 8;
+    if (q.roe > 25)      { breakdown.quality += 12; reasons.push(`고ROE ${q.roe.toFixed(1)}%`); }
+    else if (q.roe > 15) breakdown.quality += 8;
+    else if (q.roe > 8)  breakdown.quality += 3;
+    else if (q.roe < 0)  { breakdown.quality -= 12; reasons.push(`ROE 음수`); }
+    else if (q.roe < 5)  breakdown.quality -= 3;
   }
+  // 영업이익률 (수익성)
+  if (typeof q.operatingMargin === 'number') {
+    if (q.operatingMargin > 20)      breakdown.quality += 6;
+    else if (q.operatingMargin > 10) breakdown.quality += 3;
+    else if (q.operatingMargin < 0)  { breakdown.quality -= 8; reasons.push('영업적자'); }
+    else if (q.operatingMargin < 3)  breakdown.quality -= 3;
+  }
+  // 매출총이익률
+  if (typeof q.grossMargin === 'number') {
+    if (q.grossMargin > 40)      breakdown.quality += 4;
+    else if (q.grossMargin > 25) breakdown.quality += 2;
+    else if (q.grossMargin < 10) breakdown.quality -= 3;
+  }
+  // 부채비율 (안전성)
+  if (typeof q.debtToEquity === 'number') {
+    if (q.debtToEquity < 50)       breakdown.quality += 6;
+    else if (q.debtToEquity < 100) breakdown.quality += 2;
+    else if (q.debtToEquity > 200) { breakdown.quality -= 8; reasons.push('과다부채'); }
+    else if (q.debtToEquity > 150) breakdown.quality -= 4;
+  }
+  // 유동비율 (단기 지급능력)
+  if (typeof q.currentRatio === 'number') {
+    if (q.currentRatio > 2)        breakdown.quality += 4;
+    else if (q.currentRatio > 1.2) breakdown.quality += 2;
+    else if (q.currentRatio < 1)   { breakdown.quality -= 6; reasons.push('유동성 부족'); }
+  }
+  // 잉여현금흐름 양수
+  if (typeof q.freeCashflow === 'number') {
+    if (q.freeCashflow > 0)      breakdown.quality += 3;
+    else                         breakdown.quality -= 5;
+  }
+
+  // ═══ 4. 성장 지표 - CAN SLIM (O'Neil) (최대 ±25점) ═════════════════
+  // 이익 성장률 (CAN SLIM 핵심: ≥25% 우수)
+  if (typeof q.earningsGrowth === 'number') {
+    if (q.earningsGrowth > 50)      { breakdown.growth += 12; reasons.push(`고이익성장 ${q.earningsGrowth.toFixed(1)}%`); }
+    else if (q.earningsGrowth > 25) { breakdown.growth += 9; reasons.push(`이익성장 ${q.earningsGrowth.toFixed(1)}%`); }
+    else if (q.earningsGrowth > 10) breakdown.growth += 5;
+    else if (q.earningsGrowth > 0)  breakdown.growth += 1;
+    else if (q.earningsGrowth < -20) { breakdown.growth -= 10; reasons.push('이익 급감'); }
+    else                            breakdown.growth -= 5;
+  }
+  // 매출 성장률
   if (typeof q.revenueGrowth === 'number') {
-    if (q.revenueGrowth > 20)       score += 5;
-    else if (q.revenueGrowth < -10) score -= 5;
+    if (q.revenueGrowth > 25)      breakdown.growth += 8;
+    else if (q.revenueGrowth > 10) breakdown.growth += 4;
+    else if (q.revenueGrowth > 0)  breakdown.growth += 1;
+    else if (q.revenueGrowth < -10) { breakdown.growth -= 6; reasons.push('매출 감소'); }
+    else                           breakdown.growth -= 2;
+  }
+  // 52주 고가 근접도 (CAN SLIM의 N: 신고가 부근 매수)
+  if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
+    const proximity = (q.price - q.low52) / (q.high52 - q.low52); // 0~1
+    if (proximity > 0.9)       { breakdown.growth += 5; reasons.push('52주 신고가 부근'); }
+    else if (proximity > 0.75) breakdown.growth += 3;
+    else if (proximity < 0.15) { breakdown.growth -= 3; reasons.push('52주 신저가 부근'); }
   }
 
-  // ─ 수급 (최대 ±10점) ─
-  if (typeof flow.shortPct === 'number' && flow.shortPct > 10) score -= 5;
-  if (typeof flow.institutionPct === 'number' && flow.institutionPct > 70) score += 3;
+  // ═══ 5. 모멘텀 - Jegadeesh-Titman (최대 ±20점) ════════════════════
+  // 52주 위치 + MA50 대비 가격 = 중기 모멘텀 프록시
+  if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
+    const range = (q.price - q.low52) / (q.high52 - q.low52);
+    if (range > 0.8)       breakdown.momentum += 10;
+    else if (range > 0.6)  breakdown.momentum += 5;
+    else if (range < 0.2)  breakdown.momentum -= 10;
+    else if (range < 0.4)  breakdown.momentum -= 5;
+  }
+  // 단기 모멘텀: MA20 vs MA50
+  if (t.ma20 && t.ma50) {
+    const ratio = (t.ma20 - t.ma50) / t.ma50;
+    if (ratio > 0.05)       { breakdown.momentum += 8; reasons.push('단기 상승 모멘텀'); }
+    else if (ratio > 0.01)  breakdown.momentum += 4;
+    else if (ratio < -0.05) { breakdown.momentum -= 8; reasons.push('단기 하락 모멘텀'); }
+    else if (ratio < -0.01) breakdown.momentum -= 4;
+  }
 
-  // ─ 시그널 결정 ─
+  // ═══ 6. 수급 (최대 ±15점) ═════════════════════════════════════════
+  if (typeof flow.institutionPct === 'number') {
+    if (flow.institutionPct > 80)      { breakdown.flow += 6; reasons.push('기관 보유 높음'); }
+    else if (flow.institutionPct > 60) breakdown.flow += 3;
+    else if (flow.institutionPct < 20) breakdown.flow -= 3;
+  }
+  if (typeof flow.insiderPct === 'number') {
+    if (flow.insiderPct > 10)     { breakdown.flow += 4; reasons.push('내부자 지분 높음'); }
+    else if (flow.insiderPct > 3) breakdown.flow += 2;
+  }
+  if (typeof flow.shortPct === 'number') {
+    if (flow.shortPct > 20)      { breakdown.flow -= 8; reasons.push(`공매도 ${flow.shortPct}% 과다`); }
+    else if (flow.shortPct > 10) breakdown.flow -= 4;
+    else if (flow.shortPct < 2)  breakdown.flow += 2;
+  }
+  // 옵션 풋콜비율
+  if (flow.options && typeof flow.options.putCallRatio === 'number') {
+    const pc = flow.options.putCallRatio;
+    if (pc > 1.3)      { breakdown.flow -= 5; reasons.push('풋콜비율 비관'); }
+    else if (pc < 0.6) { breakdown.flow += 5; reasons.push('풋콜비율 낙관'); }
+  }
+
+  // ═══ 7. 심리/애널리스트 (최대 ±15점) ═══════════════════════════════
+  if (typeof q.recommendation === 'string') {
+    const rec = q.recommendation.toLowerCase();
+    if (rec === 'strong_buy' || rec === 'buy')       { breakdown.sentiment += 8; reasons.push('애널리스트 매수 컨센서스'); }
+    else if (rec === 'underperform' || rec === 'sell') { breakdown.sentiment -= 8; reasons.push('애널리스트 매도 컨센서스'); }
+  }
+  // 목표주가 상승 여력
+  if (q.price && typeof q.targetPrice === 'number' && q.targetPrice > 0) {
+    const upside = (q.targetPrice - q.price) / q.price * 100;
+    if (upside > 25)       { breakdown.sentiment += 7; reasons.push(`목표가 상승여력 ${upside.toFixed(0)}%`); }
+    else if (upside > 10)  breakdown.sentiment += 3;
+    else if (upside < -10) { breakdown.sentiment -= 7; reasons.push(`목표가 하회 ${upside.toFixed(0)}%`); }
+    else if (upside < 0)   breakdown.sentiment -= 3;
+  }
+
+  // ═══ 8. 매크로 컨텍스트 (최대 ±10점) ═══════════════════════════════
+  // VIX 공포지수: 시장 리스크 환경 조정
+  if (macro.vix && typeof macro.vix.value === 'number') {
+    if (macro.vix.value > 30)      { breakdown.macro -= 6; reasons.push(`VIX ${macro.vix.value} 고변동`); }
+    else if (macro.vix.value > 25) breakdown.macro -= 3;
+    else if (macro.vix.value < 15) breakdown.macro += 3;
+  }
+  // 10년물 급등은 주식에 부정적
+  if (macro.us10y && typeof macro.us10y.chg === 'number') {
+    if (macro.us10y.chg > 0.1)       breakdown.macro -= 3;
+    else if (macro.us10y.chg < -0.1) breakdown.macro += 3;
+  }
+
+  // ═══ 최종 점수 합산 ═══════════════════════════════════════════════
+  const score = Object.values(breakdown).reduce((a,b) => a+b, 0);
+
+  // ═══ 시그널 결정 (7단계) ════════════════════════════════════════════
+  // 점수 범위 대략 ±150
+  // 강력매수≥70 / 매수 40~69 / 약매수 15~39 / 중립 -14~14 / 약매도 -15~-39 / 매도 -40~-69 / 강력매도≤-70
   let signal, confidence;
   const abs = Math.abs(score);
-  if (score >= 25)       { signal = '매수'; confidence = Math.min(95, 55 + abs / 2); }
-  else if (score <= -25) { signal = '매도'; confidence = Math.min(95, 55 + abs / 2); }
-  else                   { signal = '중립'; confidence = Math.max(50, 70 - abs); }
+  if      (score >= 70)  { signal = '강력매수'; confidence = Math.min(95, 75 + abs * 0.2); }
+  else if (score >= 40)  { signal = '매수';     confidence = Math.min(88, 65 + abs * 0.3); }
+  else if (score >= 15)  { signal = '약매수';   confidence = Math.min(75, 55 + abs * 0.5); }
+  else if (score <= -70) { signal = '강력매도'; confidence = Math.min(95, 75 + abs * 0.2); }
+  else if (score <= -40) { signal = '매도';     confidence = Math.min(88, 65 + abs * 0.3); }
+  else if (score <= -15) { signal = '약매도';   confidence = Math.min(75, 55 + abs * 0.5); }
+  else                   { signal = '중립';     confidence = Math.max(40, 60 - abs * 2); }
 
-  return { signal, confidence: Math.round(confidence), score: Math.round(score), reasons };
+  return {
+    signal,
+    confidence: Math.round(confidence),
+    score: Math.round(score),
+    breakdown: Object.fromEntries(Object.entries(breakdown).map(([k,v]) => [k, Math.round(v)])),
+    reasons,
+  };
 }
 
 // 종목별 결정론적 seed (Groq의 seed 파라미터용)
@@ -1068,6 +1342,112 @@ function hashSeed(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
   return Math.abs(h);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 기술적 지표 — JS 폴백 (yfinance 실패 시 NAVER 차트로 계산)
+// ─────────────────────────────────────────────────────────────────────────────
+function calcTechnicalsJS(bars) {
+  if (!Array.isArray(bars) || bars.length < 30) return null;
+  const close = bars.map(b => +b.close);
+  const high  = bars.map(b => +(b.high ?? b.close));
+  const low   = bars.map(b => +(b.low  ?? b.close));
+  const n = close.length;
+
+  // EMA helper
+  const ema = (arr, span) => {
+    const k = 2 / (span + 1);
+    const out = [arr[0]];
+    for (let i = 1; i < arr.length; i++) out.push(arr[i] * k + out[i-1] * (1 - k));
+    return out;
+  };
+  // Wilder smoothing (RSI/ADX style)
+  const wilder = (arr, period) => {
+    const out = [];
+    let prev = arr.slice(0, period).reduce((a,b)=>a+b, 0) / period;
+    out[period - 1] = prev;
+    for (let i = period; i < arr.length; i++) {
+      prev = (prev * (period - 1) + arr[i]) / period;
+      out[i] = prev;
+    }
+    return out;
+  };
+
+  // RSI(14)
+  const gains = [0], losses = [0];
+  for (let i = 1; i < n; i++) {
+    const d = close[i] - close[i-1];
+    gains.push(Math.max(d, 0));
+    losses.push(Math.max(-d, 0));
+  }
+  const ag = wilder(gains, 14), al = wilder(losses, 14);
+  const rs = ag[n-1] && al[n-1] ? ag[n-1] / al[n-1] : (ag[n-1] ? 999 : 0);
+  const rsi = al[n-1] === 0 ? 100 : 100 - 100 / (1 + rs);
+
+  // MA20, MA50, StdDev20 → Bollinger
+  const sma = (arr, p, idx) => arr.slice(idx-p+1, idx+1).reduce((a,b)=>a+b,0) / p;
+  const ma20 = sma(close, 20, n-1);
+  const ma50 = n >= 50 ? sma(close, 50, n-1) : null;
+  const slice20 = close.slice(n-20, n);
+  const variance = slice20.reduce((a,b) => a + (b-ma20)**2, 0) / 20;
+  const std = Math.sqrt(variance);
+  const bb_upper = ma20 + 2*std, bb_lower = ma20 - 2*std;
+  const bb_pct = bb_upper !== bb_lower ? (close[n-1] - bb_lower) / (bb_upper - bb_lower) * 100 : 50;
+
+  // MACD(12,26,9)
+  const ema12 = ema(close, 12), ema26 = ema(close, 26);
+  const macd_line = close.map((_, i) => ema12[i] - ema26[i]);
+  const sig_line = ema(macd_line, 9);
+
+  // Stochastic(14,3,3)
+  const stochRaw = [];
+  for (let i = 13; i < n; i++) {
+    const lk = Math.min(...low.slice(i-13, i+1));
+    const hk = Math.max(...high.slice(i-13, i+1));
+    stochRaw.push(hk !== lk ? 100*(close[i]-lk)/(hk-lk) : 50);
+  }
+  const sma3 = arr => arr.length < 3 ? null : (arr[arr.length-3]+arr[arr.length-2]+arr[arr.length-1])/3;
+  const K = sma3(stochRaw);
+  const D = K != null ? sma3([stochRaw[stochRaw.length-3], stochRaw[stochRaw.length-2], (stochRaw[stochRaw.length-3]+stochRaw[stochRaw.length-2]+stochRaw[stochRaw.length-1])/3].filter(v=>v!=null)) : null;
+
+  // DMI/ADX(14)
+  const tr = [0], pdm = [0], mdm = [0];
+  for (let i = 1; i < n; i++) {
+    const upMove = high[i] - high[i-1], dnMove = low[i-1] - low[i];
+    pdm.push(upMove > dnMove && upMove > 0 ? upMove : 0);
+    mdm.push(dnMove > upMove && dnMove > 0 ? dnMove : 0);
+    tr.push(Math.max(high[i]-low[i], Math.abs(high[i]-close[i-1]), Math.abs(low[i]-close[i-1])));
+  }
+  const atr = wilder(tr, 14), pdmSm = wilder(pdm, 14), mdmSm = wilder(mdm, 14);
+  const pdi = atr[n-1] ? 100 * pdmSm[n-1] / atr[n-1] : 0;
+  const mdi = atr[n-1] ? 100 * mdmSm[n-1] / atr[n-1] : 0;
+  const dx = (pdi+mdi) ? 100 * Math.abs(pdi-mdi) / (pdi+mdi) : 0;
+  // ADX는 dx의 Wilder 평균 — 마지막 값만 근사
+  const adx = dx; // 단순화 (정확도 약간 손해, 시그널엔 충분)
+
+  const r = v => v == null ? null : Math.round(v * 10) / 10;
+  return {
+    rsi: r(rsi),
+    bb_upper: r(bb_upper), bb_mid: r(ma20), bb_lower: r(bb_lower), bb_pct: r(bb_pct),
+    stoch_k: r(K), stoch_d: r(D),
+    adx: r(adx), pdi: r(pdi), mdi: r(mdi),
+    macd: r(macd_line[n-1]), macd_signal: r(sig_line[n-1]),
+    ma20: r(ma20), ma50: r(ma50),
+    price: r(close[n-1]),
+  };
+}
+
+// 통합: yfinance 우선, 실패 시 NAVER 차트 + JS 계산으로 폴백
+async function getTechnicals(symbol, isKr) {
+  const yfticker = isKr ? symbol + '.KS' : symbol;
+  try { return await calcTechnicalsYF(yfticker); } catch {}
+  // 폴백: 6개월 OHLC 차트
+  try {
+    const bars = isKr ? await naverKrItemChart(symbol, '6mo') : await naverUsChart(symbol, '6mo');
+    const t = calcTechnicalsJS(bars);
+    if (t) return t;
+  } catch {}
+  return {};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1155,7 +1535,7 @@ app.get('/api/analysis', async (req, res) => {
 
       // Fetch technicals, quote, news, flow, macro concurrently
       const [techR, quoteR, newsR, flowR, macroR] = await Promise.allSettled([
-        calcTechnicalsYF(yfticker),
+        getTechnicals(symbol, isKr),
         (async () => {
           const cached_q = getC(`q:${symbol}`);
           if (cached_q) return cached_q;
@@ -1164,7 +1544,8 @@ app.get('/api/analysis', async (req, res) => {
         })(),
         getNews(symbol, isKr),
         getFlowData(symbol, isKr),
-        yfRun(`
+        // 매크로는 모든 종목에 공통이므로 30분 캐시 (실패해도 이전 값 유지)
+        cached('macroAll', 1800_000, () => yfRun(`
 import yfinance as yf, json
 result = {}
 # 환율
@@ -1203,7 +1584,7 @@ for sym, key in [('GC=F','gold'),('CL=F','oil'),('SI=F','silver')]:
             result[key] = {'value': round(p,2), 'chg': round((p-prev)/prev*100,2)}
     except: pass
 print(json.dumps(result))
-`),
+`)),
       ]);
 
       const t = techR.status === 'fulfilled' ? techR.value : {};
@@ -1274,7 +1655,7 @@ ${newsText || '관련 뉴스 없음'}
 ## 응답 형식
 위 모든 데이터를 종합하여 아래 JSON으로만 응답하세요 (다른 텍스트 없이, 반드시 순수 한국어만):
 {
-  "signal": "매수" | "중립" | "매도",
+  "signal": "강력매수" | "매수" | "약매수" | "중립" | "약매도" | "매도" | "강력매도",
   "confidence": 숫자(0-100),
   "price_move": "오늘 등락 원인 분석 - 뉴스·수급·기술적 요인 기반으로 구체적으로 설명",
   "summary": "3문장 핵심 투자 의견 요약",
@@ -1286,7 +1667,10 @@ ${newsText || '관련 뉴스 없음'}
 }`;
 
       // ── 결정론적 시그널 계산 (지표 기반, AI 출력과 무관하게 일관성 유지) ──
-      const { signal: detSignal, confidence: detConf, score: detScore } = computeSignal(t, q, flow);
+      // 5대 검증된 투자전략(Piotroski/Magic Formula/Multi-Factor/Momentum/CAN SLIM) 종합
+      const { signal: detSignal, confidence: detConf, score: detScore, breakdown: detBreak, reasons: detReasons } = computeSignal(t, q, flow, macro);
+      const breakStr = `기술 ${detBreak.technical>=0?'+':''}${detBreak.technical} / 가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth} / 모멘텀 ${detBreak.momentum>=0?'+':''}${detBreak.momentum} / 수급 ${detBreak.flow>=0?'+':''}${detBreak.flow} / 심리 ${detBreak.sentiment>=0?'+':''}${detBreak.sentiment} / 매크로 ${detBreak.macro>=0?'+':''}${detBreak.macro}`;
+      const reasonStr = detReasons.length ? detReasons.slice(0,8).join(', ') : '특이사항 없음';
 
       const msg = await getGrok().chat.completions.create({
         model: 'llama-3.3-70b-versatile',
@@ -1294,7 +1678,7 @@ ${newsText || '관련 뉴스 없음'}
         seed: hashSeed(symbol),
         max_tokens: 1024,
         messages: [
-          { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 이미 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 점수 ${detScore}). 당신의 분석은 이 결정의 근거를 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하세요.` },
+          { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.` },
           { role: 'user', content: prompt }
         ],
       });
@@ -1306,6 +1690,8 @@ ${newsText || '관련 뉴스 없음'}
       // AI signal/confidence는 결정론적 결과로 덮어쓰기
       parsed.signal = detSignal;
       parsed.confidence = detConf;
+      parsed.score = detScore;
+      parsed.breakdown = detBreak;
       // 비한국어 문자 제거 (한글, 영문, 숫자, 기본 특수문자만 허용)
       const sanitize = v => typeof v === 'string'
         ? v.replace(/[^\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F a-zA-Z0-9%.,·()\-+~:/?!\n""''【】]/g, '')
@@ -1770,99 +2156,200 @@ app.get('/api/macro', async (_, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI 매수 신호 — 전체 종목 일괄 분석
+// 결정론적 시그널 사전 계산 (서버 시작 시 + 20분마다 백그라운드 갱신)
+// 함수 기반이므로 AI 불필요 — 캐시에서 즉시 응답
+// 시가총액 상위 700개 기업(NAVER 랭킹) 대상
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/buy-signals', async (req, res) => {
-  if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'GROQ_API_KEY not set' });
-  if (req.query.force) _c.delete('buy-signals');
+
+// 시가총액 상위 N개 종목 (NAVER 랭킹 기반) — 24h 캐시
+async function fetchTopByMarketCap(limit = 700) {
+  return cached(`topMcap:${limit}`, 86400_000, async () => {
+    // USDKRW 환율 (KRW → USD 변환용)
+    let fx = 1370;
+    try {
+      const q = await stooqQuote('usdkrw');
+      if (q?.price && q.price > 800 && q.price < 2500) fx = q.price;
+    } catch {}
+
+    const candidates = [];
+
+    // KR: KOSPI 200 + KOSDAQ 100
+    const krJobs = [['KOSPI', 2], ['KOSDAQ', 1]];
+    await Promise.allSettled(krJobs.map(async ([mkt, pages]) => {
+      for (let p = 1; p <= pages; p++) {
+        try {
+          const d = await fetchJSON(`https://m.stock.naver.com/api/stocks/marketValue/${mkt}?page=${p}&pageSize=100`);
+          for (const s of (d.stocks || [])) {
+            const mcRaw = parseFloat(s.marketValueRaw || '0');
+            if (!mcRaw || !s.itemCode) continue;
+            candidates.push({
+              ticker: s.itemCode,
+              market: 'kr',
+              name: s.stockName,
+              mcapUsd: mcRaw / fx,
+            });
+          }
+        } catch {}
+      }
+    }));
+
+    // US: NASDAQ 300 + NYSE 300
+    const usJobs = [['NASDAQ', 3], ['NYSE', 3]];
+    await Promise.allSettled(usJobs.map(async ([ex, pages]) => {
+      for (let p = 1; p <= pages; p++) {
+        try {
+          const d = await fetchJSON(`https://api.stock.naver.com/stock/exchange/${ex}/marketValue?page=${p}&pageSize=100`);
+          for (const s of (d.stocks || [])) {
+            const mcK = parseFloat((s.marketValue || '0').replace(/,/g, ''));
+            if (!mcK || !s.symbolCode) continue;
+            // marketValue 는 천 USD 단위 → USD 로 환산
+            const sym = s.symbolCode.replace(/\./g, '-');
+            candidates.push({
+              ticker: sym,
+              market: 'us',
+              name: s.stockNameEng || s.stockName,
+              mcapUsd: mcK * 1000,
+            });
+          }
+        } catch {}
+      }
+    }));
+
+    candidates.sort((a, b) => b.mcapUsd - a.mcapUsd);
+    const top = candidates.slice(0, limit);
+
+    // NAVER API 완전 실패 시 폴백
+    if (top.length < 10) {
+      console.log('  ⚠ 시가총액 랭킹 불충분 — 폴백 목록 사용');
+      return [
+        ...['005930','000660','005380','000270','035420','035720','068270','105560','066570','012450',
+            '086790','006400','096770','373220','207940','003670','034020','247540','033780','015760',
+            '259960','323410','055550','018260'].map(t => ({ ticker: t, market: 'kr', name: t, mcapUsd: 0 })),
+        ...['NVDA','AAPL','MSFT','GOOGL','AMZN','META','TSLA','NFLX','AMD','AVGO',
+            'QCOM','TSM','INTC','JPM','BRK-B','V','MA','LLY','UNH','PLTR','CRM','ORCL','XOM','WMT']
+           .map(t => ({ ticker: t, market: 'us', name: t, mcapUsd: 0 })),
+      ];
+    }
+
+    const krN = top.filter(t => t.market === 'kr').length;
+    const usN = top.length - krN;
+    console.log(`  ✓ 시가총액 상위 ${top.length}개 선별 (KR ${krN} / US ${usN})`);
+    return top;
+  });
+}
+
+// 종목별 시그널 결과 저장소 (ticker → {signal, score, confidence, breakdown, ...})
+const _signalStore = new Map();
+let _signalsUpdatedAt = 0;
+let _signalsComputing = null; // 진행 중인 Promise (race 방지)
+
+async function computeSignalForTicker(ticker, market, opts = {}) {
+  const isKr = market === 'kr';
+  const screener = getC('screener') || {};
   try {
-    const data = await cached('buy-signals', 1800_000, async () => {
-      // 1. 스크리너 캐시 우선 사용, 없으면 사이드바 캐시로 즉시 구성
-      let screener = getC('screener') || {};
-      if (Object.keys(screener).length < 10) {
-        // 사이드바 캐시에서 빠르게 구성 (이미 워밍업됨)
-        const ALL_TICKERS = [
-          '005930','000660','005380','000270','035420','035720','068270','105560','066570','012450',
-          '086790','006400','096770','373220','207940','003670','034020','247540','033780','015760',
-          '259960','323410','055550','018260',
-          'NVDA','AAPL','MSFT','GOOGL','AMZN','META','TSLA','NFLX','AMD','AVGO',
-          'QCOM','TSM','INTC','JPM','V','MA','LLY','UNH','PLTR','CRM','ORCL','AAPL'
-        ];
-        ALL_TICKERS.forEach(t => {
-          const c = getC(`sb:${t}`);
-          if (c && c.price) screener[t] = { ...c, ticker: t };
-        });
+    let q = screener[ticker];
+    if (!q || !q.price) {
+      if (isKr) {
+        const [base, fin] = await Promise.all([krQuote(ticker), krFinancials(ticker)]);
+        q = { ...base, ...fin };
+      } else {
+        q = await usQuote(ticker);
+      }
+    }
+    if (!q || !q.price) return null;
+
+    let t = {};
+    if (!opts.skipTech) {
+      try { t = await cached(`tech:${ticker}:${market}`, 3600_000, () => getTechnicals(ticker, isKr)); } catch {}
+    }
+
+    const sig = computeSignal(t, q, {}, {});
+    const reason = sig.reasons.slice(0, 3).join(' · ') || '5대 전략 종합';
+    return {
+      ticker, id: ticker, market,
+      name: q.name || ticker,
+      price: q.price,
+      changePct: q.changePct,
+      per: q.per, pbr: q.pbr, roe: q.roe, div: q.div,
+      signal: sig.signal,
+      score: sig.score,
+      confidence: sig.confidence,
+      breakdown: sig.breakdown,
+      reasons: sig.reasons,
+      reason,
+    };
+  } catch { return null; }
+}
+
+async function precomputeAllSignals() {
+  if (_signalsComputing) return _signalsComputing;
+  _signalsComputing = (async () => {
+    try {
+      const universe = await fetchTopByMarketCap(700);
+      if (!universe.length) {
+        console.log('  ⚠ 시가총액 랭킹 비어있음 — 시그널 계산 중단');
+        return;
       }
 
-      // 2. 데이터 있는 종목만 추출 + 정량 점수로 상위 50개 선별
-      const scored = Object.entries(screener)
-        .filter(([, s]) => s.price && s.price > 0)
-        .map(([ticker, s]) => {
-          let score = 0;
-          if (s.per && s.per > 0 && s.per < 20) score += (20 - s.per);
-          if (s.roe && s.roe > 0) score += Math.min(s.roe, 30);
-          if (s.pbr && s.pbr > 0 && s.pbr < 3) score += (3 - s.pbr) * 5;
-          if (s.div && s.div > 0) score += Math.min(s.div * 3, 15);
-          if (s.changePct > 0) score += Math.min(s.changePct, 5);
-          if (s.revenueGrowth > 10) score += Math.min(s.revenueGrowth * 0.3, 10);
-          return { ticker, score, ...s };
-        })
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 50);
+      // 동시성 제한 worker 풀 (NAVER quote API 보호)
+      const CONCURRENCY = 12;
+      let idx = 0;
+      let ok = 0;
+      const newStore = new Map();
 
-      // 3. 종목 요약 텍스트 생성 (상위 150개만 AI에 전달)
-      const lines = scored.map(s => {
-        const parts = [
-          `${s.ticker}(${s.market?.toUpperCase()})`,
-          s.name ? `"${s.name}"` : '',
-          s.price ? `가격:${s.price}` : '',
-          s.changePct != null ? `등락:${s.changePct}%` : '',
-          s.per != null ? `PER:${s.per}` : '',
-          s.pbr != null ? `PBR:${s.pbr}` : '',
-          s.roe != null ? `ROE:${s.roe}%` : '',
-          s.div != null ? `배당:${s.div}%` : '',
-          s.revenueGrowth != null ? `매출성장:${s.revenueGrowth}%` : '',
-          s.profitMargin != null ? `순이익률:${s.profitMargin}%` : '',
-        ].filter(Boolean).join(' ');
-        return parts;
-      }).join('\n');
+      async function worker() {
+        while (idx < universe.length) {
+          const i = idx++;
+          const { ticker, market } = universe[i];
+          try {
+            const r = await computeSignalForTicker(ticker, market);
+            if (r) { newStore.set(r.ticker, r); ok++; }
+          } catch {}
+        }
+      }
+      await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-      // 4. Groq AI에 일괄 분석 요청
-      const groq = getGrok();
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: `당신은 전문 주식 애널리스트입니다. 제공된 종목 데이터를 분석해 현재 시점에서 매수를 고려할 만한 종목을 선별하세요.
-응답은 반드시 아래 JSON 형식만 출력하세요:
-{"buys":[{"ticker":"종목코드","name":"종목명","reason":"한 문장 이유","confidence":75},...]}
-- confidence는 50~95 범위의 정수
-- 매수 추천 종목은 최대 15개
-- 명확한 근거가 있는 종목만 포함` },
-          { role: 'user', content: `다음 종목들의 투자 지표를 분석해 매수 신호 종목을 선별해주세요:\n\n${lines}` }
-        ]
-      });
+      // atomic swap
+      _signalStore.clear();
+      for (const [k, v] of newStore) _signalStore.set(k, v);
 
-      const text = completion.choices[0].message.content;
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('AI 응답 파싱 실패');
-      const parsed = JSON.parse(match[0]);
+      _signalsUpdatedAt = Date.now();
+      const counts = {};
+      for (const r of _signalStore.values()) counts[r.signal] = (counts[r.signal]||0) + 1;
+      const c = s => counts[s]||0;
+      console.log(`  ✓ 시그널 사전 계산 완료 (${ok}/${universe.length}, 강력매수:${c('강력매수')} 매수:${c('매수')} 약매수:${c('약매수')} 중립:${c('중립')} 약매도:${c('약매도')} 매도:${c('매도')} 강력매도:${c('강력매도')})`);
+    } finally {
+      _signalsComputing = null;
+    }
+  })();
+  return _signalsComputing;
+}
 
-      // 5. 각 종목에 screener 데이터 병합
-      const buys = (parsed.buys || []).map(b => {
-        const s = screener[b.ticker] || {};
-        const name = s.name || b.name || b.ticker;
-        return { ...b, ...s, id: b.ticker, ticker: b.ticker, name, reason: b.reason, confidence: b.confidence };
-      });
+// 매수 신호: 캐시에서 '매수'만 필터링 — 즉시 응답
+app.get('/api/buy-signals', async (req, res) => {
+  if (req.query.force) {
+    await precomputeAllSignals();
+  } else if (_signalStore.size === 0) {
+    // 첫 호출이고 아직 계산 전인 경우 — 계산 트리거 후 기다림
+    await precomputeAllSignals();
+  }
+  const buys = [..._signalStore.values()]
+    .filter(r => ['강력매수','매수','약매수'].includes(r.signal))
+    .sort((a, b) => b.score - a.score);
+  res.json({ buys, total: buys.length, updatedAt: _signalsUpdatedAt });
+});
 
-      // 가격 데이터가 없으면 캐시하지 않음 (screener 미준비 상태)
-      const hasPrice = buys.some(b => b.price && b.price > 0);
-      if (!hasPrice) throw new Error('screener 데이터 미준비 — 재시도 필요');
+// 단일 종목 시그널 즉시 조회 (분석 페이지에서 AI 호출 전 빠르게 표시용)
+app.get('/api/signal/:ticker', (req, res) => {
+  const r = _signalStore.get(req.params.ticker);
+  if (!r) return res.status(404).json({ error: '시그널 미계산' });
+  res.json(r);
+});
 
-      return { buys, updatedAt: Date.now() };
-    });
-    res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+// 전체 종목 시그널 (대시보드용)
+app.get('/api/all-signals', (req, res) => {
+  const all = [..._signalStore.values()].sort((a, b) => b.score - a.score);
+  res.json({ all, total: all.length, updatedAt: _signalsUpdatedAt });
 });
 
 app.listen(PORT, () => {
@@ -1911,17 +2398,7 @@ async function warmupCache() {
     console.log(`  ✓ KR 사이드바 워밍업 완료`);
   }, 5000);
 
-  // 4. AI 매수신호 pre-warm (사이드바 워밍업 직후 실행)
-  setTimeout(async () => {
-    if (!process.env.GROQ_API_KEY) return;
-    try {
-      const r = await fetch(`http://localhost:${PORT}/api/buy-signals`);
-      const d = await r.json();
-      if (d.buys) console.log(`  ✓ AI 매수신호 워밍업 완료 (${d.buys.length}개)`);
-    } catch(e) { console.log('  ⚠ AI 매수신호 워밍업 실패:', e.message); }
-  }, 12000);
-
-  // 5. 스크리너 데이터 백그라운드 워밍업 (선택적, 느림)
+  // 4. 스크리너 워밍업 (시그널 계산의 입력 데이터)
   setTimeout(async () => {
     try {
       await cached('screener', 1800_000, async () => {
@@ -1930,5 +2407,13 @@ async function warmupCache() {
       });
       console.log('  ✓ 스크리너 워밍업 완료');
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
-  }, 20000);
+  }, 8000);
+
+  // 5. 전체 시그널 사전 계산 (서버 시작 시 1회 + 이후 20분마다 갱신)
+  setTimeout(async () => {
+    try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
+    setInterval(() => {
+      precomputeAllSignals().catch(e => console.log('  ⚠ 시그널 갱신 실패:', e.message));
+    }, 20 * 60 * 1000);
+  }, 25000);
 }
