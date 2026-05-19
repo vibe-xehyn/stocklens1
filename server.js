@@ -2333,7 +2333,7 @@ async function precomputeAllSignals() {
   if (_signalsComputing) return _signalsComputing;
   _signalsComputing = (async () => {
     try {
-      const universe = await fetchTopByMarketCap(700);
+      const universe = await fetchTopByMarketCap(1000);
       if (!universe.length) {
         console.log('  ⚠ 시가총액 랭킹 비어있음 — 시그널 계산 중단');
         return;
@@ -2373,18 +2373,29 @@ async function precomputeAllSignals() {
   return _signalsComputing;
 }
 
-// 매수 신호: 캐시에서 '매수'만 필터링 — 즉시 응답
+// 매수 신호: market(kr/us/all) + signal 필터 + limit=50
 app.get('/api/buy-signals', async (req, res) => {
   if (req.query.force) {
     await precomputeAllSignals();
   } else if (_signalStore.size === 0) {
-    // 첫 호출이고 아직 계산 전인 경우 — 계산 트리거 후 기다림
     await precomputeAllSignals();
   }
-  const buys = [..._signalStore.values()]
-    .filter(r => ['강력매수','매수','약매수'].includes(r.signal))
+  const market = req.query.market || 'all'; // kr | us | all
+  const BUY_SIGNALS = ['강력매수', '매수', '약매수'];
+  const all = [..._signalStore.values()]
+    .filter(r => BUY_SIGNALS.includes(r.signal))
+    .filter(r => market === 'all' || r.market === market)
     .sort((a, b) => b.score - a.score);
-  res.json({ buys, total: buys.length, updatedAt: _signalsUpdatedAt });
+
+  // 전체 카운트는 내려주되 표시는 50개로 제한
+  const counts = {};
+  for (const r of all) counts[r.signal] = (counts[r.signal] || 0) + 1;
+  counts.kr = all.filter(r => r.market === 'kr').length;
+  counts.us = all.filter(r => r.market === 'us').length;
+  counts.all = all.length;
+
+  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
+  res.json({ buys: all.slice(0, 50), total: all.length, counts, updatedAt: _signalsUpdatedAt });
 });
 
 // 단일 종목 시그널 즉시 조회 (분석 페이지에서 AI 호출 전 빠르게 표시용)
