@@ -904,7 +904,7 @@ function renderMain(def, q, chart, news) {
     <!-- AI Analysis -->
     <div class="ai-card" id="aiCard">
       <div class="ai-header">
-        <div class="ai-title">AI 투자 의견 <span class="ai-badge">Groq AI</span></div>
+        <div class="ai-title">AI 투자 의견</div>
       </div>
       <div class="ai-loading"><div class="spinner"></div> AI 분석 중... (기술적 지표 및 뉴스 종합 분석)</div>
     </div>
@@ -1341,7 +1341,7 @@ async function loadAIAnalysis(def) {
     const confColor = data.confidence >= 70 ? '#22c55e' : data.confidence >= 50 ? '#f59e0b' : '#ef4444';
     el.innerHTML = `
       <div class="ai-header">
-        <div class="ai-title">AI 투자 의견 <span class="ai-badge">Groq AI</span></div>
+        <div class="ai-title">AI 투자 의견</div>
         <div class="ai-signal">
           <div>
             <span class="signal-pill ${sigClass}">${sigIcon} ${data.signal}</span>
@@ -1370,7 +1370,7 @@ async function loadAIAnalysis(def) {
       </div>`;
   } catch(e) {
     if (el) el.innerHTML = `
-      <div class="ai-header"><div class="ai-title">AI 투자 의견 <span class="ai-badge">Groq AI</span></div></div>
+      <div class="ai-header"><div class="ai-title">AI 투자 의견</div></div>
       <div class="ai-error">${e.message.includes('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY 환경변수를 설정해주세요.' : 'AI 분석을 불러올 수 없습니다: ' + e.message}</div>`;
   }
 }
