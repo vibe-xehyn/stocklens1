@@ -2324,11 +2324,20 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
   try {
     let q = screener[ticker];
     if (!q || !q.price) {
-      if (isKr) {
-        const [base, fin] = await Promise.all([krQuote(ticker), krFinancials(ticker)]);
-        q = { ...base, ...fin };
+      if (opts.skipTech) {
+        // 빠른 프리컴퓨트 모드: 가격 데이터만 (yfinance 펀더멘탈 스킵)
+        if (isKr) {
+          try { const base = await krQuote(ticker); q = base; } catch {}
+        } else {
+          try { q = await naverUsQuote(ticker); } catch {}
+        }
       } else {
-        q = await usQuote(ticker);
+        if (isKr) {
+          const [base, fin] = await Promise.all([krQuote(ticker), krFinancials(ticker)]);
+          q = { ...base, ...fin };
+        } else {
+          q = await usQuote(ticker);
+        }
       }
     }
     if (!q || !q.price) return null;
@@ -2336,6 +2345,12 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
     let t = {};
     if (!opts.skipTech) {
       try { t = await cached(`tech:${ticker}:${market}`, 3600_000, () => getTechnicals(ticker, isKr)); } catch {}
+    } else if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
+      // 52주 범위 기반 기술 프록시 (yfinance 없이 즉시 계산)
+      const pos = (q.price - q.low52) / (q.high52 - q.low52);
+      t.bb_pct = pos * 100;
+      const chgBoost = Math.max(-10, Math.min(10, (q.changePct || 0) * 1.5));
+      t.rsi = Math.max(10, Math.min(90, pos * 70 + 15 + chgBoost));
     }
 
     const sig = computeSignal(t, q, {}, {});
@@ -2366,8 +2381,8 @@ async function precomputeAllSignals() {
         return;
       }
 
-      // 동시성 제한 worker 풀 (NAVER quote API 보호)
-      const CONCURRENCY = 12;
+      // 동시성 제한 worker 풀 (skipTech 모드: yfinance 없음 → 높은 동시성 가능)
+      const CONCURRENCY = 30;
       let idx = 0;
       let ok = 0;
       const newStore = new Map();
@@ -2377,7 +2392,7 @@ async function precomputeAllSignals() {
           const i = idx++;
           const { ticker, market } = universe[i];
           try {
-            const r = await computeSignalForTicker(ticker, market);
+            const r = await computeSignalForTicker(ticker, market, { skipTech: true });
             if (r) { newStore.set(r.ticker, r); ok++; }
           } catch {}
         }
@@ -2485,7 +2500,7 @@ async function warmupCache() {
     console.log(`  ✓ KR 사이드바 워밍업 완료`);
   }, 5000);
 
-  // 4. 스크리너 워밍업 (시그널 계산의 입력 데이터)
+  // 4. 스크리너 워밍업 후 즉시 시그널 사전 계산
   setTimeout(async () => {
     try {
       await cached('screener', 1800_000, async () => {
@@ -2494,18 +2509,16 @@ async function warmupCache() {
       });
       console.log('  ✓ 스크리너 워밍업 완료');
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
-  }, 8000);
 
-  // 5. 전체 시그널 사전 계산 (파일 캐시 우선 로드, 만료 시 재계산, 이후 4시간마다 갱신)
-  setTimeout(async () => {
-    const loaded = _loadSignalCache();
-    if (!loaded) {
-      // 캐시 없거나 만료 → 즉시 계산
+    // 5. 스크리너 완료 직후 시그널 계산 (screener 캐시 활용 → 빠름)
+    const cacheLoaded = _loadSignalCache();
+    if (!cacheLoaded) {
+      // 캐시 없거나 만료 → 스크리너 데이터 활용해 빠르게 계산
       try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
     }
     // 4시간마다 갱신 (캐시 만료 시점에 맞춰 재계산)
     setInterval(() => {
       precomputeAllSignals().catch(e => console.log('  ⚠ 시그널 갱신 실패:', e.message));
     }, SIGNAL_CACHE_TTL);
-  }, 25000);
+  }, 8000);
 }
