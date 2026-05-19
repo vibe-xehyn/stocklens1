@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
+    "compression": "^1.8.1",
     "express": "^4.19.2",
     "openai": "^6.38.0",
     "yahoo-finance2": "^2.11.3"

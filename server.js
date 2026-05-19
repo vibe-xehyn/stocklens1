@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -19,7 +20,16 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const getGrok = () => new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
 
-app.use(express.static(join(__dirname, 'public')));
+app.use(compression({ level: 6 })); // gzip 압축
+app.use(express.static(join(__dirname, 'public'), {
+  maxAge: '1d',          // JS/CSS/이미지 24시간 브라우저 캐시
+  etag: true,
+  lastModified: true,
+  setHeaders(res, path) {
+    // HTML은 캐시 안 함 (항상 최신)
+    if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
 app.use((_, res, next) => { res.header('Access-Control-Allow-Origin', '*'); next(); });
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
@@ -669,10 +679,10 @@ app.get('/api/sidebar-batch', async (req, res) => {
   const list = symbols.split(',').filter(Boolean);
   if (!list.length) return res.json({});
 
-  const ttl = isTradingHours() ? 5_000 : 60_000;
+  const ttl = isTradingHours() ? 10_000 : 300_000; // 장중 10초, 장마감 5분
   const cacheKey = `sbb:${market}:${list.join(',')}`;
   const hit = getC(cacheKey);
-  if (hit) return res.json(hit);
+  if (hit) { res.setHeader('Cache-Control', `public, max-age=${Math.floor(ttl/1000)}`); return res.json(hit); }
 
   try {
     let result = {};
@@ -864,6 +874,40 @@ app.get('/api/trading-status', (_, res) => {
   res.json({ kr, us });
 });
 
+// 초기 로딩 통합 엔드포인트 (trading-status + indices + rates 한 번에)
+app.get('/api/init', async (_, res) => {
+  const now = new Date();
+  const kstMs = now.getTime() + 9 * 3600_000;
+  const kstDate = new Date(kstMs);
+  const kstDay = kstDate.getUTCDay();
+  const kstMin = kstDate.getUTCHours() * 60 + kstDate.getUTCMinutes();
+  const kr = kstDay >= 1 && kstDay <= 5 && kstMin >= 540 && kstMin < 930;
+  const etOffset = usETOffset(now);
+  const etMs = now.getTime() + etOffset * 3600_000;
+  const etDate = new Date(etMs);
+  const etDay = etDate.getUTCDay();
+  const etMin = etDate.getUTCHours() * 60 + etDate.getUTCMinutes();
+  const us = etDay >= 1 && etDay <= 5 && etMin >= 570 && etMin < 960;
+
+  const ttl = (kr || us) ? 15_000 : 120_000;
+  const [indices, rates] = await Promise.all([
+    cached('indices', 60_000, () => Promise.all([
+      krIndex('KOSPI','KOSPI'), krIndex('KOSDAQ','KOSDAQ'),
+      yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'),
+    ])).catch(() => []),
+    cached('rates', 300_000, async () => {
+      const pairs = [['usdkrw','usdkrw'],['usdjpy','usdjpy'],['eurusd','eurusd'],['dx.f','dxy']];
+      const rates = {};
+      await Promise.allSettled(pairs.map(async ([sym, key]) => {
+        try { const q = await stooqQuote(sym); rates[key] = { value: q.price, change: q.changePct }; } catch {}
+      }));
+      return rates;
+    }).catch(() => ({})),
+  ]);
+  res.setHeader('Cache-Control', `public, max-age=${Math.floor(ttl/1000)}, stale-while-revalidate=30`);
+  res.json({ trading: { kr, us }, indices, rates });
+});
+
 // Full quote — detail view
 app.get('/api/quote', async (req, res) => {
   const { symbol, market } = req.query;
@@ -924,13 +968,15 @@ async function yfIndex(sym, name) {
 
 app.get('/api/indices', async (_, res) => {
   try {
-    const data = await cached('indices', 60_000, () => Promise.all([
+    const ttl = isTradingHours() ? 30_000 : 120_000;
+    const data = await cached('indices', ttl, () => Promise.all([
       krIndex('KOSPI',  'KOSPI'),
       krIndex('KOSDAQ', 'KOSDAQ'),
       yfIndex('^GSPC', 'S&P 500'),
       yfIndex('^IXIC', 'NASDAQ'),
       yfIndex('^DJI',  'DOW'),
     ]));
+    res.setHeader('Cache-Control', `public, max-age=${Math.floor(ttl/1000)}, stale-while-revalidate=10`);
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StockLens - 주식 투자 대시보드</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
 <style>
   :root {
     --bg: #0d0f18; --surface: #161929; --surface2: #1e2236; --surface3: #252840;
@@ -578,15 +578,37 @@ function renderRates() {
 
 async function init() {
   startClock();
-  await fetchTradingStatus();
-  await Promise.all([loadIndices(), loadAllSidebar(), loadRates()]);
+  // /api/init 으로 trading-status + indices + rates 한 번에 로딩
+  await Promise.all([fetchInit(), loadAllSidebar()]);
   renderSidebar();
   updateTradingBadge();
-  await renderHome();   // 홈 화면으로 시작
+  await renderHome();
   scheduleAutoRefresh();
 }
 
 let tradingStatus = { kr: false, us: false };
+
+async function fetchInit() {
+  try {
+    const d = await api('/api/init');
+    tradingStatus = d.trading || tradingStatus;
+    if (d.indices?.length) {
+      indicesCache = d.indices;
+      document.getElementById('marketBar').innerHTML = d.indices.map(m => {
+        const up = m.change >= 0;
+        return `<div class="market-item" onclick="viewIndex(${JSON.stringify(m).replace(/"/g,'&quot;')})" style="cursor:pointer;padding:4px 6px;border-radius:6px;transition:background 0.15s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+          <span class="market-name">${m.name}</span>
+          <span class="market-val ${up?'up':'down'}">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})} <small>${up?'+':''}${m.change.toFixed(2)}%</small></span>
+        </div>`;
+      }).join('');
+    }
+    if (d.rates && Object.keys(d.rates).length) { ratesCache = d.rates; renderRates(); }
+  } catch {
+    // 폴백: 개별 요청
+    await fetchTradingStatus();
+    await Promise.all([loadIndices(), loadRates()]);
+  }
+}
 
 async function fetchTradingStatus() {
   try { tradingStatus = await api('/api/trading-status'); } catch {}
@@ -1905,8 +1927,14 @@ async function renderHome(opts = {}) {
       ${renderScreenerCard(all)}
     </div>`;
 
-  // 매수신호 비동기 로딩 (홈 렌더링 후 백그라운드)
-  loadBuySignals();
+  // 매수신호: 카드가 뷰포트에 진입할 때 로딩 (IntersectionObserver)
+  const bsEl = document.getElementById('buySignalsCard');
+  if (bsEl) {
+    const obs = new IntersectionObserver((entries, o) => {
+      if (entries[0].isIntersecting) { loadBuySignals(); o.disconnect(); }
+    }, { rootMargin: '200px' });
+    obs.observe(bsEl);
+  }
 }
 
 function renderMacroDashboard(m) {
