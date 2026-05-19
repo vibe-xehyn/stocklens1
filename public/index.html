@@ -2182,10 +2182,11 @@ async function loadBuySignals(force = false) {
   if (!el) { _loadingBuySignals = false; return; }
   el.innerHTML = renderBuySignalsCard(null);
 
-  const baseUrl = force ? '/api/buy-signals?force=1' : '/api/buy-signals';
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const res = await fetch(`${baseUrl}&market=${_buySignalMarket}`);
+      const params = new URLSearchParams({ market: _buySignalMarket });
+      if (force) params.set('force', '1');
+      const res = await fetch(`/api/buy-signals?${params}`);
       const data = await res.json();
       if (data.buys) {
         _buySignalsCache[_buySignalMarket] = data;
