@@ -2,11 +2,10 @@ services:
   - type: web
     name: stocklens
     runtime: node
+    nodeVersion: 20
     buildCommand: npm install && pip3 install -r requirements.txt
     startCommand: node server.js
+    plan: free
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PYTHON_VERSION
-        value: "3.12"
-    plan: free
