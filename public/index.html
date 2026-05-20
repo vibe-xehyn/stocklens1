@@ -1774,9 +1774,10 @@ function startClock() {
 // ── 홈 화면 ───────────────────────────────────────────────────────────────────
 let isHomePage = true;
 
-function goHome() {
+function goHome(fromPopState = false) {
   isHomePage = true;
   document.querySelectorAll('.stock-item').forEach(el => el.classList.remove('active'));
+  if (!fromPopState) history.pushState({ page: 'home' }, '', '/');
   renderHome();
 }
 
@@ -2367,7 +2368,7 @@ function requestNotificationPermission() {
   });
 }
 
-async function selectStock(id) {
+async function selectStock(id, fromPopState = false) {
   isHomePage = false;
   // STOCK_DEFS에 없으면 ticker 기반으로 임시 def 생성 (스크리너/매수신호 종목)
   let def = STOCK_DEF(id);
@@ -2377,12 +2378,30 @@ async function selectStock(id) {
   }
   currentDef = def;
   currentRange = '1mo';
+  if (!fromPopState) history.pushState({ page: 'stock', id }, '', `/?stock=${encodeURIComponent(id)}`);
   renderSidebar(document.getElementById('searchInput').value);
   await loadAndRenderMain(currentDef);
 }
 
 // ── START ─────────────────────────────────────────────────────────────────────
 init();
+
+// 뒤로가기/앞으로가기 지원
+window.addEventListener('popstate', (e) => {
+  const state = e.state;
+  if (!state || state.page === 'home') {
+    goHome(true);
+  } else if (state.page === 'stock' && state.id) {
+    selectStock(state.id, true);
+  }
+});
+// 초기 상태 등록
+if (!history.state) {
+  const params = new URLSearchParams(location.search);
+  const stockId = params.get('stock');
+  if (stockId) history.replaceState({ page: 'stock', id: stockId }, '', location.href);
+  else history.replaceState({ page: 'home' }, '', '/');
+}
 
 // ── Mobile Tab Bar ────────────────────────────────────────────────────────────
 let _mobileTab = 'home';
