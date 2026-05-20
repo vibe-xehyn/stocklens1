@@ -2140,9 +2140,10 @@ function renderBuySignalsCard(data) {
         <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">새로고침</button>
       </div>
     </div>
+    ${modeToggle}
     ${loading
       ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> 전체 종목 분석 중...</div>`
-      : `${modeToggle}${marketBar}${sigBar}${filtered.length
+      : `${marketBar}${sigBar}${filtered.length
           ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:10px">${cards}</div>`
           : `<div style="color:var(--muted);font-size:13px">해당 신호 종목이 없습니다</div>`}`
     }
