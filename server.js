@@ -2416,7 +2416,7 @@ async function precomputeAllSignals() {
   return _signalsComputing;
 }
 
-// 매수 신호: market(kr/us/all) + signal 필터 + limit=50
+// 매수/매도 신호: mode(buy|sell) + market(kr/us/all) + signal 필터 + limit=50
 app.get('/api/buy-signals', async (req, res) => {
   if (req.query.force) {
     await precomputeAllSignals();
@@ -2424,13 +2424,15 @@ app.get('/api/buy-signals', async (req, res) => {
     await precomputeAllSignals();
   }
   const market = req.query.market || 'all'; // kr | us | all
-  const BUY_SIGNALS = ['강력매수', '매수', '약매수'];
+  const mode = req.query.mode || 'buy';     // buy | sell
+  const SIGNALS = mode === 'sell'
+    ? ['약매도', '매도', '강력매도']
+    : ['강력매수', '매수', '약매수'];
   const all = [..._signalStore.values()]
-    .filter(r => BUY_SIGNALS.includes(r.signal))
+    .filter(r => SIGNALS.includes(r.signal))
     .filter(r => market === 'all' || r.market === market)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => mode === 'sell' ? a.score - b.score : b.score - a.score);
 
-  // 전체 카운트는 내려주되 표시는 50개로 제한
   const counts = {};
   for (const r of all) counts[r.signal] = (counts[r.signal] || 0) + 1;
   counts.kr = all.filter(r => r.market === 'kr').length;

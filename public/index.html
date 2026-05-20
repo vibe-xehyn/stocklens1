@@ -2054,13 +2054,17 @@ function renderAlertsCard(allStocks) {
 // 매수신호 상태
 let _buySignalMarket = 'all'; // all | kr | us
 let _buySignalTab = '전체';   // 전체 | 강력매수 | 매수 | 약매수
-let _buySignalsCache = {};    // market -> data (빠른 탭 전환용)
+let _buySignalMode = 'buy';   // buy | sell
+let _buySignalsCache = {};    // mode_market -> data (빠른 탭 전환용)
 let _loadingBuySignals = false;
 
 const SIG_STYLE = {
   '강력매수': { border:'rgba(22,163,74,0.5)',  bg:'rgba(22,163,74,0.08)',  color:'#16a34a', icon:'▲▲' },
   '매수':     { border:'rgba(34,197,94,0.3)',  bg:'rgba(34,197,94,0.05)',  color:'#22c55e', icon:'▲' },
   '약매수':   { border:'rgba(134,239,172,0.3)',bg:'rgba(134,239,172,0.04)',color:'#86efac', icon:'△' },
+  '강력매도': { border:'rgba(220,38,38,0.5)',  bg:'rgba(220,38,38,0.08)',  color:'#dc2626', icon:'▼▼' },
+  '매도':     { border:'rgba(239,68,68,0.3)',  bg:'rgba(239,68,68,0.05)',  color:'#ef4444', icon:'▼' },
+  '약매도':   { border:'rgba(252,165,165,0.3)',bg:'rgba(252,165,165,0.04)',color:'#fca5a5', icon:'▽' },
 };
 
 function renderBuySignalsCard(data) {
@@ -2068,6 +2072,13 @@ function renderBuySignalsCard(data) {
   const updatedAt = data?.updatedAt ? new Date(data.updatedAt).toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '';
   const allBuys = data?.buys || [];
   const serverCounts = data?.counts || {};
+  const isSell = _buySignalMode === 'sell';
+
+  // 매수/매도 모드 토글
+  const modeToggle = `<div style="display:flex;gap:3px;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;margin-bottom:10px">
+    <button onclick="switchBuyMode('buy')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${!isSell?'rgba(22,163,74,0.15)':'transparent'};color:${!isSell?'#16a34a':'var(--muted)'}">매수 신호</button>
+    <button onclick="switchBuyMode('sell')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${isSell?'rgba(220,38,38,0.15)':'transparent'};color:${isSell?'#ef4444':'var(--muted)'}">매도 신호</button>
+  </div>`;
 
   // 마켓 탭 (KR/US/전체)
   const MARKET_TABS = [
@@ -2084,8 +2095,8 @@ function renderBuySignalsCard(data) {
     }).join('')}
   </div>`;
 
-  // 신호 탭 (강력매수/매수/약매수/전체)
-  const SIG_TABS = ['전체', '강력매수', '매수', '약매수'];
+  // 신호 탭
+  const SIG_TABS = isSell ? ['전체', '강력매도', '매도', '약매도'] : ['전체', '강력매수', '매수', '약매수'];
   const sigCounts = {};
   SIG_TABS.slice(1).forEach(t => { sigCounts[t] = allBuys.filter(d => d.signal === t).length; });
   sigCounts['전체'] = allBuys.length;
@@ -2105,7 +2116,8 @@ function renderBuySignalsCard(data) {
     const up = (d.changePct || 0) >= 0;
     const isUs = d.market === 'us';
     const sym = isUs ? '$' : '₩';
-    const ss = SIG_STYLE[d.signal] || SIG_STYLE['약매수'];
+    const fallbackStyle = isSell ? SIG_STYLE['약매도'] : SIG_STYLE['약매수'];
+    const ss = SIG_STYLE[d.signal] || fallbackStyle;
     const def = STOCK_DEFS.find(s => s.id === d.ticker) || {};
     return `<div onclick="selectStock('${d.ticker}')" style="background:${ss.bg};border-radius:10px;padding:12px 14px;cursor:pointer;border:1px solid ${ss.border};flex:1;min-width:140px;max-width:200px" onmouseover="this.style.borderColor='${ss.color}'" onmouseout="this.style.borderColor='${ss.border}'">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -2122,7 +2134,7 @@ function renderBuySignalsCard(data) {
 
   return `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div class="home-section-title">매수신호 <span style="font-size:10px;color:var(--muted);font-weight:500">시가총액 상위 1000개 기업</span></div>
+      <div class="home-section-title">${isSell ? '매도신호' : '매수신호'} <span style="font-size:10px;color:var(--muted);font-weight:500">시가총액 상위 1000개 기업</span></div>
       <div style="display:flex;align-items:center;gap:8px">
         ${updatedAt ? `<span style="font-size:10px;color:var(--muted)">${updatedAt} 기준</span>` : ''}
         <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">새로고침</button>
@@ -2130,25 +2142,40 @@ function renderBuySignalsCard(data) {
     </div>
     ${loading
       ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> 전체 종목 분석 중...</div>`
-      : `${marketBar}${sigBar}${filtered.length
+      : `${modeToggle}${marketBar}${sigBar}${filtered.length
           ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:10px">${cards}</div>`
           : `<div style="color:var(--muted);font-size:13px">해당 신호 종목이 없습니다</div>`}`
     }
   </div>`;
 }
 
+function _cacheKey() { return `${_buySignalMode}_${_buySignalMarket}`; }
+
 function _reRenderBuySignals() {
   const el = document.getElementById('buySignalsCard');
-  const data = _buySignalsCache[_buySignalMarket];
+  const data = _buySignalsCache[_cacheKey()];
   if (el) el.innerHTML = renderBuySignalsCard(data || null);
+}
+
+async function switchBuyMode(mode) {
+  _buySignalMode = mode;
+  _buySignalTab = '전체';
+  const el = document.getElementById('buySignalsCard');
+  const key = _cacheKey();
+  if (_buySignalsCache[key]) {
+    _reRenderBuySignals();
+  } else {
+    if (el) el.innerHTML = renderBuySignalsCard(null);
+    await _fetchBuySignals(_buySignalMarket);
+  }
 }
 
 async function switchBuyMarket(market) {
   _buySignalMarket = market;
   _buySignalTab = '전체';
   const el = document.getElementById('buySignalsCard');
-  // 캐시 있으면 즉시 렌더, 없으면 fetch
-  if (_buySignalsCache[market]) {
+  const key = _cacheKey();
+  if (_buySignalsCache[key]) {
     _reRenderBuySignals();
   } else {
     if (el) el.innerHTML = renderBuySignalsCard(null);
@@ -2163,13 +2190,14 @@ function switchBuyTab(tab) {
 
 async function _fetchBuySignals(market) {
   const el = document.getElementById('buySignalsCard');
+  const key = `${_buySignalMode}_${market}`;
   try {
-    const url = `/api/buy-signals?market=${market}`;
+    const url = `/api/buy-signals?market=${market}&mode=${_buySignalMode}`;
     const res = await fetch(url);
     const data = await res.json();
     if (data.buys) {
-      _buySignalsCache[market] = data;
-      if (_buySignalMarket === market && el) el.innerHTML = renderBuySignalsCard(data);
+      _buySignalsCache[key] = data;
+      if (_cacheKey() === key && el) el.innerHTML = renderBuySignalsCard(data);
     }
   } catch {}
 }
@@ -2184,17 +2212,18 @@ async function loadBuySignals(force = false) {
 
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const params = new URLSearchParams({ market: _buySignalMarket });
+      const params = new URLSearchParams({ market: _buySignalMarket, mode: _buySignalMode });
       if (force) params.set('force', '1');
       const res = await fetch(`/api/buy-signals?${params}`);
       const data = await res.json();
       if (data.buys) {
-        _buySignalsCache[_buySignalMarket] = data;
+        _buySignalsCache[_cacheKey()] = data;
         if (el) el.innerHTML = renderBuySignalsCard(data);
         // 다른 마켓도 백그라운드 프리페치
         for (const m of ['all','kr','us']) {
-          if (m !== _buySignalMarket && !_buySignalsCache[m]) {
-            fetch(`/api/buy-signals?market=${m}`).then(r=>r.json()).then(d=>{ if(d.buys) _buySignalsCache[m]=d; }).catch(()=>{});
+          const mk = `${_buySignalMode}_${m}`;
+          if (mk !== _cacheKey() && !_buySignalsCache[mk]) {
+            fetch(`/api/buy-signals?market=${m}&mode=${_buySignalMode}`).then(r=>r.json()).then(d=>{ if(d.buys) _buySignalsCache[mk]=d; }).catch(()=>{});
           }
         }
         _loadingBuySignals = false;
