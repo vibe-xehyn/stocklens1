@@ -1147,245 +1147,314 @@ app.get('/api/flow', async (req, res) => {
 // AI는 해석/설명만 담당, 매수/중립/매도 결정은 이 함수가 한다
 // ─────────────────────────────────────────────────────────────────────────────
 function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
+  // ══════════════════════════════════════════════════════════════════════
+  // 투자 대가 통합 모델 v2
+  // 버핏(FCF·ROE·해자) + 그린블라트(ROC+EY 매직포뮬러) + 린치(PEG)
+  // + 오닐 CAN SLIM + 피오트로스키 F-Score + 제가디쉬-티트만 모멘텀
+  // ══════════════════════════════════════════════════════════════════════
   const breakdown = { technical: 0, value: 0, quality: 0, growth: 0, momentum: 0, flow: 0, sentiment: 0, macro: 0 };
   const reasons = [];
 
   // ═══ 1. 기술적 지표 (최대 ±60점) ═══════════════════════════════════
-  // RSI(14): 과매도/과매수 역추세 신호
+  // RSI: 강한 추세(ADX>25) 중 과매수는 추세 지속 가능 → 패널티 감쇠
+  const strongTrend = typeof t.adx === 'number' && t.adx > 25;
   if (typeof t.rsi === 'number') {
-    if (t.rsi < 25)      { breakdown.technical += 18; reasons.push(`RSI ${t.rsi} 극과매도`); }
-    else if (t.rsi < 35) { breakdown.technical += 10; reasons.push(`RSI ${t.rsi} 과매도`); }
-    else if (t.rsi < 45) { breakdown.technical += 3; }
-    else if (t.rsi > 75) { breakdown.technical -= 18; reasons.push(`RSI ${t.rsi} 극과매수`); }
-    else if (t.rsi > 65) { breakdown.technical -= 10; reasons.push(`RSI ${t.rsi} 과매수`); }
-    else if (t.rsi > 55) { breakdown.technical -= 3; }
+    if (t.rsi < 20)      { breakdown.technical += 20; reasons.push(`RSI ${t.rsi} 극과매도`); }
+    else if (t.rsi < 30) { breakdown.technical += 13; reasons.push(`RSI ${t.rsi} 과매도`); }
+    else if (t.rsi < 40) breakdown.technical += 5;
+    else if (t.rsi > 80) { breakdown.technical -= (strongTrend ? 8 : 20); reasons.push(`RSI ${t.rsi} 극과매수`); }
+    else if (t.rsi > 70) { breakdown.technical -= (strongTrend ? 4 : 13); reasons.push(`RSI ${t.rsi} 과매수`); }
+    else if (t.rsi > 60) breakdown.technical -= (strongTrend ? 0 : 4);
   }
-  // MACD: 추세 전환 신호
+
+  // MACD 골든/데드크로스
   if (typeof t.macd === 'number' && typeof t.macd_signal === 'number') {
-    const diff = t.macd - t.macd_signal;
-    if (diff > 0) { breakdown.technical += 12; reasons.push('MACD 골든크로스'); }
-    else          { breakdown.technical -= 12; reasons.push('MACD 데드크로스'); }
+    if (t.macd > t.macd_signal) { breakdown.technical += 12; reasons.push('MACD 골든크로스'); }
+    else                        { breakdown.technical -= 12; reasons.push('MACD 데드크로스'); }
   }
-  // 볼린저밴드 %B: 변동성 기반 위치
+
+  // 볼린저밴드 %B
   if (typeof t.bb_pct === 'number') {
-    if (t.bb_pct < 10)      { breakdown.technical += 10; reasons.push('BB 하단 돌파'); }
-    else if (t.bb_pct < 25) breakdown.technical += 5;
-    else if (t.bb_pct > 90) { breakdown.technical -= 10; reasons.push('BB 상단 돌파'); }
-    else if (t.bb_pct > 75) breakdown.technical -= 5;
+    if (t.bb_pct < 5)       { breakdown.technical += 12; reasons.push('BB 하단 이탈'); }
+    else if (t.bb_pct < 20) breakdown.technical += 6;
+    else if (t.bb_pct < 30) breakdown.technical += 2;
+    else if (t.bb_pct > 95) { breakdown.technical -= 12; reasons.push('BB 상단 이탈'); }
+    else if (t.bb_pct > 80) breakdown.technical -= 6;
+    else if (t.bb_pct > 70) breakdown.technical -= 2;
   }
+
   // 스토캐스틱
   if (typeof t.stoch_k === 'number' && typeof t.stoch_d === 'number') {
-    if (t.stoch_k < 20 && t.stoch_k > t.stoch_d)      breakdown.technical += 8;
-    else if (t.stoch_k < 20)                          breakdown.technical += 4;
-    else if (t.stoch_k > 80 && t.stoch_k < t.stoch_d) breakdown.technical -= 8;
-    else if (t.stoch_k > 80)                          breakdown.technical -= 4;
+    if (t.stoch_k < 20 && t.stoch_k > t.stoch_d)      { breakdown.technical += 8; reasons.push('스토캐스틱 반등'); }
+    else if (t.stoch_k < 20)                           breakdown.technical += 4;
+    else if (t.stoch_k > 80 && t.stoch_k < t.stoch_d) { breakdown.technical -= 8; reasons.push('스토캐스틱 하락전환'); }
+    else if (t.stoch_k > 80)                           breakdown.technical -= 4;
   }
-  // DMI/ADX: 추세 강도 + 방향
+
+  // DMI/ADX: ADX 30+ = 더 강한 추세
   if (typeof t.adx === 'number' && typeof t.pdi === 'number' && typeof t.mdi === 'number') {
-    if (t.adx > 25) {
-      if (t.pdi > t.mdi) { breakdown.technical += 12; reasons.push(`강한 상승추세(ADX ${t.adx})`); }
-      else               { breakdown.technical -= 12; reasons.push(`강한 하락추세(ADX ${t.adx})`); }
-    } else if (t.adx > 20) {
-      breakdown.technical += (t.pdi > t.mdi ? 5 : -5);
+    const tStr = t.adx > 30 ? 15 : t.adx > 25 ? 12 : t.adx > 20 ? 6 : 0;
+    if (tStr > 0) {
+      if (t.pdi > t.mdi) { breakdown.technical += tStr; reasons.push(`상승추세(ADX ${t.adx.toFixed(0)})`); }
+      else               { breakdown.technical -= tStr; reasons.push(`하락추세(ADX ${t.adx.toFixed(0)})`); }
     }
   }
-  // 이동평균 정렬 (골든/데드 배열)
+
+  // 이동평균 정배열/역배열
   if (q.price && t.ma20 && t.ma50) {
-    if (q.price > t.ma20 && t.ma20 > t.ma50)      { breakdown.technical += 10; reasons.push('정배열(MA20>MA50)'); }
-    else if (q.price < t.ma20 && t.ma20 < t.ma50) { breakdown.technical -= 10; reasons.push('역배열(MA20<MA50)'); }
-    else if (q.price > t.ma20)                    breakdown.technical += 3;
-    else                                          breakdown.technical -= 3;
+    if (q.price > t.ma20 && t.ma20 > t.ma50)      { breakdown.technical += 10; reasons.push('정배열(가격>MA20>MA50)'); }
+    else if (q.price < t.ma20 && t.ma20 < t.ma50) { breakdown.technical -= 10; reasons.push('역배열(가격<MA20<MA50)'); }
+    else if (q.price > t.ma20)                     breakdown.technical += 3;
+    else                                           breakdown.technical -= 3;
   }
 
-  // ═══ 2. 가치 지표 - Magic Formula (Greenblatt) (최대 ±30점) ═══════
-  // Earnings Yield = 1/PER (높을수록 저평가)
+  // ═══ 2. 가치 지표 - 그린블라트 매직포뮬러 + 린치 PEG (최대 ±50점) ═
+  // [린치 핵심] PEG: 성장 대비 가격. PEG<1=저평가, <0.5=극저평가
+  if (typeof q.pegRatio === 'number' && q.pegRatio > 0) {
+    if (q.pegRatio < 0.5)       { breakdown.value += 22; reasons.push(`PEG ${q.pegRatio.toFixed(2)} 극저평가(린치)`); }
+    else if (q.pegRatio < 0.75) { breakdown.value += 16; reasons.push(`PEG ${q.pegRatio.toFixed(2)} 저평가`); }
+    else if (q.pegRatio < 1.0)  { breakdown.value += 10; reasons.push(`PEG ${q.pegRatio.toFixed(2)} 양호`); }
+    else if (q.pegRatio < 1.5)  breakdown.value += 4;
+    else if (q.pegRatio > 3.0)  { breakdown.value -= 12; reasons.push(`PEG ${q.pegRatio.toFixed(1)} 고평가`); }
+    else if (q.pegRatio > 2.0)  breakdown.value -= 6;
+    else if (q.pegRatio > 1.5)  breakdown.value -= 2;
+  }
+
+  // [그린블라트] 이익수익률(1/PER): 높을수록 저평가
   if (typeof q.per === 'number' && q.per > 0) {
     const ey = 100 / q.per;
-    if (ey > 10)      { breakdown.value += 12; reasons.push(`저PER ${q.per}배`); }   // PER < 10
-    else if (ey > 7)  breakdown.value += 7;                                         // PER < 14
-    else if (ey > 5)  breakdown.value += 3;                                         // PER < 20
-    else if (q.per > 40) { breakdown.value -= 8; reasons.push(`고PER ${q.per}배`); }
-    else if (q.per > 25) breakdown.value -= 3;
-  }
-  // PEG (성장 대비 저평가) - 1 미만이 저평가
-  if (typeof q.pegRatio === 'number' && q.pegRatio > 0) {
-    if (q.pegRatio < 1)      { breakdown.value += 8; reasons.push(`PEG ${q.pegRatio} 저평가`); }
-    else if (q.pegRatio < 1.5) breakdown.value += 3;
-    else if (q.pegRatio > 3) breakdown.value -= 5;
-  }
-  // PBR
-  if (typeof q.pbr === 'number' && q.pbr > 0) {
-    if (q.pbr < 1)      { breakdown.value += 7; reasons.push(`저PBR ${q.pbr}배`); }
-    else if (q.pbr < 2) breakdown.value += 3;
-    else if (q.pbr > 7) breakdown.value -= 5;
-  }
-  // Forward PER < Trailing PER (이익 성장 기대)
-  if (typeof q.forwardPer === 'number' && typeof q.per === 'number' && q.forwardPer > 0 && q.per > 0) {
-    if (q.forwardPer < q.per * 0.85) { breakdown.value += 5; reasons.push('이익 성장 전망'); }
-    else if (q.forwardPer > q.per * 1.15) breakdown.value -= 3;
+    if (ey > 15)      { breakdown.value += 14; reasons.push(`저PER ${q.per.toFixed(1)}배`); }
+    else if (ey > 10) breakdown.value += 10;
+    else if (ey > 7)  breakdown.value += 5;
+    else if (ey > 5)  breakdown.value += 2;
+    else if (q.per > 50) { breakdown.value -= 10; reasons.push(`고PER ${q.per.toFixed(0)}배`); }
+    else if (q.per > 35) breakdown.value -= 5;
+    else if (q.per > 25) breakdown.value -= 2;
   }
 
-  // ═══ 3. 품질 지표 - Piotroski F-Score 변형 (최대 ±35점) ═══════════
-  // ROE (수익성 핵심)
-  if (typeof q.roe === 'number') {
-    if (q.roe > 25)      { breakdown.quality += 12; reasons.push(`고ROE ${q.roe.toFixed(1)}%`); }
-    else if (q.roe > 15) breakdown.quality += 8;
-    else if (q.roe > 8)  breakdown.quality += 3;
-    else if (q.roe < 0)  { breakdown.quality -= 12; reasons.push(`ROE 음수`); }
-    else if (q.roe < 5)  breakdown.quality -= 3;
+  // PBR: 자산 대비 가격
+  if (typeof q.pbr === 'number' && q.pbr > 0) {
+    if (q.pbr < 1)        { breakdown.value += 8; reasons.push(`저PBR ${q.pbr.toFixed(2)}배`); }
+    else if (q.pbr < 1.5) breakdown.value += 4;
+    else if (q.pbr < 2.5) breakdown.value += 1;
+    else if (q.pbr > 10)  { breakdown.value -= 8; reasons.push(`고PBR ${q.pbr.toFixed(1)}배`); }
+    else if (q.pbr > 6)   breakdown.value -= 4;
   }
-  // 영업이익률 (수익성)
+
+  // Forward PER vs Trailing PER: 이익 성장 기대치
+  if (typeof q.forwardPer === 'number' && typeof q.per === 'number' && q.forwardPer > 0 && q.per > 0) {
+    const imp = (q.per - q.forwardPer) / q.per;
+    if (imp > 0.2)        { breakdown.value += 6; reasons.push('이익 20%+ 성장 전망'); }
+    else if (imp > 0.1)   breakdown.value += 3;
+    else if (imp < -0.15) { breakdown.value -= 5; reasons.push('이익 감소 전망'); }
+  }
+
+  // ═══ 3. 품질 지표 - 버핏 해자 + 피오트로스키 (최대 ±45점) ══════════
+  // [버핏 핵심] ROE: 15% 이상 지속이 해자의 증거
+  if (typeof q.roe === 'number') {
+    if (q.roe > 30)      { breakdown.quality += 14; reasons.push(`고ROE ${q.roe.toFixed(1)}%`); }
+    else if (q.roe > 20) { breakdown.quality += 10; reasons.push(`ROE ${q.roe.toFixed(1)}%`); }
+    else if (q.roe > 15) breakdown.quality += 6;
+    else if (q.roe > 8)  breakdown.quality += 2;
+    else if (q.roe < 0)  { breakdown.quality -= 14; reasons.push('ROE 음수(적자)'); }
+    else if (q.roe < 5)  breakdown.quality -= 4;
+  }
+
+  // [버핏 최우선] FCF: 이익은 조작 가능, FCF는 어렵다
+  if (typeof q.freeCashflow === 'number') {
+    if (q.freeCashflow > 0) {
+      breakdown.quality += 10; reasons.push('양수 FCF(버핏 기준)');
+      if (q.marketCap && q.freeCashflow / q.marketCap > 0.05) {
+        breakdown.quality += 5; reasons.push('FCF수익률 5%+ 우수');
+      }
+    } else {
+      breakdown.quality -= 10; reasons.push('음수 FCF(현금소각)');
+    }
+  }
+
+  // [피오트로스키] 영업이익률
   if (typeof q.operatingMargin === 'number') {
-    if (q.operatingMargin > 20)      breakdown.quality += 6;
-    else if (q.operatingMargin > 10) breakdown.quality += 3;
-    else if (q.operatingMargin < 0)  { breakdown.quality -= 8; reasons.push('영업적자'); }
+    if (q.operatingMargin > 25)      { breakdown.quality += 7; reasons.push(`영업이익률 ${q.operatingMargin.toFixed(0)}%`); }
+    else if (q.operatingMargin > 15) breakdown.quality += 4;
+    else if (q.operatingMargin > 8)  breakdown.quality += 2;
+    else if (q.operatingMargin < 0)  { breakdown.quality -= 10; reasons.push('영업적자'); }
     else if (q.operatingMargin < 3)  breakdown.quality -= 3;
   }
-  // 매출총이익률
+
+  // [피오트로스키] 총이익률: 높은 마진 = 경제적 해자
   if (typeof q.grossMargin === 'number') {
-    if (q.grossMargin > 40)      breakdown.quality += 4;
-    else if (q.grossMargin > 25) breakdown.quality += 2;
-    else if (q.grossMargin < 10) breakdown.quality -= 3;
+    if (q.grossMargin > 50)      { breakdown.quality += 5; reasons.push(`총이익률 ${q.grossMargin.toFixed(0)}% 해자`); }
+    else if (q.grossMargin > 35) breakdown.quality += 3;
+    else if (q.grossMargin > 20) breakdown.quality += 1;
+    else if (q.grossMargin < 10) { breakdown.quality -= 4; reasons.push('낮은 총이익률'); }
   }
-  // 부채비율 (안전성)
+
+  // [피오트로스키] 부채비율
   if (typeof q.debtToEquity === 'number') {
-    if (q.debtToEquity < 50)       breakdown.quality += 6;
-    else if (q.debtToEquity < 100) breakdown.quality += 2;
-    else if (q.debtToEquity > 200) { breakdown.quality -= 8; reasons.push('과다부채'); }
-    else if (q.debtToEquity > 150) breakdown.quality -= 4;
+    if (q.debtToEquity < 30)        { breakdown.quality += 6; reasons.push('무부채 수준'); }
+    else if (q.debtToEquity < 60)   breakdown.quality += 3;
+    else if (q.debtToEquity < 100)  breakdown.quality += 1;
+    else if (q.debtToEquity > 300)  { breakdown.quality -= 10; reasons.push(`과다부채 D/E ${q.debtToEquity.toFixed(0)}%`); }
+    else if (q.debtToEquity > 200)  breakdown.quality -= 6;
+    else if (q.debtToEquity > 150)  breakdown.quality -= 3;
   }
-  // 유동비율 (단기 지급능력)
+
+  // [피오트로스키] 유동비율
   if (typeof q.currentRatio === 'number') {
-    if (q.currentRatio > 2)        breakdown.quality += 4;
-    else if (q.currentRatio > 1.2) breakdown.quality += 2;
-    else if (q.currentRatio < 1)   { breakdown.quality -= 6; reasons.push('유동성 부족'); }
-  }
-  // 잉여현금흐름 양수
-  if (typeof q.freeCashflow === 'number') {
-    if (q.freeCashflow > 0)      breakdown.quality += 3;
-    else                         breakdown.quality -= 5;
+    if (q.currentRatio > 2.5)      breakdown.quality += 4;
+    else if (q.currentRatio > 1.5) breakdown.quality += 2;
+    else if (q.currentRatio < 0.8) { breakdown.quality -= 7; reasons.push('유동성 위기'); }
+    else if (q.currentRatio < 1.0) breakdown.quality -= 3;
   }
 
-  // ═══ 4. 성장 지표 - CAN SLIM (O'Neil) (최대 ±25점) ═════════════════
-  // 이익 성장률 (CAN SLIM 핵심: ≥25% 우수)
+  // ═══ 4. 성장 지표 - CAN SLIM (오닐) (최대 ±35점) ═══════════════════
+  // [CAN SLIM C+A] 이익성장률 25%+ = 오닐의 최소 기준
   if (typeof q.earningsGrowth === 'number') {
-    if (q.earningsGrowth > 50)      { breakdown.growth += 12; reasons.push(`고이익성장 ${q.earningsGrowth.toFixed(1)}%`); }
-    else if (q.earningsGrowth > 25) { breakdown.growth += 9; reasons.push(`이익성장 ${q.earningsGrowth.toFixed(1)}%`); }
-    else if (q.earningsGrowth > 10) breakdown.growth += 5;
-    else if (q.earningsGrowth > 0)  breakdown.growth += 1;
-    else if (q.earningsGrowth < -20) { breakdown.growth -= 10; reasons.push('이익 급감'); }
-    else                            breakdown.growth -= 5;
-  }
-  // 매출 성장률
-  if (typeof q.revenueGrowth === 'number') {
-    if (q.revenueGrowth > 25)      breakdown.growth += 8;
-    else if (q.revenueGrowth > 10) breakdown.growth += 4;
-    else if (q.revenueGrowth > 0)  breakdown.growth += 1;
-    else if (q.revenueGrowth < -10) { breakdown.growth -= 6; reasons.push('매출 감소'); }
-    else                           breakdown.growth -= 2;
-  }
-  // 52주 고가 근접도 (CAN SLIM의 N: 신고가 부근 매수)
-  if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
-    const proximity = (q.price - q.low52) / (q.high52 - q.low52); // 0~1
-    if (proximity > 0.9)       { breakdown.growth += 5; reasons.push('52주 신고가 부근'); }
-    else if (proximity > 0.75) breakdown.growth += 3;
-    else if (proximity < 0.15) { breakdown.growth -= 3; reasons.push('52주 신저가 부근'); }
+    if (q.earningsGrowth > 100)      { breakdown.growth += 18; reasons.push(`이익 폭발성장 ${q.earningsGrowth.toFixed(0)}%`); }
+    else if (q.earningsGrowth > 50)  { breakdown.growth += 13; reasons.push(`고이익성장 ${q.earningsGrowth.toFixed(0)}%`); }
+    else if (q.earningsGrowth > 25)  { breakdown.growth += 9;  reasons.push(`이익성장 ${q.earningsGrowth.toFixed(0)}%(CAN SLIM)`); }
+    else if (q.earningsGrowth > 10)  breakdown.growth += 4;
+    else if (q.earningsGrowth > 0)   breakdown.growth += 1;
+    else if (q.earningsGrowth < -30) { breakdown.growth -= 14; reasons.push('이익 급감'); }
+    else if (q.earningsGrowth < -10) breakdown.growth -= 7;
+    else                             breakdown.growth -= 2;
   }
 
-  // ═══ 5. 모멘텀 - Jegadeesh-Titman (최대 ±20점) ════════════════════
-  // 52주 위치 + MA50 대비 가격 = 중기 모멘텀 프록시
+  // 매출성장률
+  if (typeof q.revenueGrowth === 'number') {
+    if (q.revenueGrowth > 30)       { breakdown.growth += 9; reasons.push(`매출 ${q.revenueGrowth.toFixed(0)}% 고성장`); }
+    else if (q.revenueGrowth > 15)  breakdown.growth += 5;
+    else if (q.revenueGrowth > 5)   breakdown.growth += 2;
+    else if (q.revenueGrowth < -15) { breakdown.growth -= 8; reasons.push('매출 급감'); }
+    else if (q.revenueGrowth < -5)  breakdown.growth -= 3;
+    else if (q.revenueGrowth < 0)   breakdown.growth -= 1;
+  }
+
+  // [CAN SLIM N] 52주 신고가 부근 = 강한 매수 신호
+  if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
+    const pct = (q.price - q.low52) / (q.high52 - q.low52);
+    if (pct > 0.95)      { breakdown.growth += 8; reasons.push('52주 신고가 돌파(CAN SLIM N)'); }
+    else if (pct > 0.85) { breakdown.growth += 5; reasons.push('52주 고점 근접'); }
+    else if (pct > 0.70) breakdown.growth += 2;
+    else if (pct < 0.10) { breakdown.growth -= 5; reasons.push('52주 신저가 근접'); }
+    else if (pct < 0.25) breakdown.growth -= 2;
+  }
+
+  // ═══ 5. 모멘텀 - 제가디쉬-티트만 12-1 팩터 (최대 ±25점) ═══════════
+  // 52주 범위 위치 = 12개월 모멘텀 프록시 (30년 검증된 알파 팩터)
   if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
     const range = (q.price - q.low52) / (q.high52 - q.low52);
-    if (range > 0.8)       breakdown.momentum += 10;
-    else if (range > 0.6)  breakdown.momentum += 5;
-    else if (range < 0.2)  breakdown.momentum -= 10;
-    else if (range < 0.4)  breakdown.momentum -= 5;
+    if (range > 0.85)      { breakdown.momentum += 12; reasons.push('12개월 모멘텀 강세'); }
+    else if (range > 0.65) breakdown.momentum += 6;
+    else if (range > 0.45) breakdown.momentum += 1;
+    else if (range < 0.15) { breakdown.momentum -= 12; reasons.push('12개월 모멘텀 약세'); }
+    else if (range < 0.35) breakdown.momentum -= 6;
   }
+
   // 단기 모멘텀: MA20 vs MA50
   if (t.ma20 && t.ma50) {
     const ratio = (t.ma20 - t.ma50) / t.ma50;
-    if (ratio > 0.05)       { breakdown.momentum += 8; reasons.push('단기 상승 모멘텀'); }
-    else if (ratio > 0.01)  breakdown.momentum += 4;
-    else if (ratio < -0.05) { breakdown.momentum -= 8; reasons.push('단기 하락 모멘텀'); }
-    else if (ratio < -0.01) breakdown.momentum -= 4;
+    if (ratio > 0.08)       { breakdown.momentum += 10; reasons.push('MA 단기 강세'); }
+    else if (ratio > 0.03)  breakdown.momentum += 5;
+    else if (ratio > 0.01)  breakdown.momentum += 2;
+    else if (ratio < -0.08) { breakdown.momentum -= 10; reasons.push('MA 단기 약세'); }
+    else if (ratio < -0.03) breakdown.momentum -= 5;
+    else if (ratio < -0.01) breakdown.momentum -= 2;
   }
 
-  // ═══ 6. 수급 (최대 ±15점) ═════════════════════════════════════════
+  // 모멘텀 과열 보정: 강한 모멘텀 + 극과매수 = 추격 위험
+  if (breakdown.momentum > 10 && typeof t.rsi === 'number' && t.rsi > 80) {
+    breakdown.momentum -= 5;
+  }
+
+  // ═══ 6. 수급 - CAN SLIM I + 공매도 (최대 ±20점) ═══════════════════
   if (typeof flow.institutionPct === 'number') {
-    if (flow.institutionPct > 80)      { breakdown.flow += 6; reasons.push('기관 보유 높음'); }
-    else if (flow.institutionPct > 60) breakdown.flow += 3;
-    else if (flow.institutionPct < 20) breakdown.flow -= 3;
+    if (flow.institutionPct > 85)      { breakdown.flow += 7; reasons.push('기관 집중 보유'); }
+    else if (flow.institutionPct > 70) breakdown.flow += 4;
+    else if (flow.institutionPct > 50) breakdown.flow += 2;
+    else if (flow.institutionPct < 15) breakdown.flow -= 4;
   }
+
   if (typeof flow.insiderPct === 'number') {
-    if (flow.insiderPct > 10)     { breakdown.flow += 4; reasons.push('내부자 지분 높음'); }
-    else if (flow.insiderPct > 3) breakdown.flow += 2;
+    if (flow.insiderPct > 20)      { breakdown.flow += 5; reasons.push('내부자 고지분'); }
+    else if (flow.insiderPct > 10) { breakdown.flow += 3; reasons.push('내부자 지분 높음'); }
+    else if (flow.insiderPct > 3)  breakdown.flow += 1;
   }
+
   if (typeof flow.shortPct === 'number') {
-    if (flow.shortPct > 20)      { breakdown.flow -= 8; reasons.push(`공매도 ${flow.shortPct}% 과다`); }
-    else if (flow.shortPct > 10) breakdown.flow -= 4;
-    else if (flow.shortPct < 2)  breakdown.flow += 2;
+    if (flow.shortPct > 30)      { breakdown.flow -= 6; reasons.push(`공매도 극단 ${flow.shortPct.toFixed(0)}%`); }
+    else if (flow.shortPct > 20) { breakdown.flow -= 9; reasons.push(`공매도 과다 ${flow.shortPct.toFixed(0)}%`); }
+    else if (flow.shortPct > 12) breakdown.flow -= 5;
+    else if (flow.shortPct > 6)  breakdown.flow -= 2;
+    else if (flow.shortPct < 2)  breakdown.flow += 3;
   }
-  // 옵션 풋콜비율
+
   if (flow.options && typeof flow.options.putCallRatio === 'number') {
     const pc = flow.options.putCallRatio;
-    if (pc > 1.3)      { breakdown.flow -= 5; reasons.push('풋콜비율 비관'); }
-    else if (pc < 0.6) { breakdown.flow += 5; reasons.push('풋콜비율 낙관'); }
+    if (pc > 1.5)      { breakdown.flow += 3; reasons.push('풋콜 극비관→역발상'); }
+    else if (pc > 1.2) breakdown.flow -= 3;
+    else if (pc < 0.5) { breakdown.flow -= 3; reasons.push('풋콜 극낙관→과열'); }
+    else if (pc < 0.7) breakdown.flow += 2;
   }
 
-  // ═══ 7. 심리/애널리스트 (최대 ±15점) ═══════════════════════════════
+  // ═══ 7. 심리/애널리스트 (최대 ±20점) ═══════════════════════════════
   if (typeof q.recommendation === 'string') {
     const rec = q.recommendation.toLowerCase();
-    if (rec === 'strong_buy' || rec === 'buy')       { breakdown.sentiment += 8; reasons.push('애널리스트 매수 컨센서스'); }
-    else if (rec === 'underperform' || rec === 'sell') { breakdown.sentiment -= 8; reasons.push('애널리스트 매도 컨센서스'); }
+    if (rec === 'strong_buy')                         { breakdown.sentiment += 10; reasons.push('애널리스트 강력매수'); }
+    else if (rec === 'buy')                           { breakdown.sentiment += 6;  reasons.push('애널리스트 매수'); }
+    else if (rec === 'underperform')                  { breakdown.sentiment -= 6;  reasons.push('애널리스트 비중축소'); }
+    else if (rec === 'sell' || rec === 'strong_sell') { breakdown.sentiment -= 10; reasons.push('애널리스트 매도'); }
   }
-  // 목표주가 상승 여력
+
   if (q.price && typeof q.targetPrice === 'number' && q.targetPrice > 0) {
     const upside = (q.targetPrice - q.price) / q.price * 100;
-    if (upside > 25)       { breakdown.sentiment += 7; reasons.push(`목표가 상승여력 ${upside.toFixed(0)}%`); }
+    if (upside > 40)       { breakdown.sentiment += 10; reasons.push(`목표가 상승여력 ${upside.toFixed(0)}%`); }
+    else if (upside > 20)  { breakdown.sentiment += 6;  reasons.push(`목표가 +${upside.toFixed(0)}%`); }
     else if (upside > 10)  breakdown.sentiment += 3;
-    else if (upside < -10) { breakdown.sentiment -= 7; reasons.push(`목표가 하회 ${upside.toFixed(0)}%`); }
-    else if (upside < 0)   breakdown.sentiment -= 3;
+    else if (upside < -20) { breakdown.sentiment -= 10; reasons.push(`목표가 하회 ${Math.abs(upside).toFixed(0)}%`); }
+    else if (upside < -10) breakdown.sentiment -= 5;
+    else if (upside < 0)   breakdown.sentiment -= 2;
   }
 
-  // ═══ 8. 매크로 컨텍스트 (최대 ±10점) ═══════════════════════════════
-  // VIX 공포지수: 시장 리스크 환경 조정
+  // ═══ 8. 매크로 - 드러켄밀러식 하향식 (최대 ±12점) ══════════════════
   if (macro.vix && typeof macro.vix.value === 'number') {
-    if (macro.vix.value > 30)      { breakdown.macro -= 6; reasons.push(`VIX ${macro.vix.value} 고변동`); }
-    else if (macro.vix.value > 25) breakdown.macro -= 3;
-    else if (macro.vix.value < 15) breakdown.macro += 3;
+    const vix = macro.vix.value;
+    if (vix > 40)      { breakdown.macro += 4; reasons.push(`VIX ${vix.toFixed(0)} 극공포→역발상`); }
+    else if (vix > 30) { breakdown.macro -= 6; reasons.push(`VIX ${vix.toFixed(0)} 고변동성`); }
+    else if (vix > 25) breakdown.macro -= 3;
+    else if (vix < 15) breakdown.macro += 3;
+    else if (vix < 12) breakdown.macro += 5;
   }
-  // 10년물 급등은 주식에 부정적
+
   if (macro.us10y && typeof macro.us10y.chg === 'number') {
-    if (macro.us10y.chg > 0.1)       breakdown.macro -= 3;
-    else if (macro.us10y.chg < -0.1) breakdown.macro += 3;
+    if (macro.us10y.chg > 0.2)       { breakdown.macro -= 5; reasons.push('금리 급등'); }
+    else if (macro.us10y.chg > 0.1)  breakdown.macro -= 2;
+    else if (macro.us10y.chg < -0.2) { breakdown.macro += 5; reasons.push('금리 급락(호재)'); }
+    else if (macro.us10y.chg < -0.1) breakdown.macro += 2;
   }
 
-  // ═══ 최종 점수 합산 ═══════════════════════════════════════════════
-  const score = Object.values(breakdown).reduce((a,b) => a+b, 0);
+  // ═══ 최종 점수 합산 (범위 약 ±160) ════════════════════════════════
+  const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
 
-  // ═══ 시그널 결정 (7단계) ════════════════════════════════════════════
-  // 점수 범위 대략 ±150
-  // 강력매수≥70 / 매수 40~69 / 약매수 15~39 / 중립 -14~14 / 약매도 -15~-39 / 매도 -40~-69 / 강력매도≤-70
   let signal, confidence;
   const abs = Math.abs(score);
-  if      (score >= 70)  { signal = '강력매수'; confidence = Math.min(95, 75 + abs * 0.2); }
-  else if (score >= 40)  { signal = '매수';     confidence = Math.min(88, 65 + abs * 0.3); }
-  else if (score >= 15)  { signal = '약매수';   confidence = Math.min(75, 55 + abs * 0.5); }
-  else if (score <= -70) { signal = '강력매도'; confidence = Math.min(95, 75 + abs * 0.2); }
-  else if (score <= -40) { signal = '매도';     confidence = Math.min(88, 65 + abs * 0.3); }
-  else if (score <= -15) { signal = '약매도';   confidence = Math.min(75, 55 + abs * 0.5); }
-  else                   { signal = '중립';     confidence = Math.max(40, 60 - abs * 2); }
+  if      (score >= 75)  { signal = '강력매수'; confidence = Math.min(95, 72 + abs * 0.15); }
+  else if (score >= 45)  { signal = '매수';     confidence = Math.min(88, 62 + abs * 0.25); }
+  else if (score >= 18)  { signal = '약매수';   confidence = Math.min(75, 52 + abs * 0.45); }
+  else if (score <= -75) { signal = '강력매도'; confidence = Math.min(95, 72 + abs * 0.15); }
+  else if (score <= -45) { signal = '매도';     confidence = Math.min(88, 62 + abs * 0.25); }
+  else if (score <= -18) { signal = '약매도';   confidence = Math.min(75, 52 + abs * 0.45); }
+  else                   { signal = '중립';     confidence = Math.max(40, 58 - abs * 2); }
 
   return {
     signal,
     confidence: Math.round(confidence),
     score: Math.round(score),
-    breakdown: Object.fromEntries(Object.entries(breakdown).map(([k,v]) => [k, Math.round(v)])),
+    breakdown: Object.fromEntries(Object.entries(breakdown).map(([k, v]) => [k, Math.round(v)])),
     reasons,
   };
 }
 
-// 종목별 결정론적 seed (Groq의 seed 파라미터용)
 function hashSeed(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
