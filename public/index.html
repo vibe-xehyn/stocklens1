@@ -1775,9 +1775,10 @@ function startClock() {
 let isHomePage = true;
 
 function goHome(fromPopState = false) {
+  const wasHome = isHomePage;
   isHomePage = true;
   document.querySelectorAll('.stock-item').forEach(el => el.classList.remove('active'));
-  if (!fromPopState) history.pushState({ page: 'home' }, '', '/');
+  if (!fromPopState && !wasHome) history.pushState({ page: 'home' }, '', '/');
   renderHome();
 }
 
@@ -2378,7 +2379,12 @@ async function selectStock(id, fromPopState = false) {
   }
   currentDef = def;
   currentRange = '1mo';
-  if (!fromPopState) history.pushState({ page: 'stock', id }, '', `/?stock=${encodeURIComponent(id)}`);
+  if (!fromPopState) {
+    const cur = history.state;
+    if (!cur || cur.page !== 'stock' || cur.id !== id) {
+      history.pushState({ page: 'stock', id }, '', `/?stock=${encodeURIComponent(id)}`);
+    }
+  }
   renderSidebar(document.getElementById('searchInput').value);
   await loadAndRenderMain(currentDef);
 }
