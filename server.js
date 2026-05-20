@@ -2422,7 +2422,9 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
       t.rsi = Math.max(10, Math.min(90, pos * 70 + 15 + chgBoost));
     }
 
-    const sig = computeSignal(t, q, {}, {});
+    // macro는 캐시에서 가져오기 (상세 페이지와 동일한 데이터)
+    const macro = getC('macro') || {};
+    const sig = computeSignal(t, q, {}, macro);
     const reason = sig.reasons.slice(0, 3).join(' · ') || '5대 전략 종합';
     return {
       ticker, id: ticker, market,
