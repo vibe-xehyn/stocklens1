@@ -824,12 +824,10 @@ async function selectSearchResult(r) {
     };
     STOCK_DEFS.push(def);
   }
-  currentDef = def;
   document.getElementById('searchInput').value = '';
   document.getElementById('searchResultsList').innerHTML = '';
   document.getElementById('stockList').style.display = '';
-  renderSidebar();
-  await loadAndRenderMain(currentDef);
+  await selectStock(def.id);
 }
 
 function switchMarket(m, btn) {
@@ -2395,8 +2393,19 @@ async function selectStock(id, fromPopState = false) {
 window.addEventListener('popstate', (e) => {
   const state = e.state;
   if (!state || state.page === 'home') {
+    // 모바일 탭 동기화
+    _mobileTab = 'home';
+    ['bnavHome','bnavStocks','bnavSearch'].forEach(id => { const el=document.getElementById(id); if(el) el.classList.remove('active'); });
+    const h = document.getElementById('bnavHome'); if(h) h.classList.add('active');
+    document.getElementById('mobileDrawer')?.classList.remove('open');
+    document.getElementById('mobileSearchDrawer')?.classList.remove('open');
     goHome(true);
   } else if (state.page === 'stock' && state.id) {
+    _mobileTab = 'home';
+    ['bnavHome','bnavStocks','bnavSearch'].forEach(id => { const el=document.getElementById(id); if(el) el.classList.remove('active'); });
+    const h = document.getElementById('bnavHome'); if(h) h.classList.add('active');
+    document.getElementById('mobileDrawer')?.classList.remove('open');
+    document.getElementById('mobileSearchDrawer')?.classList.remove('open');
     selectStock(state.id, true);
   }
 });
