@@ -2384,7 +2384,6 @@ async function selectStock(id, fromPopState = false) {
 }
 
 // ── START ─────────────────────────────────────────────────────────────────────
-init();
 
 // 뒤로가기/앞으로가기 지원
 window.addEventListener('popstate', (e) => {
@@ -2395,13 +2394,10 @@ window.addEventListener('popstate', (e) => {
     selectStock(state.id, true);
   }
 });
-// 초기 상태 등록
-if (!history.state) {
-  const params = new URLSearchParams(location.search);
-  const stockId = params.get('stock');
-  if (stockId) history.replaceState({ page: 'stock', id: stockId }, '', location.href);
-  else history.replaceState({ page: 'home' }, '', '/');
-}
+
+// 초기 상태 등록 후 앱 시작
+history.replaceState({ page: 'home' }, '', '/');
+init();
 
 // ── Mobile Tab Bar ────────────────────────────────────────────────────────────
 let _mobileTab = 'home';
