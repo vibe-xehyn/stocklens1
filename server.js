@@ -1783,9 +1783,13 @@ ${newsText || '관련 뉴스 없음'}
   "risk": "구체적인 리스크 요인 및 주의사항"
 }`;
 
-      // ── 결정론적 시그널 계산 (지표 기반, AI 출력과 무관하게 일관성 유지) ──
-      // 5대 검증된 투자전략(Piotroski/Magic Formula/Multi-Factor/Momentum/CAN SLIM) 종합
-      const { signal: detSignal, confidence: detConf, score: detScore, breakdown: detBreak, reasons: detReasons } = computeSignal(t, q, flow, macro);
+      // ── 결정론적 시그널 (홈 매수신호 탭과 동일 값 보장) ──
+      // 사전계산된 값이 있으면 그대로 사용 → 홈과 100% 일치
+      // 없으면 현재 데이터로 계산 (신규 종목 등)
+      const _stored = _signalStore.get(symbol);
+      const { signal: detSignal, confidence: detConf, score: detScore, breakdown: detBreak, reasons: detReasons } =
+        _stored ? { signal: _stored.signal, confidence: _stored.confidence, score: _stored.score, breakdown: _stored.breakdown, reasons: _stored.reasons }
+                : computeSignal(t, q, flow, macro);
       const breakStr = `기술 ${detBreak.technical>=0?'+':''}${detBreak.technical} / 가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth} / 모멘텀 ${detBreak.momentum>=0?'+':''}${detBreak.momentum} / 수급 ${detBreak.flow>=0?'+':''}${detBreak.flow} / 심리 ${detBreak.sentiment>=0?'+':''}${detBreak.sentiment} / 매크로 ${detBreak.macro>=0?'+':''}${detBreak.macro}`;
       const reasonStr = detReasons.length ? detReasons.slice(0,8).join(', ') : '특이사항 없음';
 
