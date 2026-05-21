@@ -2215,7 +2215,6 @@ async function loadBuySignals(force = false) {
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const params = new URLSearchParams({ market: _buySignalMarket, mode: _buySignalMode });
-      if (force) params.set('force', '1');
       const res = await fetch(`/api/buy-signals?${params}`);
       const data = await res.json();
       if (data.buys) {

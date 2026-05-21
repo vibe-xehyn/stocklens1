@@ -2509,10 +2509,10 @@ async function precomputeAllSignals() {
 }
 
 // 매수/매도 신호: mode(buy|sell) + market(kr/us/all) + signal 필터 + limit=50
+// 매일 00:00 KST에 사전 계산된 _signalStore 에서 즉시 반환 (재계산 없음)
 app.get('/api/buy-signals', async (req, res) => {
-  if (req.query.force) {
-    await precomputeAllSignals();
-  } else if (_signalStore.size === 0) {
+  // 부팅 직후 캐시 로드 전이면 비어있을 수 있음 — 그때만 1회 계산
+  if (_signalStore.size === 0) {
     await precomputeAllSignals();
   }
   const market = req.query.market || 'all'; // kr | us | all
@@ -2547,6 +2547,9 @@ app.get('/api/all-signals', (req, res) => {
   const all = [..._signalStore.values()].sort((a, b) => b.score - a.score);
   res.json({ all, total: all.length, updatedAt: _signalsUpdatedAt });
 });
+
+// 서버 시작 전 시그널 캐시 즉시 로드 (API 첫 요청부터 바로 응답)
+_loadSignalCache();
 
 app.listen(PORT, () => {
   console.log(`\n  ✓ StockLens  →  http://localhost:${PORT}\n`);
@@ -2604,9 +2607,8 @@ async function warmupCache() {
       console.log('  ✓ 스크리너 워밍업 완료');
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
 
-    // 5. 시그널: 캐시 우선 로드, 없거나 만료 시에만 즉시 계산
-    const cacheLoaded = _loadSignalCache();
-    if (!cacheLoaded) {
+    // 5. 시그널 캐시는 이미 서버 시작 시 로드됨 — 비어있을 때만 즉시 계산
+    if (_signalStore.size === 0) {
       try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
     }
 
