@@ -2119,16 +2119,17 @@ function renderBuySignalsCard(data) {
     const fallbackStyle = isSell ? SIG_STYLE['약매도'] : SIG_STYLE['약매수'];
     const ss = SIG_STYLE[d.signal] || fallbackStyle;
     const def = STOCK_DEFS.find(s => s.id === d.ticker) || {};
-    return `<div onclick="selectStock('${d.ticker}')" style="background:${ss.bg};border-radius:10px;padding:12px 14px;cursor:pointer;border:1px solid ${ss.border};flex:1;min-width:140px;max-width:200px" onmouseover="this.style.borderColor='${ss.color}'" onmouseout="this.style.borderColor='${ss.border}'">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-weight:700;font-size:13px">${def.displayTicker || d.ticker}</span>
-        <span style="font-size:10px;font-weight:800;color:${ss.color}">${ss.icon} ${d.signal}</span>
+    return `<div onclick="selectStock('${d.ticker}')" style="background:${ss.bg};border-radius:8px;padding:8px 10px;cursor:pointer;border:1px solid ${ss.border};flex:1;min-width:130px;max-width:180px" onmouseover="this.style.borderColor='${ss.color}'" onmouseout="this.style.borderColor='${ss.border}'">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <span style="font-weight:700;font-size:12px">${def.displayTicker || d.ticker}</span>
+        <span style="font-size:9px;font-weight:800;color:${ss.color}">${ss.icon} ${d.signal}</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${d.name || def.name || ''}</div>
-      <div style="font-weight:700;color:${up?'var(--green)':'var(--red)'};font-size:14px">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
-      <div style="font-size:11px;color:${up?'var(--green)':'var(--red)'};margin-bottom:6px">${up?'+':''}${(d.changePct||0).toFixed(2)}%</div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:4px">확신 ${d.confidence}%</div>
-      <div style="font-size:11px;color:var(--muted);line-height:1.4;border-top:1px solid var(--border);padding-top:6px">${d.reason || ''}</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.name || def.name || ''}</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'};font-size:13px">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</span>
+        <span style="font-size:10px;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%</span>
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:4px">확신 ${d.confidence}%</div>
     </div>`;
   }).join('');
 
@@ -2144,7 +2145,7 @@ function renderBuySignalsCard(data) {
     ${loading
       ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> 전체 종목 분석 중...</div>`
       : `${marketBar}${sigBar}${filtered.length
-          ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:10px">${cards}</div>`
+          ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:8px;max-height:380px;overflow-y:auto;padding-right:4px">${cards}</div>`
           : `<div style="color:var(--muted);font-size:13px">해당 신호 종목이 없습니다</div>`}`
     }
   </div>`;
