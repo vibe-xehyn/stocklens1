@@ -1438,12 +1438,12 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
 
   let signal, confidence;
   const abs = Math.abs(score);
-  if      (score >= 75)  { signal = '강력매수'; confidence = Math.min(95, 72 + abs * 0.15); }
-  else if (score >= 45)  { signal = '매수';     confidence = Math.min(88, 62 + abs * 0.25); }
-  else if (score >= 18)  { signal = '약매수';   confidence = Math.min(75, 52 + abs * 0.45); }
-  else if (score <= -75) { signal = '강력매도'; confidence = Math.min(95, 72 + abs * 0.15); }
-  else if (score <= -45) { signal = '매도';     confidence = Math.min(88, 62 + abs * 0.25); }
-  else if (score <= -18) { signal = '약매도';   confidence = Math.min(75, 52 + abs * 0.45); }
+  if      (score >= 65)  { signal = '강력매수'; confidence = Math.min(95, 72 + abs * 0.15); }
+  else if (score >= 38)  { signal = '매수';     confidence = Math.min(88, 62 + abs * 0.25); }
+  else if (score >= 14)  { signal = '약매수';   confidence = Math.min(75, 52 + abs * 0.45); }
+  else if (score <= -65) { signal = '강력매도'; confidence = Math.min(95, 72 + abs * 0.15); }
+  else if (score <= -38) { signal = '매도';     confidence = Math.min(88, 62 + abs * 0.25); }
+  else if (score <= -14) { signal = '약매도';   confidence = Math.min(75, 52 + abs * 0.45); }
   else                   { signal = '중립';     confidence = Math.max(40, 58 - abs * 2); }
 
   return {
@@ -2417,13 +2417,13 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
       t.rsi = Math.max(10, Math.min(90, pos * 65 + 17 + Math.max(-8, Math.min(8, chg * 1.5))));
       // BB %B 프록시
       t.bb_pct = pos * 100;
-      // MACD 프록시: 최근 등락 + 52주 위치로 추세 추정
-      const trend = (pos - 0.5) * 2 + chg * 0.05; // -1~1
-      t.macd = trend > 0 ? 1 : -1;
-      t.macd_signal = 0;
-      // MA 프록시: 52주 상위 50% = 정배열 추정
-      if (pos > 0.6) { t.ma20 = q.price * 0.98; t.ma50 = q.price * 0.95; }
-      else if (pos < 0.4) { t.ma20 = q.price * 1.02; t.ma50 = q.price * 1.05; }
+      // MACD 프록시: 명확한 추세만 반영 (중립 구간은 설정 안 함 → 불필요한 패널티 방지)
+      const trend = (pos - 0.5) * 2 + chg * 0.08;
+      if (trend > 0.2)       { t.macd = 1;  t.macd_signal = 0; }  // 골든크로스
+      else if (trend < -0.2) { t.macd = -1; t.macd_signal = 0; }  // 데드크로스
+      // MA 프록시: 52주 상위/하위 명확한 경우만 정배열/역배열 설정
+      if (pos > 0.65)       { t.ma20 = q.price * 0.98; t.ma50 = q.price * 0.94; }
+      else if (pos < 0.35)  { t.ma20 = q.price * 1.02; t.ma50 = q.price * 1.06; }
     }
 
     // macro는 캐시에서 가져오기 (상세 페이지와 동일한 데이터)
