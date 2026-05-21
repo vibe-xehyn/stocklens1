@@ -2397,34 +2397,18 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
   try {
     let q = screener[ticker];
     if (!q || !q.price) {
-      if (opts.skipTech) {
-        // 빠른 프리컴퓨트 모드: 가격 데이터만 (yfinance 펀더멘탈 스킵)
-        if (isKr) {
-          try { const base = await krQuote(ticker); q = base; } catch {}
-        } else {
-          try { q = await naverUsQuote(ticker); } catch {}
-        }
+      if (isKr) {
+        const [base, fin] = await Promise.all([krQuote(ticker), krFinancials(ticker)]);
+        q = { ...base, ...fin };
       } else {
-        if (isKr) {
-          const [base, fin] = await Promise.all([krQuote(ticker), krFinancials(ticker)]);
-          q = { ...base, ...fin };
-        } else {
-          q = await usQuote(ticker);
-        }
+        q = await usQuote(ticker);
       }
     }
     if (!q || !q.price) return null;
 
+    // 실제 기술 지표 사용 (1시간 캐시 → 재계산 시 빠름)
     let t = {};
-    if (!opts.skipTech) {
-      try { t = await cached(`tech:${ticker}:${market}`, 3600_000, () => getTechnicals(ticker, isKr)); } catch {}
-    } else if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
-      // 52주 범위 기반 기술 프록시 (yfinance 없이 즉시 계산)
-      const pos = (q.price - q.low52) / (q.high52 - q.low52);
-      t.bb_pct = pos * 100;
-      const chgBoost = Math.max(-10, Math.min(10, (q.changePct || 0) * 1.5));
-      t.rsi = Math.max(10, Math.min(90, pos * 70 + 15 + chgBoost));
-    }
+    try { t = await cached(`tech:${ticker}:${market}`, 3600_000, () => getTechnicals(ticker, isKr)); } catch {}
 
     // macro는 캐시에서 가져오기 (상세 페이지와 동일한 데이터)
     const macro = getC('macro') || {};
@@ -2456,8 +2440,8 @@ async function precomputeAllSignals() {
         return;
       }
 
-      // 동시성 제한 worker 풀 (skipTech 모드: yfinance 없음 → 높은 동시성 가능)
-      const CONCURRENCY = 30;
+      // 동시성 제한 worker 풀 (실제 기술지표 사용, 캐시 적중 시 빠름)
+      const CONCURRENCY = 8;
       let idx = 0;
       let ok = 0;
       const newStore = new Map();
@@ -2467,7 +2451,7 @@ async function precomputeAllSignals() {
           const i = idx++;
           const { ticker, market } = universe[i];
           try {
-            const r = await computeSignalForTicker(ticker, market, { skipTech: true });
+            const r = await computeSignalForTicker(ticker, market, {});
             if (r) { newStore.set(r.ticker, r); ok++; }
           } catch {}
         }
