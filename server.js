@@ -2406,9 +2406,25 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
     }
     if (!q || !q.price) return null;
 
-    // 실제 기술 지표 사용 (1시간 캐시 → 재계산 시 빠름)
-    let t = {};
-    try { t = await cached(`tech:${ticker}:${market}`, 3600_000, () => getTechnicals(ticker, isKr)); } catch {}
+    // 기술 지표: 캐시 있으면 즉시 사용, 없으면 API 호출 없이 프록시로 추정
+    // → 15초 이내 완료 보장
+    let t = getC(`tech:${ticker}:${market}`) || {};
+    if (!t.rsi && q.price && q.high52 && q.low52 && q.high52 > q.low52) {
+      // 52주 위치 기반 프록시 (API 없이 즉시)
+      const pos = (q.price - q.low52) / (q.high52 - q.low52); // 0~1
+      const chg = q.changePct || 0;
+      // RSI 프록시: 52주 위치 + 최근 등락
+      t.rsi = Math.max(10, Math.min(90, pos * 65 + 17 + Math.max(-8, Math.min(8, chg * 1.5))));
+      // BB %B 프록시
+      t.bb_pct = pos * 100;
+      // MACD 프록시: 최근 등락 + 52주 위치로 추세 추정
+      const trend = (pos - 0.5) * 2 + chg * 0.05; // -1~1
+      t.macd = trend > 0 ? 1 : -1;
+      t.macd_signal = 0;
+      // MA 프록시: 52주 상위 50% = 정배열 추정
+      if (pos > 0.6) { t.ma20 = q.price * 0.98; t.ma50 = q.price * 0.95; }
+      else if (pos < 0.4) { t.ma20 = q.price * 1.02; t.ma50 = q.price * 1.05; }
+    }
 
     // macro는 캐시에서 가져오기 (상세 페이지와 동일한 데이터)
     const macro = getC('macro') || {};
@@ -2440,8 +2456,8 @@ async function precomputeAllSignals() {
         return;
       }
 
-      // 동시성 제한 worker 풀 (실제 기술지표 사용, 캐시 적중 시 빠름)
-      const CONCURRENCY = 8;
+      // 동시성 제한 worker 풀 (캐시 우선, 미캐시는 프록시 → 15초 이내 완료)
+      const CONCURRENCY = 50;
       let idx = 0;
       let ok = 0;
       const newStore = new Map();
