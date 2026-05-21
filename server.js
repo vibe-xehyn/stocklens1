@@ -2375,7 +2375,7 @@ const _signalStore = new Map();
 let _signalsUpdatedAt = 0;
 let _signalsComputing = null; // 진행 중인 Promise (race 방지)
 const SIGNAL_CACHE_FILE = join(__dirname, '.signal-cache.json');
-const SIGNAL_CACHE_TTL = 4 * 60 * 60 * 1000; // 4시간
+const SIGNAL_CACHE_TTL = 24 * 60 * 60 * 1000; // 24시간 (매일 00:00 KST 갱신)
 
 function _saveSignalCache() {
   try {
@@ -2478,12 +2478,13 @@ async function precomputeAllSignals() {
       let ok = 0;
       const newStore = new Map();
 
+      // 매일 00:00 정밀 분석: full=true로 미캐시 종목도 실제 데이터 fetch
       async function worker() {
         while (idx < universe.length) {
           const i = idx++;
           const { ticker, market } = universe[i];
           try {
-            const r = await computeSignalForTicker(ticker, market, {});
+            const r = await computeSignalForTicker(ticker, market, { full: true });
             if (r) { newStore.set(r.ticker, r); ok++; }
           } catch {}
         }
@@ -2603,15 +2604,27 @@ async function warmupCache() {
       console.log('  ✓ 스크리너 워밍업 완료');
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
 
-    // 5. 스크리너 완료 직후 시그널 계산 (screener 캐시 활용 → 빠름)
+    // 5. 시그널: 캐시 우선 로드, 없거나 만료 시에만 즉시 계산
     const cacheLoaded = _loadSignalCache();
     if (!cacheLoaded) {
-      // 캐시 없거나 만료 → 스크리너 데이터 활용해 빠르게 계산
       try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
     }
-    // 4시간마다 갱신 (캐시 만료 시점에 맞춰 재계산)
-    setInterval(() => {
-      precomputeAllSignals().catch(e => console.log('  ⚠ 시그널 갱신 실패:', e.message));
-    }, SIGNAL_CACHE_TTL);
+
+    // 6. 매일 00:00 KST(=UTC 15:00)에 자동 재계산 스케줄
+    const scheduleNextMidnightKST = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setUTCHours(15, 0, 0, 0); // 00:00 KST = 15:00 UTC
+      if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+      const ms = next - now;
+      const hrs = (ms / 3600000).toFixed(1);
+      console.log(`  ✓ 다음 시그널 계산 예약: ${next.toISOString()} (${hrs}시간 후)`);
+      setTimeout(async () => {
+        console.log('  ⏰ 00:00 KST — 일일 시그널 정밀 분석 시작');
+        try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
+        scheduleNextMidnightKST(); // 다음 날 예약
+      }, ms);
+    };
+    scheduleNextMidnightKST();
   }, 8000);
 }
