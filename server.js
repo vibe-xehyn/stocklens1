@@ -2157,45 +2157,39 @@ app.get('/api/screener-data', async (_, res) => {
       // KR: NAVER + 배치 polling으로 KR_UNIVERSE 전체 가격 수집
       const krResults = await fetchNaverMarket();
 
-      // US: S&P500 전체 yfinance 배치 (가격만 빠르게, 지표는 기존 60종목만)
+      // US: Yahoo Finance quote API (단일 HTTP 요청 — yfinance 1y 다운로드 대비 10배 빠름)
       const usTickers = SP500.slice(0, 200); // 200개 제한 (속도)
       const usPy = `
-import yfinance as yf, json, warnings, os
+import urllib.request, json, warnings, os, yfinance as yf
 warnings.filterwarnings('ignore')
 os.environ['PYTHONWARNINGS'] = 'ignore'
 tickers = ${JSON.stringify(usTickers)}
 result = {}
 try:
-    # 청크별 다운로드 (일부 티커 실패 격리)
-    chunk_size = 30
+    # Yahoo Finance quote API — 가격 + 52주 고저가 한 번에 (청크당 HTTP 1회)
+    chunk_size = 100
     for i in range(0, len(tickers), chunk_size):
         chunk = tickers[i:i+chunk_size]
+        syms = ','.join(chunk)
+        url = ('https://query1.finance.yahoo.com/v7/finance/quote'
+               '?symbols=' + syms +
+               '&fields=regularMarketPrice,regularMarketPreviousClose,'
+               'regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow')
         try:
-            import contextlib, io as _io
-            with contextlib.redirect_stderr(_io.StringIO()):
-                df = yf.download(chunk, period='1y', auto_adjust=True, progress=False, group_by='ticker')
-            for sym in chunk:
-                try:
-                    cols = df[sym] if len(chunk)>1 else df
-                    cl = cols['Close'].dropna()
-                    hi = cols['High'].dropna()
-                    lo = cols['Low'].dropna()
-                    p = float(cl.iloc[-1])
-                    prev = float(cl.iloc[-2]) if len(cl) >= 2 else p
-                    if p > 0:
-                        result[sym] = {'market':'us','price':round(p,2),'changePct':round((p-prev)/prev*100,2) if prev else 0,
-                                       'high52': round(float(hi.max()),2) if len(hi)>0 else None,
-                                       'low52': round(float(lo.min()),2) if len(lo)>0 else None}
-                except: pass
-        except Exception:
-            for sym in chunk:
-                try:
-                    fi = yf.Ticker(sym).fast_info
-                    p = fi.last_price; prev = fi.previous_close or p
-                    if p and p > 0:
-                        result[sym] = {'market':'us','price':round(p,2),'changePct':round((p-prev)/prev*100,2) if prev else 0,
-                                       'high52': fi.year_high, 'low52': fi.year_low}
-                except: pass
+            req = urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0'})
+            data = json.loads(urllib.request.urlopen(req, timeout=15).read())
+            for q in data.get('quoteResponse',{}).get('result',[]):
+                sym = q.get('symbol','')
+                p = q.get('regularMarketPrice', 0)
+                if p and p > 0:
+                    result[sym] = {
+                        'market': 'us',
+                        'price': round(p, 2),
+                        'changePct': round(q.get('regularMarketChangePercent', 0), 2),
+                        'high52': q.get('fiftyTwoWeekHigh'),
+                        'low52': q.get('fiftyTwoWeekLow'),
+                    }
+        except: pass
     # 지표: 상위 60개만 (속도)
     top60 = ${JSON.stringify(usTickers.slice(0,60))}
     ts = yf.Tickers(' '.join(top60))
