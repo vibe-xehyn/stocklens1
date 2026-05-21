@@ -2189,7 +2189,8 @@ try:
                     fi = yf.Ticker(sym).fast_info
                     p = fi.last_price; prev = fi.previous_close or p
                     if p and p > 0:
-                        result[sym] = {'market':'us','price':round(p,2),'changePct':round((p-prev)/prev*100,2) if prev else 0}
+                        result[sym] = {'market':'us','price':round(p,2),'changePct':round((p-prev)/prev*100,2) if prev else 0,
+                                       'high52': fi.year_high, 'low52': fi.year_low}
                 except: pass
     # 지표: 상위 60개만 (속도)
     top60 = ${JSON.stringify(usTickers.slice(0,60))}
@@ -2202,11 +2203,23 @@ try:
             r = result.get(sym, {'market':'us'})
             r.update({
                 'marketCap': fi.market_cap,
+                'high52': fi.year_high,
+                'low52': fi.year_low,
                 'per': info.get('trailingPE'),
+                'forwardPer': info.get('forwardPE'),
                 'pbr': info.get('priceToBook'),
+                'pegRatio': info.get('pegRatio'),
                 'roe': round((info.get('returnOnEquity') or 0)*100,1) or None,
                 'div': round((info.get('dividendYield') or 0)*100,2) or None,
                 'revenueGrowth': round((info.get('revenueGrowth') or 0)*100,1) or None,
+                'earningsGrowth': round((info.get('earningsGrowth') or 0)*100,1) or None,
+                'operatingMargin': round((info.get('operatingMargins') or 0)*100,1) or None,
+                'grossMargin': round((info.get('grossMargins') or 0)*100,1) or None,
+                'debtToEquity': info.get('debtToEquity'),
+                'currentRatio': info.get('currentRatio'),
+                'freeCashflow': info.get('freeCashflow'),
+                'targetPrice': info.get('targetMeanPrice'),
+                'recommendation': info.get('recommendationKey'),
                 'profitMargin': round((info.get('profitMargins') or 0)*100,1) or None,
                 'name': info.get('shortName') or sym,
                 'sector': info.get('sector',''),
