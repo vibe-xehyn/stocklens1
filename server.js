@@ -2407,16 +2407,21 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
   const screener = getC('screener') || {};
   try {
     let q = screener[ticker];
-    // 사전계산 모드: screener 캐시에 없으면 스킵 (API 호출 금지 → 15초 보장)
-    // opts.full = true 일 때만 실제 API 호출 (상세 페이지용)
-    if (!q || !q.price) {
-      if (opts.full) {
+    // opts.full=true (자정 사전계산): 스크리너에 없거나 high52 누락 시 실제 API 호출
+    if (opts.full) {
+      if (!q || !q.price) {
         if (isKr) {
           const [base, fin] = await Promise.all([krQuote(ticker), krFinancials(ticker)]);
           q = { ...base, ...fin };
         } else {
           q = await usQuote(ticker);
         }
+      } else if (isKr && !q.high52) {
+        // KR 스크리너는 high52/roe 없음 → krFinancials로 보강
+        try {
+          const fin = await krFinancials(ticker);
+          q = { ...q, ...fin };
+        } catch {}
       }
     }
     if (!q || !q.price) return null;
