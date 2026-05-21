@@ -1438,12 +1438,12 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
 
   let signal, confidence;
   const abs = Math.abs(score);
-  if      (score >= 65)  { signal = '강력매수'; confidence = Math.min(95, 72 + abs * 0.15); }
-  else if (score >= 38)  { signal = '매수';     confidence = Math.min(88, 62 + abs * 0.25); }
-  else if (score >= 14)  { signal = '약매수';   confidence = Math.min(75, 52 + abs * 0.45); }
-  else if (score <= -65) { signal = '강력매도'; confidence = Math.min(95, 72 + abs * 0.15); }
-  else if (score <= -38) { signal = '매도';     confidence = Math.min(88, 62 + abs * 0.25); }
-  else if (score <= -14) { signal = '약매도';   confidence = Math.min(75, 52 + abs * 0.45); }
+  if      (score >= 60)  { signal = '강력매수'; confidence = Math.min(95, 72 + abs * 0.15); }
+  else if (score >= 30)  { signal = '매수';     confidence = Math.min(88, 62 + abs * 0.25); }
+  else if (score >= 10)  { signal = '약매수';   confidence = Math.min(75, 52 + abs * 0.45); }
+  else if (score <= -60) { signal = '강력매도'; confidence = Math.min(95, 72 + abs * 0.15); }
+  else if (score <= -30) { signal = '매도';     confidence = Math.min(88, 62 + abs * 0.25); }
+  else if (score <= -10) { signal = '약매도';   confidence = Math.min(75, 52 + abs * 0.45); }
   else                   { signal = '중립';     confidence = Math.max(40, 58 - abs * 2); }
 
   return {
