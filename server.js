@@ -2461,7 +2461,7 @@ async function precomputeAllSignals() {
       }
 
       // 동시성 제한 worker 풀 (캐시 우선, 미캐시는 프록시 → 15초 이내 완료)
-      const CONCURRENCY = 50;
+      const CONCURRENCY = 20;
       let idx = 0;
       let ok = 0;
       const newStore = new Map();
