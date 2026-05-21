@@ -2076,8 +2076,8 @@ function renderBuySignalsCard(data) {
 
   // 매수/매도 모드 토글
   const modeToggle = `<div style="display:flex;gap:3px;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;margin-bottom:10px">
-    <button onclick="switchBuyMode('buy')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${!isSell?'rgba(22,163,74,0.15)':'transparent'};color:${!isSell?'#16a34a':'var(--muted)'}">매수 신호</button>
-    <button onclick="switchBuyMode('sell')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${isSell?'rgba(220,38,38,0.15)':'transparent'};color:${isSell?'#ef4444':'var(--muted)'}">매도 신호</button>
+    <button onclick="switchBuyMode('buy')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${!isSell?'rgba(22,163,74,0.15)':'transparent'};color:${!isSell?'#16a34a':'var(--muted)'}">매수</button>
+    <button onclick="switchBuyMode('sell')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${isSell?'rgba(220,38,38,0.15)':'transparent'};color:${isSell?'#ef4444':'var(--muted)'}">매도</button>
   </div>`;
 
   // 마켓 탭 (KR/US/전체)
@@ -2134,7 +2134,7 @@ function renderBuySignalsCard(data) {
 
   return `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div class="home-section-title">${isSell ? '매도신호' : '매수신호'} <span style="font-size:10px;color:var(--muted);font-weight:500">시가총액 상위 1000개 기업</span></div>
+      <div class="home-section-title">${isSell ? '매도신호' : '투자신호'} <span style="font-size:10px;color:var(--muted);font-weight:500">시가총액 상위 1000개 기업</span></div>
       <div style="display:flex;align-items:center;gap:8px">
         ${updatedAt ? `<span style="font-size:10px;color:var(--muted)">${updatedAt} 기준</span>` : ''}
         <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">새로고침</button>
@@ -2235,7 +2235,7 @@ async function loadBuySignals(force = false) {
   }
   if (el) el.innerHTML = `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div class="home-section-title">매수신호</div>
+      <div class="home-section-title">투자신호</div>
       <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">재시도</button>
     </div>
     <div style="color:var(--muted);font-size:13px">데이터 준비 중입니다. 잠시 후 재시도를 클릭하세요.</div>
