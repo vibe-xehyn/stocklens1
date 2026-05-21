@@ -2414,20 +2414,21 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
     // → 15초 이내 완료 보장
     let t = getC(`tech:${ticker}:${market}`) || {};
     if (!t.rsi && q.price && q.high52 && q.low52 && q.high52 > q.low52) {
-      // 52주 위치 기반 프록시 (API 없이 즉시)
+      // 52주 위치 기반 통합 프록시 (API 없이 즉시)
       const pos = (q.price - q.low52) / (q.high52 - q.low52); // 0~1
       const chg = q.changePct || 0;
-      // RSI 프록시: 52주 위치 + 최근 등락
-      t.rsi = Math.max(10, Math.min(90, pos * 65 + 17 + Math.max(-8, Math.min(8, chg * 1.5))));
+      const chgClamped = Math.max(-10, Math.min(10, chg));
+      // RSI 프록시
+      t.rsi = Math.max(10, Math.min(90, pos * 65 + 17 + chgClamped * 1.2));
       // BB %B 프록시
       t.bb_pct = pos * 100;
-      // MACD 프록시: 명확한 추세만 반영 (중립 구간은 설정 안 함 → 불필요한 패널티 방지)
-      const trend = (pos - 0.5) * 2 + chg * 0.08;
-      if (trend > 0.2)       { t.macd = 1;  t.macd_signal = 0; }  // 골든크로스
-      else if (trend < -0.2) { t.macd = -1; t.macd_signal = 0; }  // 데드크로스
-      // MA 프록시: 52주 상위/하위 명확한 경우만 정배열/역배열 설정
-      if (pos > 0.65)       { t.ma20 = q.price * 0.98; t.ma50 = q.price * 0.94; }
-      else if (pos < 0.35)  { t.ma20 = q.price * 1.02; t.ma50 = q.price * 1.06; }
+      // MACD 프록시: 0.5 중심, 낮은 임계값으로 더 많이 분류
+      const trend = (pos - 0.5) * 2 + chgClamped * 0.06;
+      if (trend > 0.1)       { t.macd = 1;  t.macd_signal = 0; }
+      else if (trend < -0.1) { t.macd = -1; t.macd_signal = 0; }
+      // MA 프록시: 0.55/0.45 기준으로 정배열/역배열
+      if (pos > 0.55)       { t.ma20 = q.price * 0.98; t.ma50 = q.price * 0.95; }
+      else if (pos < 0.45)  { t.ma20 = q.price * 1.02; t.ma50 = q.price * 1.05; }
     }
 
     // macro는 캐시에서 가져오기 (상세 페이지와 동일한 데이터)
