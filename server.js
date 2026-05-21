@@ -2173,15 +2173,19 @@ try:
         try:
             import contextlib, io as _io
             with contextlib.redirect_stderr(_io.StringIO()):
-                df = yf.download(chunk, period='2d', auto_adjust=True, progress=False, group_by='ticker')
+                df = yf.download(chunk, period='1y', auto_adjust=True, progress=False, group_by='ticker')
             for sym in chunk:
                 try:
                     cols = df[sym] if len(chunk)>1 else df
                     cl = cols['Close'].dropna()
+                    hi = cols['High'].dropna()
+                    lo = cols['Low'].dropna()
                     p = float(cl.iloc[-1])
                     prev = float(cl.iloc[-2]) if len(cl) >= 2 else p
                     if p > 0:
-                        result[sym] = {'market':'us','price':round(p,2),'changePct':round((p-prev)/prev*100,2) if prev else 0}
+                        result[sym] = {'market':'us','price':round(p,2),'changePct':round((p-prev)/prev*100,2) if prev else 0,
+                                       'high52': round(float(hi.max()),2) if len(hi)>0 else None,
+                                       'low52': round(float(lo.min()),2) if len(lo)>0 else None}
                 except: pass
         except Exception:
             for sym in chunk:
