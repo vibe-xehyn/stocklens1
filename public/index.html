@@ -631,12 +631,18 @@ function renderRates() {
 
 async function init() {
   startClock();
-  // 홈 즉시 렌더 — 데이터는 백그라운드에서 채움
-  await renderHome();
+  // 홈 즉시 렌더
+  try { await renderHome(); } catch(e) {
+    console.error('renderHome error:', e);
+    document.getElementById('mainContent').innerHTML =
+      `<div style="padding:40px;color:var(--muted);text-align:center">홈 로딩 실패: ${e.message}</div>`;
+  }
   // 사이드바 + init 데이터는 백그라운드 로드
   Promise.all([fetchInit(), loadAllSidebar()]).then(() => {
     renderSidebar();
     updateTradingBadge();
+    // 사이드바 데이터 들어오면 홈 주가 영역 업데이트
+    if (isHomePage) renderHome({ skipFetch: true });
   }).catch(() => {});
   scheduleAutoRefresh();
 }
