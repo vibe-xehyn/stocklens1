@@ -2455,7 +2455,7 @@ ${newsText || '관련 뉴스 없음'}
         seed: hashSeed(symbol),
         max_tokens: 1024,
         messages: [
-          { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.` },
+          { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.` },
           { role: 'user', content: prompt }
         ],
       });
