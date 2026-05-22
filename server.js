@@ -2719,14 +2719,16 @@ for peer in peers_list:
         price = float(h['Close'].iloc[-1]) if len(h) > 0 else (pfi.last_price or 0)
         prev  = float(h['Close'].iloc[-2]) if len(h) > 1 else price
         chg   = (price-prev)/prev*100 if prev else 0
+        _per = pi.get('trailingPE') or (round(price/pi['trailingEps'],1) if pi.get('trailingEps') and pi['trailingEps']>0 and price>0 else None)
+        _pbr = pi.get('priceToBook') or (round(price/pi['bookValue'],2) if pi.get('bookValue') and pi['bookValue']>0 and price>0 else None)
         result.append({
             'ticker': peer,
             'name': pi.get('shortName') or pi.get('longName') or peer,
             'price': round(price, 2),
             'changePct': round(chg, 2),
-            'per': pi.get('trailingPE'),
+            'per': _per,
             'forwardPer': pi.get('forwardPE'),
-            'pbr': pi.get('priceToBook'),
+            'pbr': _pbr,
             'roe': round((pi.get('returnOnEquity') or 0)*100, 1) or None,
             'marketCap': pfi.market_cap,
             'revenueGrowth': round((pi.get('revenueGrowth') or 0)*100, 1) or None,
@@ -2744,7 +2746,8 @@ main = {
     'ticker': '${yfticker}'.replace('.KS',''),
     'name': info.get('shortName') or info.get('longName') or '',
     'price': round(p0,2), 'changePct': round(chg0,2),
-    'per': info.get('trailingPE'), 'pbr': info.get('priceToBook'),
+    'per': info.get('trailingPE') or (round(p0/info['trailingEps'],1) if info.get('trailingEps') and info['trailingEps']>0 and p0>0 else None),
+    'pbr': info.get('priceToBook') or (round(p0/info['bookValue'],2) if info.get('bookValue') and info['bookValue']>0 and p0>0 else None),
     'roe': round((info.get('returnOnEquity') or 0)*100,1) or None,
     'revenueGrowth': round((info.get('revenueGrowth') or 0)*100,1) or None,
     'profitMargin': round((info.get('profitMargins') or 0)*100,1) or None,
