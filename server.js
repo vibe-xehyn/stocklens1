@@ -2542,16 +2542,17 @@ app.get('/api/buy-signals', (req, res) => {
   const SIGNALS = mode === 'sell'
     ? ['약매도', '매도', '강력매도']
     : ['강력매수', '매수', '약매수'];
-  const all = [..._signalStore.values()]
-    .filter(r => SIGNALS.includes(r.signal))
+  const allSignals = [..._signalStore.values()].filter(r => SIGNALS.includes(r.signal));
+  const all = allSignals
     .filter(r => market === 'all' || r.market === market)
     .sort((a, b) => mode === 'sell' ? a.score - b.score : b.score - a.score);
 
+  // counts는 항상 전체 기준 (마켓 필터 무관)
   const counts = {};
-  for (const r of all) counts[r.signal] = (counts[r.signal] || 0) + 1;
-  counts.kr = all.filter(r => r.market === 'kr').length;
-  counts.us = all.filter(r => r.market === 'us').length;
-  counts.all = all.length;
+  for (const r of allSignals) counts[r.signal] = (counts[r.signal] || 0) + 1;
+  counts.kr = allSignals.filter(r => r.market === 'kr').length;
+  counts.us = allSignals.filter(r => r.market === 'us').length;
+  counts.all = allSignals.length;
 
   res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
   res.json({ buys: all.slice(0, 50), total: all.length, counts, updatedAt: _signalsUpdatedAt });
