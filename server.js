@@ -2960,51 +2960,76 @@ app.get('/api/screener-data', async (_, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 매크로 대시보드 (지수 + 환율 + 금리 + 원자재 통합)
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/macro', async (_, res) => {
+async function fetchMacroData() {
+  const result = {};
+  const naverJobs = [
+    ['.INX','sp500','index',false], ['.IXIC','nasdaq','index',false], ['.DJI','dow','index',false],
+    ['.VIX','vix','index',true],
+    ['GCcv1','gold','futures',false], ['CLcv1','oil','futures',false], ['SIcv1','silver','futures',false],
+  ];
+  await Promise.allSettled(naverJobs.map(async ([code, key, type, isDiff]) => {
+    try {
+      const q = type === 'index' ? await naverUsIndexFull(code) : await naverFutures(code);
+      if (!q) return;
+      result[key] = { value: q.price, change: Math.round((isDiff ? q.change : q.changePct) * 100) / 100 };
+    } catch {}
+  }));
+  const stooqJobs = [
+    ['usdkrw','usdkrw'], ['usdjpy','usdjpy'], ['eurusd','eurusd'], ['dx.f','dxy'], ['btcusd','btc'],
+  ];
+  await Promise.allSettled(stooqJobs.map(async ([sym, key]) => {
+    try {
+      const q = await stooqQuote(sym);
+      result[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
+    } catch {}
+  }));
+  const yahooJobs = [['^TNX','us10y'], ['^IRX','us3m'], ['^FVX','us5y']];
+  await Promise.allSettled(yahooJobs.map(async ([sym, key]) => {
+    try {
+      const q = await yahooQuote(sym);
+      result[key] = { value: q.price, change: Math.round(q.change * 100) / 100 };
+    } catch {}
+  }));
+  return result;
+}
+
+const MACRO_CACHE_FILE = join(__dirname, '.macro-cache.json');
+(function loadMacroCache() {
   try {
-    const data = await cached('macro', 300_000, async () => {
-      const result = {};
+    if (existsSync(MACRO_CACHE_FILE)) {
+      const c = JSON.parse(readFileSync(MACRO_CACHE_FILE, 'utf-8'));
+      if (c.data && Date.now() - c.savedAt < 3600_000) {
+        setC('macro', c.data, 300_000);
+        console.log('  ✓ 매크로 캐시 로드 (디스크)');
+      }
+    }
+  } catch {}
+})();
 
-      // 1차: NAVER (지수 + VIX + 원자재 futures)
-      const naverJobs = [
-        ['.INX','sp500','index',false], ['.IXIC','nasdaq','index',false], ['.DJI','dow','index',false],
-        ['.VIX','vix','index',true],
-        ['GCcv1','gold','futures',false], ['CLcv1','oil','futures',false], ['SIcv1','silver','futures',false],
-      ];
-      await Promise.allSettled(naverJobs.map(async ([code, key, type, isDiff]) => {
-        try {
-          const q = type === 'index' ? await naverUsIndexFull(code) : await naverFutures(code);
-          if (!q) return;
-          const chg = isDiff ? q.change : q.changePct;
-          result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
-        } catch {}
-      }));
-
-      // 2차: Stooq (FX + DXY — Yahoo blocked, NAVER doesn't expose JSON)
-      const stooqJobs = [
-        ['usdkrw','usdkrw',false], ['usdjpy','usdjpy',false], ['eurusd','eurusd',false], ['dx.f','dxy',false],
-        ['btcusd','btc',false],
-      ];
-      await Promise.allSettled(stooqJobs.map(async ([sym, key, isDiff]) => {
-        try {
-          const q = await stooqQuote(sym);
-          const chg = isDiff ? q.change : q.changePct;
-          result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
-        } catch {}
-      }));
-
-      // 3차: Yahoo best-effort (treasuries — 거의 안 됨)
-      const yahooJobs = [['^TNX','us10y',true], ['^IRX','us3m',true], ['^FVX','us5y',true]];
-      await Promise.allSettled(yahooJobs.map(async ([sym, key, isDiff]) => {
-        try {
-          const q = await yahooQuote(sym);
-          const chg = isDiff ? q.change : q.changePct;
-          result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
-        } catch {}
-      }));
-
-      return result;
+app.get('/api/macro', async (_, res) => {
+  const stale = getC('macro');
+  if (stale) {
+    res.json(stale);
+    // 캐시가 만료됐으나 아직 남아있는 경우 백그라운드 갱신
+    return;
+  }
+  // 캐시 없으면 stale 디스크 데이터라도 즉시 반환하고 백그라운드 갱신
+  const diskStale = (() => { try { if (existsSync(MACRO_CACHE_FILE)) { const c = JSON.parse(readFileSync(MACRO_CACHE_FILE,'utf-8')); return c.data; } } catch {} return null; })();
+  if (diskStale) {
+    res.json(diskStale);
+    // 백그라운드 갱신
+    setImmediate(async () => {
+      try {
+        _c.delete('macro'); // 강제 갱신
+        const d = await cached('macro', 300_000, fetchMacroData);
+        writeFileSync(MACRO_CACHE_FILE, JSON.stringify({ savedAt: Date.now(), data: d }), 'utf-8');
+      } catch {}
     });
+    return;
+  }
+  try {
+    const data = await cached('macro', 300_000, fetchMacroData);
+    try { writeFileSync(MACRO_CACHE_FILE, JSON.stringify({ savedAt: Date.now(), data }), 'utf-8'); } catch {}
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
