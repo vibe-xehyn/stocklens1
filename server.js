@@ -3019,7 +3019,7 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
   const screener = getC('screener') || {};
   try {
     let q = screener[ticker];
-    // opts.full=true (자정 사전계산): 스크리너에 없거나 high52 누락 시 실제 API 호출
+    // opts.full=true (자정 사전계산): 실제 API로 완전한 데이터 수집
     if (opts.full) {
       if (!q || !q.price) {
         if (isKr) {
@@ -3029,7 +3029,6 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
           q = await usQuote(ticker);
         }
       } else if (isKr && !q.high52) {
-        // KR 스크리너는 high52/roe 없음 → krFinancials로 보강
         try {
           const fin = await krFinancials(ticker);
           q = { ...q, ...fin };
@@ -3038,30 +3037,37 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
     }
     if (!q || !q.price) return null;
 
-    // 기술 지표: 캐시 있으면 즉시 사용, 없으면 API 호출 없이 프록시로 추정
-    // → 15초 이내 완료 보장
-    let t = getC(`tech:${ticker}:${market}`) || {};
+    // ── 기술지표: full 모드면 실제 계산, 아니면 캐시/프록시 ──────────
+    let t = {};
+    if (opts.full) {
+      // 실제 yfinance 기술지표 계산 (개별 분석 페이지와 동일)
+      try { t = await getTechnicals(ticker, isKr); } catch {}
+    } else {
+      t = getC(`tech:${ticker}:${market}`) || {};
+    }
+    // 기술지표 없으면 프록시로 보완
     if (!t.rsi && q.price && q.high52 && q.low52 && q.high52 > q.low52) {
-      // 52주 위치 기반 통합 프록시 (API 없이 즉시)
-      const pos = (q.price - q.low52) / (q.high52 - q.low52); // 0~1
+      const pos = (q.price - q.low52) / (q.high52 - q.low52);
       const chg = q.changePct || 0;
       const chgClamped = Math.max(-10, Math.min(10, chg));
-      // RSI 프록시
       t.rsi = Math.max(10, Math.min(90, pos * 65 + 17 + chgClamped * 1.2));
-      // BB %B 프록시
       t.bb_pct = pos * 100;
-      // MACD 프록시: 0.5 중심, 낮은 임계값으로 더 많이 분류
       const trend = (pos - 0.5) * 2 + chgClamped * 0.06;
       if (trend > 0.1)       { t.macd = 1;  t.macd_signal = 0; }
       else if (trend < -0.1) { t.macd = -1; t.macd_signal = 0; }
-      // MA 프록시: 0.55/0.45 기준으로 정배열/역배열
       if (pos > 0.55)       { t.ma20 = q.price * 0.98; t.ma50 = q.price * 0.95; }
       else if (pos < 0.45)  { t.ma20 = q.price * 1.02; t.ma50 = q.price * 1.05; }
     }
 
-    // macro는 캐시에서 가져오기 (상세 페이지와 동일한 데이터)
+    // ── flow(수급): full 모드면 실제 API 호출 (개별 분석 페이지와 동일) ─
+    let flow = {};
+    if (opts.full) {
+      try { flow = await getFlowData(ticker, isKr); } catch {}
+    }
+
+    // macro는 캐시에서 (상세 페이지와 동일)
     const macro = getC('macro') || {};
-    const sig = computeSignal(t, q, {}, macro);
+    const sig = computeSignal(t, q, flow, macro);
     const reason = sig.reasons.slice(0, 3).join(' · ') || '5대 전략 종합';
     return {
       ticker, id: ticker, market,
@@ -3090,7 +3096,8 @@ async function precomputeAllSignals(opts = {}) {
         return;
       }
 
-      const CONCURRENCY = 20;
+      // full모드(자정)는 기술지표+flow 실제 API 호출 → 동시성 낮춰 서버 보호
+      const CONCURRENCY = isFull ? 5 : 20;
       let idx = 0;
       let ok = 0;
       const newStore = new Map();
