@@ -3106,6 +3106,26 @@ app.get('/api/macro', async (_, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// 한국 업종 히트맵
+app.get('/api/kr-sectors', async (_, res) => {
+  try {
+    const data = await cached('kr-sectors', 300_000, async () => {
+      const pages = await Promise.all([1,2,3,4].map(p =>
+        fetchJSON(`https://m.stock.naver.com/api/stocks/industry?market=KOSPI&page=${p}&pageSize=20`, { Referer:'https://m.stock.naver.com/' }).catch(() => ({ groups:[] }))
+      ));
+      const all = pages.flatMap(d => d.groups || []);
+      return all.map(g => ({
+        name: g.name,
+        change: parseFloat(g.changeRate || 0),
+        rise: g.riseCount || 0,
+        fall: g.fallCount || 0,
+        total: g.totalCount || 0,
+      })).filter(g => g.total >= 3);
+    });
+    res.json(data);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // 섹터 ETF — 별도 엔드포인트 (홈 렌더 후 비동기 로드)
 app.get('/api/sectors', async (_, res) => {
   try {

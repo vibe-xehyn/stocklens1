@@ -2075,6 +2075,7 @@ async function renderHome(opts = {}) {
 
       <!-- 매크로 대시보드 + 섹터 히트맵 -->
       <div id="homeMacro">${renderMacroDashboard(macro)}</div>
+      <div id="krHeatmapContainer"></div>
       <div id="sectorHeatmapContainer" style="margin-bottom:24px"></div>
 
       <!-- 등락 상위/하락 -->
@@ -2115,6 +2116,10 @@ async function renderHome(opts = {}) {
     if (el && sectors && Object.keys(sectors).length) {
       el.innerHTML = `<div class="card" style="margin-bottom:24px">${renderSectorHeatmap(sectors)}</div>`;
     }
+  }).catch(() => {});
+  api('/api/kr-sectors').then(sectors => {
+    const el = document.getElementById('krHeatmapContainer');
+    if (el && sectors && sectors.length) el.innerHTML = renderKrHeatmap(sectors);
   }).catch(() => {});
 
   // 매수신호: 카드가 뷰포트에 진입할 때 로딩 (IntersectionObserver)
@@ -2171,6 +2176,27 @@ function renderMacroDashboard(m) {
     </div>
     ${renderYieldCurve(m)}
   </div>`;
+}
+
+function renderKrHeatmap(sectors) {
+  if (!sectors || !sectors.length) return '';
+  const sorted = [...sectors].sort((a,b) => b.change - a.change);
+  const maxAbs = Math.max(...sorted.map(s => Math.abs(s.change)), 0.1);
+  const cards = sorted.map(s => {
+    const up = s.change >= 0;
+    const intensity = Math.min(0.8, Math.abs(s.change) / maxAbs * 0.7 + 0.1);
+    const bg = up ? 'rgba(34,197,94,' + intensity + ')' : 'rgba(239,68,68,' + intensity + ')';
+    const bar = Math.round(s.rise / s.total * 100);
+    return '<div style="background:' + bg + ';border-radius:8px;padding:8px 10px;cursor:pointer">' +
+      '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.95);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">' + s.name + '</div>' +
+      '<div style="font-size:13px;font-weight:800;color:#fff">' + (up?'+':'') + s.change.toFixed(2) + '%</div>' +
+      '<div style="font-size:9px;color:rgba(255,255,255,0.7);margin-top:2px">상승 ' + s.rise + '/' + s.total + '개</div>' +
+      '</div>';
+  }).join('');
+  return '<div class="card" style="margin-bottom:24px">' +
+    '<div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">한국 업종별 등락 (KOSPI)</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px">' +
+    cards + '</div></div>';
 }
 
 function renderSectorHeatmap(sectors) {
