@@ -937,6 +937,13 @@ async function loadAndRenderMain(def) {
         const el = document.getElementById('peersContainer');
         if (el) el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">비교 데이터 없음</div>';
       }),
+      api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(d => {
+        const el = document.getElementById('factorContainer');
+        if (el) el.innerHTML = renderFactorHTML(d.breakdown, d.score, d.signal, d.reasons);
+      }).catch(() => {
+        const el = document.getElementById('factorContainer');
+        if (el) el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">팩터 데이터 없음</div>';
+      }),
     ]);
     const newsEl = document.getElementById('newsContainer');
     if (newsEl) newsEl.innerHTML = newsHTML(news);
@@ -1090,6 +1097,12 @@ function renderMain(def, q, chart, news) {
       </div>
     </div>
 
+    <!-- 팩터 스코어 -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="chart-title" style="margin-bottom:12px">재무 기반 팩터 분석</div>
+      <div id="factorContainer"><div class="loading-overlay" style="min-height:60px"><div class="spinner"></div></div></div>
+    </div>
+
     <!-- 분기 실적 -->
     <div class="card" style="margin-bottom:24px">
       <div class="chart-title" style="margin-bottom:12px">분기 실적 & 애널리스트 추정</div>
@@ -1116,6 +1129,65 @@ function renderMain(def, q, chart, news) {
   `;
 
   drawChart(chart, def.market === 'kr' ? '₩' : '$', up);
+}
+
+
+// ── 팩터 스코어 렌더링 ──────────────────────────────────────────────────────
+function renderFactorHTML(breakdown, score, signal, reasons) {
+  if (!breakdown) return '<div style="color:var(--muted);font-size:13px">분석 데이터 없음</div>';
+  const factors = [
+    { key:'technical', label:'기술적', max:40, color:'#818cf8' },
+    { key:'value',     label:'가치',   max:40, color:'#34d399' },
+    { key:'quality',   label:'품질',   max:30, color:'#fbbf24' },
+    { key:'growth',    label:'성장',   max:25, color:'#60a5fa' },
+    { key:'momentum',  label:'모멘텀', max:25, color:'#f472b6' },
+    { key:'flow',      label:'수급',   max:20, color:'#a78bfa' },
+    { key:'sentiment', label:'심리',   max:15, color:'#fb923c' },
+    { key:'macro',     label:'매크로', max:15, color:'#94a3b8' },
+  ];
+  const signalColor = signal?.includes('매수') ? 'var(--green)' : signal?.includes('매도') ? 'var(--red)' : 'var(--yellow)';
+
+  const bars = factors.map(f => {
+    const v = breakdown[f.key] ?? 0;
+    const pct = Math.round(Math.abs(v) / f.max * 100);
+    const pos = v >= 0;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="width:52px;font-size:11px;color:var(--muted);text-align:right;flex-shrink:0">${f.label}</div>
+      <div style="flex:1;display:flex;align-items:center;gap:4px">
+        <div style="width:50%;display:flex;justify-content:flex-end">
+          ${!pos ? `<div style="height:10px;width:${pct}%;background:${f.color};opacity:0.7;border-radius:3px 0 0 3px;min-width:${pct>0?2:0}px"></div>` : ''}
+        </div>
+        <div style="width:1px;height:14px;background:var(--border);flex-shrink:0"></div>
+        <div style="width:50%">
+          ${pos ? `<div style="height:10px;width:${pct}%;background:${f.color};border-radius:0 3px 3px 0;min-width:${pct>0?2:0}px"></div>` : ''}
+        </div>
+      </div>
+      <div style="width:36px;font-size:11px;font-weight:700;color:${pos?'var(--green)':'var(--red)'};text-align:left;flex-shrink:0">${pos?'+':''}${v}</div>
+    </div>`;
+  }).join('');
+
+  const topReasons = (reasons || []).slice(0, 6);
+
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <span style="font-size:11px;color:var(--muted);font-weight:700">팩터별 기여도</span>
+        <span style="font-size:11px;color:var(--muted)">← 음수 &nbsp; 0 &nbsp; 양수 →</span>
+      </div>
+      ${bars}
+    </div>
+    <div>
+      <div style="background:var(--surface2);border-radius:10px;padding:14px;margin-bottom:12px;text-align:center">
+        <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px">종합 점수</div>
+        <div style="font-size:36px;font-weight:800;color:${signalColor}">${score > 0 ? '+' : ''}${score}</div>
+        <div style="font-size:13px;font-weight:700;color:${signalColor};margin-top:4px">${signal || '-'}</div>
+      </div>
+      ${topReasons.length ? `<div>
+        <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">핵심 근거</div>
+        ${topReasons.map(r => `<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border);color:var(--text)">· ${r}</div>`).join('')}
+      </div>` : ''}
+    </div>
+  </div>`;
 }
 
 // ── 분기 실적 렌더링 ──────────────────────────────────────────────────────────
@@ -1217,8 +1289,40 @@ function renderPeersHTML(d, sym) {
     return v.toLocaleString();
   };
 
+  // 바 차트 비교: ROE, 매출성장, 순이익률
+  const allItems = [{ ticker: d.main?.ticker||'현재', name: d.main?.name||'', roe: d.main?.roe, revenueGrowth: d.main?.revenueGrowth, profitMargin: d.main?.profitMargin, per: d.main?.per, isMain: true }, ...peers];
+  const barChart = (label, key, unit='%', isGoodHigh=true) => {
+    const vals = allItems.map(p => p[key] ?? null);
+    const validVals = vals.filter(v => v !== null);
+    if (!validVals.length) return '';
+    const maxAbs = Math.max(...validVals.map(Math.abs), 0.1);
+    return `<div style="margin-bottom:16px">
+      <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px">${label}</div>
+      ${allItems.map((p, i) => {
+        const v = vals[i];
+        if (v === null) return '';
+        const pct = Math.min(100, Math.abs(v) / maxAbs * 100);
+        const good = isGoodHigh ? v > 0 : v < 0;
+        const color = p.isMain ? 'var(--accent)' : (good ? 'var(--green)' : 'var(--red)');
+        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <div style="width:52px;font-size:10px;${p.isMain?'font-weight:700;color:var(--text)':'color:var(--muted)'};text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">${p.ticker}</div>
+          <div style="flex:1;background:var(--surface2);border-radius:3px;height:10px">
+            <div style="width:${pct}%;height:100%;background:${color};border-radius:3px;${p.isMain?'opacity:1':'opacity:0.7'}"></div>
+          </div>
+          <div style="width:42px;font-size:10px;font-weight:${p.isMain?'700':'400'};color:${color};text-align:right;flex-shrink:0">${v > 0 ? '+' : ''}${v.toFixed(1)}${unit}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  };
+
   return `<div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px">섹터: ${d.sector||'-'} / 업종: ${d.industry||'-'}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      ${barChart('ROE (%)', 'roe', '%', true)}
+      ${barChart('매출 성장률 (%)', 'revenueGrowth', '%', true)}
+      ${barChart('순이익률 (%)', 'profitMargin', '%', true)}
+      ${barChart('PER (배)', 'per', 'x', false)}
+    </div>
     <div class="h-scroll">
       <table class="h-scroll-table" style="width:100%;border-collapse:collapse;font-size:12px">
         <thead>
@@ -2032,7 +2136,7 @@ function renderMacroDashboard(m) {
         <div style="width:${Math.min(100,vix.value/50*100)}%;background:${vixLevel.color};height:100%;border-radius:4px"></div>
       </div>
     </div>` : ''}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
       ${item('S&P 500','sp500',false,'','')}
       ${item('NASDAQ','nasdaq',false,'','')}
       ${item('DOW','dow',false,'','')}
@@ -2043,6 +2147,65 @@ function renderMacroDashboard(m) {
       ${item('금','gold',false,'$','')}
       ${item('WTI 원유','oil',false,'$','')}
       ${item('비트코인','btc',false,'$','')}
+    </div>
+    ${renderSectorHeatmap(m.sectors)}
+    ${renderYieldCurve(m)}
+  </div>`;
+}
+
+function renderSectorHeatmap(sectors) {
+  if (!sectors || !Object.keys(sectors).length) return '';
+  const labels = {
+    tech:'기술(XLK)', finance:'금융(XLF)', health:'헬스케어(XLV)',
+    energy:'에너지(XLE)', industrial:'산업재(XLI)', comm:'통신(XLC)',
+    materials:'소재(XLB)', realestate:'부동산(XLRE)', staples:'필수소비재(XLP)',
+    discretionary:'자유소비재(XLY)', utilities:'유틸리티(XLU)',
+  };
+  const items = Object.entries(sectors).map(([k,v]) => ({
+    label: labels[k]||k, change: v.change, value: v.value
+  })).sort((a,b) => b.change - a.change);
+  const maxAbs = Math.max(...items.map(i => Math.abs(i.change)), 0.1);
+
+  return `<div style="margin-bottom:0">
+    <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">미국 섹터 ETF 등락</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px">
+      ${items.map(s => {
+        const up = s.change >= 0;
+        const intensity = Math.min(0.8, Math.abs(s.change) / maxAbs * 0.7 + 0.1);
+        const bg = up ? \`rgba(34,197,94,\${intensity})\` : \`rgba(239,68,68,\${intensity})\`;
+        return `<div style="background:\${bg};border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${s.label}</div>
+          <div style="font-size:13px;font-weight:800;color:#fff;margin-top:2px">\${up?'+':''}\${s.change.toFixed(2)}%</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function renderYieldCurve(m) {
+  const pts = [
+    { label:'3M', key:'us3m' }, { label:'5Y', key:'us5y' }, { label:'10Y', key:'us10y' },
+  ].filter(p => m[p.key]);
+  if (pts.length < 2) return '';
+  const vals = pts.map(p => m[p.key].value);
+  const spread = m.us10y && m.us3m ? (m.us10y.value - m.us3m.value).toFixed(2) : null;
+  const inverted = spread !== null && parseFloat(spread) < 0;
+  return `<div style="margin-top:14px">
+    <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">
+      미국 국채 금리 커브
+      ${spread !== null ? \`<span style="margin-left:8px;color:\${inverted?'var(--red)':'var(--green)'}">\${inverted?'⚠ 역전됨':''} 10Y-3M 스프레드 \${spread > 0 ? '+' : ''}\${spread}%p</span>\` : ''}
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:12px;height:60px;background:var(--surface2);border-radius:8px;padding:10px 16px">
+      ${pts.map((p,i) => {
+        const v = vals[i];
+        const maxV = Math.max(...vals);
+        const h = Math.max(10, v/maxV * 40);
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="font-size:11px;font-weight:700;color:\${inverted?'var(--red)':'var(--green)'}">\${v.toFixed(2)}%</div>
+          <div style="width:36px;height:\${h}px;background:\${inverted?'var(--red)':'var(--accent)'};border-radius:4px 4px 0 0;opacity:0.8"></div>
+          <div style="font-size:10px;color:var(--muted)">\${p.label}</div>
+        </div>`;
+      }).join('')}
     </div>
   </div>`;
 }

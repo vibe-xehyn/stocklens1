@@ -2469,6 +2469,7 @@ ${newsText || '관련 뉴스 없음'}
       parsed.confidence = detConf;
       parsed.score = detScore;
       parsed.breakdown = detBreak;
+      parsed.reasons = detReasons;
       // 비한국어 문자 제거 (한글, 영문, 숫자, 기본 특수문자만 허용)
       const sanitize = v => typeof v === 'string'
         ? v.replace(/[a-z]+(?=[\uAC00-\uD7A3])/g, '')   // 한글 앞 소문자 제거 (베트남어 등 혼용 방지)
@@ -2662,7 +2663,22 @@ for peer in peers_list:
         })
     except: pass
 
-print(json.dumps({'sector': sector, 'industry': industry, 'peers': result}, ensure_ascii=False, default=str))
+# 현재 종목 데이터도 포함
+h0 = t.history(period='2d')
+p0 = float(h0['Close'].iloc[-1]) if len(h0)>0 else 0
+pv0 = float(h0['Close'].iloc[-2]) if len(h0)>1 else p0
+chg0 = (p0-pv0)/pv0*100 if pv0 else 0
+main = {
+    'ticker': '${yfticker}'.replace('.KS',''),
+    'name': info.get('shortName') or info.get('longName') or '',
+    'price': round(p0,2), 'changePct': round(chg0,2),
+    'per': info.get('trailingPE'), 'pbr': info.get('priceToBook'),
+    'roe': round((info.get('returnOnEquity') or 0)*100,1) or None,
+    'revenueGrowth': round((info.get('revenueGrowth') or 0)*100,1) or None,
+    'profitMargin': round((info.get('profitMargins') or 0)*100,1) or None,
+    'marketCap': info.get('marketCap'),
+}
+print(json.dumps({'sector': sector, 'industry': industry, 'main': main, 'peers': result}, ensure_ascii=False, default=str))
 `;
       try { return await yfRun(py); } catch { return { sector:'', industry:'', peers:[] }; }
     });
@@ -2986,6 +3002,22 @@ app.get('/api/macro', async (_, res) => {
           result[key] = { value: q.price, change: Math.round(chg * 100) / 100 };
         } catch {}
       }));
+
+      // 4차: 섹터 ETF (Stooq)
+      const sectorJobs = [
+        ['xlk','tech'], ['xlf','finance'], ['xlv','health'],
+        ['xle','energy'], ['xli','industrial'], ['xlc','comm'],
+        ['xlb','materials'], ['xlre','realestate'], ['xlp','staples'],
+        ['xly','discretionary'], ['xlu','utilities'],
+      ];
+      const sectorResult = {};
+      await Promise.allSettled(sectorJobs.map(async ([sym, key]) => {
+        try {
+          const q = await stooqQuote(sym);
+          sectorResult[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
+        } catch {}
+      }));
+      if (Object.keys(sectorResult).length) result.sectors = sectorResult;
 
       return result;
     });
