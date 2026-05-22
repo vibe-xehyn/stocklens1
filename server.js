@@ -2297,7 +2297,7 @@ app.get('/api/analysis', async (req, res) => {
   if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'GROQ_API_KEY not set' });
 
   try {
-    const data = await cached(`ai:${symbol}`, 3600_000, async () => {
+    const data = await cached(`ai:${symbol}`, 86400_000, async () => {
       const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
       const isKr = market === 'kr';
 
@@ -3229,6 +3229,8 @@ async function precomputeAllSignals(opts = {}) {
   const isFull = opts.full === true; // true = 자정 정밀분석, false = 빠른 screener-only
   _signalsComputing = (async () => {
     try {
+      // AI 분석 캐시 초기화 (재계산 시 최신 신호 반영)
+      for (const k of _c.keys()) { if (k.startsWith('ai:')) _c.delete(k); }
       const universe = await fetchTopByMarketCap(2000);
       if (!universe.length) {
         console.log('  ⚠ 시가총액 랭킹 비어있음 — 시그널 계산 중단');
