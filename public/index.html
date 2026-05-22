@@ -1020,7 +1020,7 @@ function renderMain(def, q, chart, news) {
       </div>
 
       <div class="card" style="display:flex;flex-direction:column;gap:16px">
-        <div class="chart-title">종합 점수</div>
+        <div class="chart-title">투자매력도 <span style="font-size:11px;font-weight:400;color:var(--muted)">(0~100점)</span></div>
         ${scoreHTML(score)}
         ${q.recommendation ? `
           <div style="padding:10px;background:var(--surface2);border-radius:8px;font-size:12px">
@@ -1186,7 +1186,7 @@ function renderFactorHTML(breakdown, score, signal, reasons) {
     </div>
     <div>
       <div style="background:var(--surface2);border-radius:10px;padding:14px;margin-bottom:12px;text-align:center">
-        <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px">종합 점수</div>
+        <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px">투자신호 점수 <span style="font-weight:400">(-100~+100)</span></div>
         <div style="font-size:36px;font-weight:800;color:${signalColor}">${score > 0 ? '+' : ''}${score}</div>
         <div style="font-size:13px;font-weight:700;color:${signalColor};margin-top:4px">${signal || '-'}</div>
       </div>
@@ -2181,8 +2181,11 @@ function renderMacroDashboard(m) {
 function renderKrHeatmap(sectors) {
   if (!sectors || !sectors.length) return '';
   const sorted = [...sectors].sort((a,b) => b.change - a.change);
-  const maxAbs = Math.max(...sorted.map(s => Math.abs(s.change)), 0.1);
-  const cards = sorted.map(s => {
+  const top5 = sorted.slice(0, 5);
+  const bot5 = sorted.slice(-5).reverse();
+  const shown = [...top5, ...bot5.filter(s => !top5.includes(s))];
+  const maxAbs = Math.max(...shown.map(s => Math.abs(s.change)), 0.1);
+  const cards = shown.map(s => {
     const up = s.change >= 0;
     const intensity = Math.min(0.8, Math.abs(s.change) / maxAbs * 0.7 + 0.1);
     const bg = up ? 'rgba(34,197,94,' + intensity + ')' : 'rgba(239,68,68,' + intensity + ')';
@@ -2194,7 +2197,7 @@ function renderKrHeatmap(sectors) {
       '</div>';
   }).join('');
   return '<div class="card" style="margin-bottom:24px">' +
-    '<div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">한국 업종별 등락 (KOSPI)</div>' +
+    '<div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">한국 업종별 등락 — 상승 TOP5 / 하락 TOP5</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px">' +
     cards + '</div></div>';
 }
