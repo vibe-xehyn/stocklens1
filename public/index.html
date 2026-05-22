@@ -2564,7 +2564,7 @@ async function selectStock(id, fromPopState = false) {
   let def = STOCK_DEF(id);
   if (!def) {
     const isKr = /^[0-9]{6}$/.test(id);
-    def = { id, ticker: id, displayTicker: id, name: id, market: isKr ? 'kr' : 'us' };
+    def = { id, ticker: id, displayTicker: id, name: id, market: isKr ? 'kr' : 'us', exchange: isKr ? 'KOSPI' : 'NASDAQ' };
   }
   currentDef = def;
   currentRange = '1mo';
