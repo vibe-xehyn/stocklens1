@@ -631,11 +631,13 @@ function renderRates() {
 
 async function init() {
   startClock();
-  // /api/init 으로 trading-status + indices + rates 한 번에 로딩
-  await Promise.all([fetchInit(), loadAllSidebar()]);
-  renderSidebar();
-  updateTradingBadge();
+  // 홈 즉시 렌더 — 데이터는 백그라운드에서 채움
   await renderHome();
+  // 사이드바 + init 데이터는 백그라운드 로드
+  Promise.all([fetchInit(), loadAllSidebar()]).then(() => {
+    renderSidebar();
+    updateTradingBadge();
+  }).catch(() => {});
   scheduleAutoRefresh();
 }
 
