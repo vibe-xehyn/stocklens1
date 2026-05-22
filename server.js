@@ -2894,8 +2894,8 @@ async function fetchTopByMarketCap(limit = 700) {
       } catch {}
     }));
 
-    // US: NASDAQ 300 + NYSE 300
-    const usJobs = [['NASDAQ', 3], ['NYSE', 3]];
+    // US: NASDAQ 1000 + NYSE 1000
+    const usJobs = [['NASDAQ', 10], ['NYSE', 10]];
     await Promise.allSettled(usJobs.map(async ([ex, pages]) => {
       for (let p = 1; p <= pages; p++) {
         try {
@@ -3090,7 +3090,7 @@ async function precomputeAllSignals(opts = {}) {
   const isFull = opts.full === true; // true = 자정 정밀분석, false = 빠른 screener-only
   _signalsComputing = (async () => {
     try {
-      const universe = await fetchTopByMarketCap(1000);
+      const universe = await fetchTopByMarketCap(2000);
       if (!universe.length) {
         console.log('  ⚠ 시가총액 랭킹 비어있음 — 시그널 계산 중단');
         return;
