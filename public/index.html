@@ -1988,21 +1988,39 @@ function checkAlerts(allStocks) {
   });
 }
 
-async function renderHome(opts = {}) {
-  document.getElementById('mainContent').innerHTML =
-    `<div class="loading-overlay"><div class="spinner"></div> 시장 데이터 로딩 중...</div>`;
+function buildIdxHTML(indices) {
+  return (indices||[]).map(m => {
+    const up = m.change >= 0;
+    return `<div class="home-idx-card" onclick="viewIndex(${JSON.stringify(m).replace(/"/g,'&quot;')})" style="cursor:pointer;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div class="home-idx-name">${m.name}</div>
+      <div class="home-idx-val ${up?'up':'down'}">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+      <div class="home-idx-chg ${up?'up':'down'}">${up?'+':''}${m.change.toFixed(2)}%</div>
+    </div>`;
+  }).join('');
+}
 
-  // 캐시가 있으면 재사용, 없으면 fetch (skipFetch=true이면 캐시만 사용)
-  let indices = indicesCache;
-  let macro = macroCache;
-  if (!opts.skipFetch) {
+async function renderHome(opts = {}) {
+  let indices = indicesCache || [];
+  let macro = macroCache || {};
+  const hasCached = indices.length > 0 || Object.keys(macro).length > 0;
+
+  if (!hasCached) {
+    document.getElementById('mainContent').innerHTML =
+      `<div class="loading-overlay"><div class="spinner"></div> 시장 데이터 로딩 중...</div>`;
     try {
       [indices, macro] = await Promise.all([api('/api/indices'), api('/api/macro')]);
       if (indices?.length) indicesCache = indices;
       if (macro && Object.keys(macro).length) macroCache = macro;
-    } catch {
-      // 실패 시 기존 캐시 사용
-    }
+    } catch {}
+  } else if (!opts.skipFetch) {
+    Promise.all([api('/api/indices'), api('/api/macro')]).then(([ni, nm]) => {
+      if (ni?.length) indicesCache = ni;
+      if (nm && Object.keys(nm).length) macroCache = nm;
+      const idxEl = document.getElementById('homeIndices');
+      if (idxEl) idxEl.innerHTML = buildIdxHTML(indicesCache);
+      const macroEl = document.getElementById('homeMacro');
+      if (macroEl) macroEl.innerHTML = renderMacroDashboard(macroCache);
+    }).catch(() => {});
   }
 
   const all = STOCK_DEFS.map(d => ({ ...d, ...(sidebarCache[d.id] || {}) })).filter(d => d.price);
@@ -2012,14 +2030,7 @@ async function renderHome(opts = {}) {
   const gainers = [...all].sort((a,b) => (b.changePct||0)-(a.changePct||0)).slice(0,8);
   const losers  = [...all].sort((a,b) => (a.changePct||0)-(b.changePct||0)).slice(0,8);
 
-  const idxHTML = indices.map(m => {
-    const up = m.change >= 0;
-    return `<div class="home-idx-card" onclick="viewIndex(${JSON.stringify(m).replace(/"/g,'&quot;')})" style="cursor:pointer;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-      <div class="home-idx-name">${m.name}</div>
-      <div class="home-idx-val ${up?'up':'down'}">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-      <div class="home-idx-chg ${up?'up':'down'}">${up?'+':''}${m.change.toFixed(2)}%</div>
-    </div>`;
-  }).join('');
+  const idxHTML = buildIdxHTML(indices);
 
   const stockRowHTML = d => {
     const up = (d.changePct||0) >= 0;
@@ -2056,7 +2067,7 @@ async function renderHome(opts = {}) {
         <p>한국 · 미국 주식 실시간 분석 &amp; AI 투자 의견</p>
       </div>
 
-      <div class="home-indices" style="margin-bottom:20px">${idxHTML || ''}</div>
+      <div id="homeIndices" class="home-indices" style="margin-bottom:20px">${idxHTML || ''}</div>
 
       <!-- 투자신호 (메인 기능 - 최우선) -->
       <div id="buySignalsCard">${renderBuySignalsCard(null)}</div>
@@ -2084,7 +2095,7 @@ async function renderHome(opts = {}) {
       </div>
 
       <!-- 매크로 대시보드 -->
-      ${renderMacroDashboard(macro)}
+      <div id="homeMacro">${renderMacroDashboard(macro)}</div>
       <div id="sectorHeatmapContainer"></div>
       <div id="sectorHeatmapContainer"></div>
 

@@ -966,16 +966,44 @@ async function yfIndex(sym, name) {
   return { name, value: 0, change: 0 };
 }
 
+const INDICES_CACHE_FILE = join(__dirname, '.indices-cache.json');
+(function loadIndicesCache() {
+  try {
+    if (existsSync(INDICES_CACHE_FILE)) {
+      const c = JSON.parse(readFileSync(INDICES_CACHE_FILE, 'utf-8'));
+      if (c.data && Date.now() - c.savedAt < 3600_000) {
+        setC('indices', c.data, 30_000);
+        console.log('  ✓ 지수 캐시 로드 (디스크)');
+      }
+    }
+  } catch {}
+})();
+
 app.get('/api/indices', async (_, res) => {
+  const stale = getC('indices');
+  if (stale) {
+    res.json(stale);
+    // 백그라운드 갱신
+    setImmediate(async () => {
+      try {
+        _c.delete('indices');
+        const ttl = isTradingHours() ? 30_000 : 120_000;
+        const d = await cached('indices', ttl, () => Promise.all([
+          krIndex('KOSPI','KOSPI'), krIndex('KOSDAQ','KOSDAQ'),
+          yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'),
+        ]));
+        writeFileSync(INDICES_CACHE_FILE, JSON.stringify({ savedAt: Date.now(), data: d }), 'utf-8');
+      } catch {}
+    });
+    return;
+  }
   try {
     const ttl = isTradingHours() ? 30_000 : 120_000;
     const data = await cached('indices', ttl, () => Promise.all([
-      krIndex('KOSPI',  'KOSPI'),
-      krIndex('KOSDAQ', 'KOSDAQ'),
-      yfIndex('^GSPC', 'S&P 500'),
-      yfIndex('^IXIC', 'NASDAQ'),
-      yfIndex('^DJI',  'DOW'),
+      krIndex('KOSPI',  'KOSPI'), krIndex('KOSDAQ', 'KOSDAQ'),
+      yfIndex('^GSPC', 'S&P 500'), yfIndex('^IXIC', 'NASDAQ'), yfIndex('^DJI',  'DOW'),
     ]));
+    try { writeFileSync(INDICES_CACHE_FILE, JSON.stringify({ savedAt: Date.now(), data }), 'utf-8'); } catch {}
     res.setHeader('Cache-Control', `public, max-age=${Math.floor(ttl/1000)}, stale-while-revalidate=10`);
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
