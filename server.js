@@ -2159,19 +2159,19 @@ else:
     vol_avg20 = float(np.mean(vol_arr[-20:])) if len(vol_arr) >= 20 else 1
     vol_ratio = round(float(vol_arr[-1]) / vol_avg20, 2) if vol_avg20 > 0 else 1.0
 
-    # MFI(14)
+    # MFI(14) — False → 0 채워서 NaN 방지
     tp = (c + hi + lo) / 3
     rmf = tp * vol
-    pos_mf = rmf.where(tp > tp.shift()).rolling(14).sum().iloc[-1]
-    neg_mf = rmf.where(tp < tp.shift()).rolling(14).sum().iloc[-1]
-    mfi = float(100 - 100 / (1 + pos_mf / neg_mf)) if neg_mf and neg_mf != 0 else 100.0
+    pos_mf = rmf.where(tp > tp.shift(), 0).rolling(14).sum().iloc[-1]
+    neg_mf = rmf.where(tp < tp.shift(), 0).rolling(14).sum().iloc[-1]
+    mfi = float(100 - 100 / (1 + pos_mf / neg_mf)) if neg_mf > 0 else 100.0
 
-    # CMF(20)
+    # CMF(20) — hl=0 구간 0 처리
     hl = hi - lo
-    clv = ((c - lo) - (hi - c)) / hl.replace(0, np.nan)
-    cmf_num = (clv * vol).rolling(20).sum().iloc[-1]
-    cmf_den = vol.rolling(20).sum().iloc[-1]
-    cmf = round(float(cmf_num / cmf_den), 3) if cmf_den and cmf_den != 0 else 0.0
+    clv = ((c - lo) - (hi - c)) / hl.where(hl > 0, np.nan)
+    cmf_num = (clv.fillna(0) * vol).rolling(20).sum().iloc[-1]
+    cmf_den = float(vol.rolling(20).sum().iloc[-1])
+    cmf = round(float(cmf_num) / cmf_den, 3) if cmf_den > 0 else 0.0
 
     # ROC
     roc20 = round(float((last - float(c.iloc[-21])) / float(c.iloc[-21]) * 100), 1) if n >= 21 else None
