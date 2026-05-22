@@ -2085,6 +2085,8 @@ async function renderHome(opts = {}) {
 
       <!-- 매크로 대시보드 -->
       ${renderMacroDashboard(macro)}
+      <div id="sectorHeatmapContainer"></div>
+      <div id="sectorHeatmapContainer"></div>
 
       <!-- 포트폴리오 & 알림 -->
       <div class="home-stocks-grid" style="margin-bottom:24px">
@@ -2095,6 +2097,14 @@ async function renderHome(opts = {}) {
       <!-- 가치투자 스크리너 -->
       ${renderScreenerCard(all)}
     </div>`;
+
+  // 섹터 ETF 비동기 로드 (홈 렌더 블로킹 없음)
+  api('/api/sectors').then(sectors => {
+    const el = document.getElementById('sectorHeatmapContainer');
+    if (el && sectors && Object.keys(sectors).length) {
+      el.innerHTML = `<div class="card" style="margin-bottom:24px">${renderSectorHeatmap(sectors)}</div>`;
+    }
+  }).catch(() => {});
 
   // 매수신호: 카드가 뷰포트에 진입할 때 로딩 (IntersectionObserver)
   const bsEl = document.getElementById('buySignalsCard');
@@ -2148,7 +2158,6 @@ function renderMacroDashboard(m) {
       ${item('WTI 원유','oil',false,'$','')}
       ${item('비트코인','btc',false,'$','')}
     </div>
-    ${renderSectorHeatmap(m.sectors)}
     ${renderYieldCurve(m)}
   </div>`;
 }

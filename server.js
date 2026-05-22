@@ -3003,22 +3003,29 @@ app.get('/api/macro', async (_, res) => {
         } catch {}
       }));
 
-      // 4차: 섹터 ETF (Stooq)
-      const sectorJobs = [
+      return result;
+    });
+    res.json(data);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 섹터 ETF — 별도 엔드포인트 (홈 렌더 후 비동기 로드)
+app.get('/api/sectors', async (_, res) => {
+  try {
+    const data = await cached('sectors', 600_000, async () => {
+      const jobs = [
         ['xlk','tech'], ['xlf','finance'], ['xlv','health'],
         ['xle','energy'], ['xli','industrial'], ['xlc','comm'],
         ['xlb','materials'], ['xlre','realestate'], ['xlp','staples'],
         ['xly','discretionary'], ['xlu','utilities'],
       ];
-      const sectorResult = {};
-      await Promise.allSettled(sectorJobs.map(async ([sym, key]) => {
+      const result = {};
+      await Promise.allSettled(jobs.map(async ([sym, key]) => {
         try {
           const q = await stooqQuote(sym);
-          sectorResult[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
+          result[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
         } catch {}
       }));
-      if (Object.keys(sectorResult).length) result.sectors = sectorResult;
-
       return result;
     });
     res.json(data);
