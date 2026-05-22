@@ -2467,8 +2467,9 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
   } catch { return null; }
 }
 
-async function precomputeAllSignals() {
+async function precomputeAllSignals(opts = {}) {
   if (_signalsComputing) return _signalsComputing;
+  const isFull = opts.full === true; // true = 자정 정밀분석, false = 빠른 screener-only
   _signalsComputing = (async () => {
     try {
       const universe = await fetchTopByMarketCap(1000);
@@ -2477,19 +2478,17 @@ async function precomputeAllSignals() {
         return;
       }
 
-      // 동시성 제한 worker 풀 (캐시 우선, 미캐시는 프록시 → 15초 이내 완료)
       const CONCURRENCY = 20;
       let idx = 0;
       let ok = 0;
       const newStore = new Map();
 
-      // 매일 00:00 정밀 분석: full=true로 미캐시 종목도 실제 데이터 fetch
       async function worker() {
         while (idx < universe.length) {
           const i = idx++;
           const { ticker, market } = universe[i];
           try {
-            const r = await computeSignalForTicker(ticker, market, { full: true });
+            const r = await computeSignalForTicker(ticker, market, { full: isFull });
             if (r) { newStore.set(r.ticker, r); ok++; }
           } catch {}
         }
@@ -2515,11 +2514,8 @@ async function precomputeAllSignals() {
 
 // 매수/매도 신호: mode(buy|sell) + market(kr/us/all) + signal 필터 + limit=50
 // 매일 00:00 KST에 사전 계산된 _signalStore 에서 즉시 반환 (재계산 없음)
-app.get('/api/buy-signals', async (req, res) => {
-  // 부팅 직후 캐시 로드 전이면 비어있을 수 있음 — 그때만 1회 계산
-  if (_signalStore.size === 0) {
-    await precomputeAllSignals();
-  }
+app.get('/api/buy-signals', (req, res) => {
+  // 있는 데이터 즉시 반환 — 절대 블로킹 안 함 (계산은 자정 자동 실행)
   const market = req.query.market || 'all'; // kr | us | all
   const mode = req.query.mode || 'buy';     // buy | sell
   const SIGNALS = mode === 'sell'
@@ -2612,12 +2608,12 @@ async function warmupCache() {
       console.log('  ✓ 스크리너 워밍업 완료');
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
 
-    // 5. 시그널 캐시는 이미 서버 시작 시 로드됨 — 비어있을 때만 즉시 계산
+    // 5. 시그널 캐시 없으면 screener 데이터로 빠르게 계산 (15초, API 호출 없음)
     if (_signalStore.size === 0) {
-      try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
+      try { await precomputeAllSignals({ full: false }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
     }
 
-    // 6. 매일 00:00 KST(=UTC 15:00)에 자동 재계산 스케줄
+    // 6. 매일 00:00 KST(=UTC 15:00)에 자동 재계산 — opts.full로 전체 종목 정밀 분석
     const scheduleNextMidnightKST = () => {
       const now = new Date();
       const next = new Date(now);
@@ -2628,7 +2624,7 @@ async function warmupCache() {
       console.log(`  ✓ 다음 시그널 계산 예약: ${next.toISOString()} (${hrs}시간 후)`);
       setTimeout(async () => {
         console.log('  ⏰ 00:00 KST — 일일 시그널 정밀 분석 시작');
-        try { await precomputeAllSignals(); } catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
+        try { await precomputeAllSignals({ full: true }); } catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
         scheduleNextMidnightKST(); // 다음 날 예약
       }, ms);
     };
