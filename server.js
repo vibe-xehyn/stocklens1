@@ -1200,12 +1200,73 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
     }
   }
 
-  // 이동평균 정배열/역배열
+  // 이동평균 정배열/역배열 (MA5/10/20/50/200 완전 정배열)
   if (q.price && t.ma20 && t.ma50) {
-    if (q.price > t.ma20 && t.ma20 > t.ma50)      { breakdown.technical += 10; reasons.push('정배열(가격>MA20>MA50)'); }
-    else if (q.price < t.ma20 && t.ma20 < t.ma50) { breakdown.technical -= 10; reasons.push('역배열(가격<MA20<MA50)'); }
-    else if (q.price > t.ma20)                     breakdown.technical += 3;
-    else                                           breakdown.technical -= 3;
+    const p = q.price;
+    if (t.ma5 && t.ma10 && t.ma200 && p > t.ma5 && t.ma5 > t.ma10 && t.ma10 > t.ma20 && t.ma20 > t.ma50 && t.ma50 > t.ma200) {
+      breakdown.technical += 18; reasons.push('완전 정배열(MA5>10>20>50>200)');
+    } else if (t.ma5 && t.ma10 && p > t.ma5 && t.ma5 > t.ma10 && t.ma10 > t.ma20 && t.ma20 > t.ma50) {
+      breakdown.technical += 13; reasons.push('정배열(MA5>10>20>50)');
+    } else if (p > t.ma20 && t.ma20 > t.ma50) {
+      breakdown.technical += 8; reasons.push('정배열(가격>MA20>MA50)');
+    } else if (t.ma5 && t.ma10 && t.ma200 && p < t.ma5 && t.ma5 < t.ma10 && t.ma10 < t.ma20 && t.ma20 < t.ma50 && t.ma50 < t.ma200) {
+      breakdown.technical -= 18; reasons.push('완전 역배열(MA5<10<20<50<200)');
+    } else if (p < t.ma20 && t.ma20 < t.ma50) {
+      breakdown.technical -= 8; reasons.push('역배열(가격<MA20<MA50)');
+    } else if (p > t.ma20) {
+      breakdown.technical += 3;
+    } else {
+      breakdown.technical -= 3;
+    }
+    // MA200 장기 추세 추가 보너스
+    if (t.ma200) {
+      if (p > t.ma200 * 1.05)      breakdown.technical += 5;  // MA200 5% 위 = 강한 장기 상승
+      else if (p < t.ma200 * 0.95) breakdown.technical -= 5;  // MA200 5% 아래 = 장기 하락
+    }
+  }
+
+  // Williams %R
+  if (typeof t.will_r === 'number') {
+    if (t.will_r < -80)      { breakdown.technical += 7; reasons.push(`Williams%R ${t.will_r.toFixed(0)} 과매도`); }
+    else if (t.will_r < -60) breakdown.technical += 3;
+    else if (t.will_r > -20) { breakdown.technical -= 7; reasons.push(`Williams%R ${t.will_r.toFixed(0)} 과매수`); }
+    else if (t.will_r > -40) breakdown.technical -= 3;
+  }
+
+  // OBV 추세 (가격과 거래량 방향 일치 여부)
+  if (typeof t.obv_trend === 'number') {
+    if (t.obv_trend > 0) { breakdown.technical += 5; reasons.push('OBV 상승(매집 신호)'); }
+    else                 { breakdown.technical -= 5; reasons.push('OBV 하락(분산 신호)'); }
+  }
+
+  // 거래량 급증 분석
+  if (typeof t.vol_ratio === 'number') {
+    const isUp = q.changePct != null ? q.changePct > 0 : true;
+    if (t.vol_ratio > 2.5 && isUp)       { breakdown.technical += 10; reasons.push(`거래량 ${t.vol_ratio.toFixed(1)}배 급증+상승`); }
+    else if (t.vol_ratio > 2.5 && !isUp) { breakdown.technical -= 10; reasons.push(`거래량 ${t.vol_ratio.toFixed(1)}배 급증+하락`); }
+    else if (t.vol_ratio > 1.5 && isUp)  breakdown.technical += 5;
+    else if (t.vol_ratio > 1.5 && !isUp) breakdown.technical -= 5;
+    else if (t.vol_ratio < 0.4)          breakdown.technical -= 3; // 거래량 급감 = 관심 이탈
+  }
+
+  // 캔들 패턴
+  if (Array.isArray(t.candles) && t.candles.length > 0) {
+    const cp = t.candles;
+    if (cp.includes('morning_star'))      { breakdown.technical += 12; reasons.push('샛별형(강한 반등 신호)'); }
+    if (cp.includes('bullish_engulfing')) { breakdown.technical += 10; reasons.push('상승장악형'); }
+    if (cp.includes('hammer'))            { breakdown.technical += 7;  reasons.push('망치형(반등 신호)'); }
+    if (cp.includes('inverted_hammer'))   breakdown.technical += 4;
+    if (cp.includes('evening_star'))      { breakdown.technical -= 12; reasons.push('저녁별형(강한 하락 신호)'); }
+    if (cp.includes('bearish_engulfing')) { breakdown.technical -= 10; reasons.push('하락장악형'); }
+    if (cp.includes('doji'))              { breakdown.technical -= 2;  reasons.push('도지(추세 전환 가능)'); }
+  }
+
+  // 52주 고/저점 돌파
+  if (typeof t.price_vs_52h === 'number') {
+    if (t.price_vs_52h >= 0.98)      { breakdown.technical += 12; reasons.push('52주 신고가 근접/돌파'); }
+    else if (t.price_vs_52h >= 0.90) breakdown.technical += 5;
+    else if (t.price_vs_52h <= 1.02 && t.price_vs_52l != null && t.price_vs_52l <= 1.05)
+      { breakdown.technical -= 12; reasons.push('52주 신저가 근접'); }
   }
 
   // ═══ 2. 가치 지표 - 그린블라트 매직포뮬러 + 린치 PEG (최대 ±50점) ═
@@ -1542,6 +1603,76 @@ function calcTechnicalsJS(bars) {
   // ADX는 dx의 Wilder 평균 — 마지막 값만 근사
   const adx = dx; // 단순화 (정확도 약간 손해, 시그널엔 충분)
 
+  // MA5, MA10, MA200
+  const ma5  = n >= 5   ? sma(close, 5,   n-1) : null;
+  const ma10 = n >= 10  ? sma(close, 10,  n-1) : null;
+  const ma200= n >= 200 ? sma(close, 200, n-1) : null;
+
+  // Williams %R(14)
+  const hh14 = Math.max(...high.slice(n-14, n));
+  const ll14 = Math.min(...low.slice(n-14, n));
+  const willR = hh14 !== ll14 ? -100 * (hh14 - close[n-1]) / (hh14 - ll14) : -50;
+
+  // OBV (On-Balance Volume)
+  const vol = bars.map(b => +(b.volume ?? 0));
+  let obv = 0;
+  const obvArr = [0];
+  for (let i = 1; i < n; i++) {
+    if (close[i] > close[i-1])      obv += vol[i];
+    else if (close[i] < close[i-1]) obv -= vol[i];
+    obvArr.push(obv);
+  }
+  const obv20avg = obvArr.slice(n-20, n).reduce((a,b)=>a+b,0) / 20;
+  const obvTrend = obv > obv20avg ? 1 : -1; // +1 상승, -1 하락
+
+  // 거래량 비율 (현재 거래량 / 20일 평균 거래량)
+  const vol20avg = vol.slice(n-20, n).reduce((a,b)=>a+b,0) / 20;
+  const volRatio = vol20avg > 0 ? vol[n-1] / vol20avg : 1;
+
+  // 캔들 패턴 (마지막 3봉 기반)
+  const open = bars.map(b => +(b.open ?? b.close));
+  const c0 = close[n-1], o0 = open[n-1], h0 = high[n-1], l0 = low[n-1];
+  const c1 = close[n-2], o1 = open[n-2], h1 = high[n-2], l1 = low[n-2];
+  const c2 = n >= 3 ? close[n-3] : c1, o2 = n >= 3 ? open[n-3] : o1;
+  const body0 = Math.abs(c0 - o0), range0 = h0 - l0;
+  const body1 = Math.abs(c1 - o1), range1 = h1 - l1;
+  const candles = [];
+
+  // 도지 (몸통이 전체의 10% 미만 → 추세 전환 가능)
+  if (range0 > 0 && body0 / range0 < 0.1) candles.push('doji');
+
+  // 망치형 (하락 후 아래꼬리 길고 몸통 위쪽 → 반등)
+  const lowerShadow0 = Math.min(c0, o0) - l0;
+  const upperShadow0 = h0 - Math.max(c0, o0);
+  if (c1 < o1 && lowerShadow0 > body0 * 2 && upperShadow0 < body0 && body0 > 0)
+    candles.push('hammer');
+
+  // 역망치형 (하락 후 위꼬리 길고 몸통 아래쪽 → 반등 가능)
+  if (c1 < o1 && upperShadow0 > body0 * 2 && lowerShadow0 < body0 && body0 > 0)
+    candles.push('inverted_hammer');
+
+  // 상승 장악형 (전봉 음봉, 현봉 양봉으로 완전히 감쌈 → 강한 반등)
+  if (c1 < o1 && c0 > o0 && c0 > o1 && o0 < c1)
+    candles.push('bullish_engulfing');
+
+  // 하락 장악형 (전봉 양봉, 현봉 음봉으로 완전히 감쌈 → 강한 하락)
+  if (c1 > o1 && c0 < o0 && c0 < o1 && o0 > c1)
+    candles.push('bearish_engulfing');
+
+  // 샛별형 Morning Star (양봉-도지/소봉-양봉 → 강한 반등)
+  if (c2 < o2 && body1 / (h1 - l1 || 1) < 0.3 && c0 > o0 && c0 > (o2 + c2) / 2)
+    candles.push('morning_star');
+
+  // 저녁별형 Evening Star (음봉-도지/소봉-음봉 → 강한 하락)
+  if (c2 > o2 && body1 / (h1 - l1 || 1) < 0.3 && c0 < o0 && c0 < (o2 + c2) / 2)
+    candles.push('evening_star');
+
+  // 52주 고/저점 (bars가 충분하면 계산, 아니면 null)
+  const high52 = n >= 200 ? Math.max(...high.slice(n-252 < 0 ? 0 : n-252, n)) : Math.max(...high);
+  const low52  = n >= 200 ? Math.min(...low.slice(n-252 < 0 ? 0 : n-252, n))  : Math.min(...low);
+  const priceVs52H = high52 > 0 ? close[n-1] / high52 : null; // 1.0 = 52주 신고가
+  const priceVs52L = low52  > 0 ? close[n-1] / low52  : null; // 1.0 = 52주 신저가
+
   const r = v => v == null ? null : Math.round(v * 10) / 10;
   return {
     rsi: r(rsi),
@@ -1549,7 +1680,13 @@ function calcTechnicalsJS(bars) {
     stoch_k: r(K), stoch_d: r(D),
     adx: r(adx), pdi: r(pdi), mdi: r(mdi),
     macd: r(macd_line[n-1]), macd_signal: r(sig_line[n-1]),
-    ma20: r(ma20), ma50: r(ma50),
+    ma5: r(ma5), ma10: r(ma10), ma20: r(ma20), ma50: r(ma50), ma200: r(ma200),
+    will_r: r(willR),
+    obv_trend: obvTrend,
+    vol_ratio: Math.round(volRatio * 100) / 100,
+    candles,
+    price_vs_52h: priceVs52H != null ? Math.round(priceVs52H * 1000) / 1000 : null,
+    price_vs_52l: priceVs52L != null ? Math.round(priceVs52L * 1000) / 1000 : null,
     price: r(close[n-1]),
   };
 }
