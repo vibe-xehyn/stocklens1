@@ -2120,11 +2120,12 @@ def dmi_adx(high, low, close, n=14):
     return dx.ewm(com=n-1, adjust=False).mean(), pdi, mdi
 
 t = yf.Ticker('${yfticker}')
-h = t.history(period='6mo')
+h = t.history(period='1y')
 if len(h) < 30:
     print(json.dumps({'error': 'not enough data'}))
 else:
-    c, hi, lo = h['Close'], h['High'], h['Low']
+    c = h['Close']; hi = h['High']; lo = h['Low']; vol = h['Volume']
+    n = len(c)
     rsi_s = rsi(c)
     upper, mid, lower = bollinger(c)
     K, D = stochastic(hi, lo, c)
@@ -2135,6 +2136,127 @@ else:
     sig_s = macd_s.ewm(span=9, adjust=False).mean()
     last = float(c.iloc[-1])
     bb_l, bb_u = float(lower.iloc[-1]), float(upper.iloc[-1])
+
+    # MA5, MA10, MA200
+    ma5  = float(c.rolling(5).mean().iloc[-1]) if n >= 5 else None
+    ma10 = float(c.rolling(10).mean().iloc[-1]) if n >= 10 else None
+    ma200= float(c.rolling(200).mean().iloc[-1]) if n >= 200 else None
+
+    # Williams %R(14)
+    hh14 = float(hi.rolling(14).max().iloc[-1])
+    ll14 = float(lo.rolling(14).min().iloc[-1])
+    will_r = -100 * (hh14 - last) / (hh14 - ll14) if hh14 != ll14 else -50
+
+    # OBV trend
+    obv = (np.where(c.diff() > 0, vol, np.where(c.diff() < 0, -vol, 0))).cumsum()
+    obv_s = obv if not hasattr(obv, 'values') else obv
+    obv_last = float(obv[-1]) if hasattr(obv, '__len__') else 0
+    obv_avg20 = float(np.mean(obv[-20:])) if len(obv) >= 20 else obv_last
+    obv_trend = 1 if obv_last > obv_avg20 else -1
+
+    # Volume ratio
+    vol_arr = vol.values
+    vol_avg20 = float(np.mean(vol_arr[-20:])) if len(vol_arr) >= 20 else 1
+    vol_ratio = round(float(vol_arr[-1]) / vol_avg20, 2) if vol_avg20 > 0 else 1.0
+
+    # MFI(14)
+    tp = (c + hi + lo) / 3
+    rmf = tp * vol
+    pos_mf = rmf.where(tp > tp.shift()).rolling(14).sum().iloc[-1]
+    neg_mf = rmf.where(tp < tp.shift()).rolling(14).sum().iloc[-1]
+    mfi = float(100 - 100 / (1 + pos_mf / neg_mf)) if neg_mf and neg_mf != 0 else 100.0
+
+    # CMF(20)
+    hl = hi - lo
+    clv = ((c - lo) - (hi - c)) / hl.replace(0, np.nan)
+    cmf_num = (clv * vol).rolling(20).sum().iloc[-1]
+    cmf_den = vol.rolling(20).sum().iloc[-1]
+    cmf = round(float(cmf_num / cmf_den), 3) if cmf_den and cmf_den != 0 else 0.0
+
+    # ROC
+    roc20 = round(float((last - float(c.iloc[-21])) / float(c.iloc[-21]) * 100), 1) if n >= 21 else None
+    roc5  = round(float((last - float(c.iloc[-6]))  / float(c.iloc[-6])  * 100), 1) if n >= 6  else None
+
+    # Ichimoku
+    def ich_hl(s_hi, s_lo, p, i): return (s_hi.rolling(p).max().iloc[i] + s_lo.rolling(p).min().iloc[i]) / 2
+    tenkan = ich_hl(hi, lo, 9, -1) if n >= 9 else None
+    kijun  = ich_hl(hi, lo, 26, -1) if n >= 26 else None
+    senkouA = (tenkan + kijun) / 2 if tenkan is not None and kijun is not None else None
+    senkouB = ich_hl(hi, lo, 52, -1) if n >= 52 else None
+    if senkouA is not None and senkouB is not None:
+        cloud_top = max(senkouA, senkouB); cloud_bot = min(senkouA, senkouB)
+        ich_signal = 1 if last > cloud_top else (-1 if last < cloud_bot else 0)
+    else:
+        ich_signal = None
+
+    # 52-week high/low
+    high52 = float(hi.max()); low52 = float(lo.min())
+    price_vs_52h = round(last / high52, 3) if high52 > 0 else None
+    price_vs_52l = round(last / low52, 3) if low52 > 0 else None
+
+    # Fibonacci
+    fib_range = high52 - low52
+    if fib_range > 0:
+        fib_levels = [high52 - fib_range * r for r in [0.236, 0.382, 0.5, 0.618, 0.786]]
+        fib_nearest = min(fib_levels, key=lambda lv: abs(last - lv))
+        near_pct = abs(last - fib_nearest) / fib_range
+        fib_bull = near_pct < 0.03 and last >= fib_nearest
+        fib_bear = near_pct < 0.03 and last < fib_nearest
+    else:
+        fib_bull = False; fib_bear = False
+
+    # VPT trend
+    pct_chg = c.pct_change().fillna(0)
+    vpt = (vol * pct_chg).cumsum()
+    vpt_last = float(vpt.iloc[-1]); vpt_avg10 = float(vpt.iloc[-10:].mean())
+    vpt_trend = 1 if vpt_last > vpt_avg10 else -1
+
+    # Parabolic SAR (simplified)
+    hi_arr = hi.values; lo_arr = lo.values; cl_arr = c.values
+    sar_bull = True; sar_val = lo_arr[0]; sar_ep = hi_arr[0]; sar_af = 0.02
+    for i in range(1, len(cl_arr)):
+        if sar_bull:
+            sar_val = sar_val + sar_af * (sar_ep - sar_val)
+            sar_val = min(sar_val, lo_arr[i-1], lo_arr[i-2] if i > 1 else lo_arr[i-1])
+            if lo_arr[i] < sar_val: sar_bull=False; sar_val=sar_ep; sar_ep=lo_arr[i]; sar_af=0.02
+            elif hi_arr[i] > sar_ep: sar_ep=hi_arr[i]; sar_af=min(sar_af+0.02, 0.2)
+        else:
+            sar_val = sar_val - sar_af * (sar_val - sar_ep)
+            sar_val = max(sar_val, hi_arr[i-1], hi_arr[i-2] if i > 1 else hi_arr[i-1])
+            if hi_arr[i] > sar_val: sar_bull=True; sar_val=sar_ep; sar_ep=hi_arr[i]; sar_af=0.02
+            elif lo_arr[i] < sar_ep: sar_ep=lo_arr[i]; sar_af=min(sar_af+0.02, 0.2)
+    sar_signal = 1 if sar_bull else -1
+
+    # Gap
+    gap_up   = bool(float(lo_arr[-1]) > float(hi_arr[-2])) if n >= 2 else False
+    gap_down = bool(float(hi_arr[-1]) < float(lo_arr[-2])) if n >= 2 else False
+
+    # RSI divergence
+    rsi_arr = rsi_s.values
+    cl20 = cl_arr[-21:-1]
+    price_high20 = float(np.max(cl20)) if len(cl20) > 0 else last
+    price_low20  = float(np.min(cl20)) if len(cl20) > 0 else last
+    rsi_now = float(rsi_arr[-1])
+    bear_div = bool(last > price_high20 * 0.99 and rsi_now < 65)
+    bull_div = bool(last < price_low20  * 1.01 and rsi_now > 35)
+
+    # Candle patterns (last 3 bars)
+    o = h['Open'].values
+    c0,o0,h0,l0 = float(cl_arr[-1]),float(o[-1]),float(hi_arr[-1]),float(lo_arr[-1])
+    c1,o1,h1,l1 = float(cl_arr[-2]),float(o[-2]),float(hi_arr[-2]),float(lo_arr[-2])
+    c2,o2 = (float(cl_arr[-3]),float(o[-3])) if n >= 3 else (c1,o1)
+    body0 = abs(c0-o0); range0 = h0-l0
+    body1 = abs(c1-o1); range1 = h1-l1
+    ls0 = min(c0,o0)-l0; us0 = h0-max(c0,o0)
+    candles = []
+    if range0 > 0 and body0/range0 < 0.1: candles.append('doji')
+    if c1 < o1 and ls0 > body0*2 and us0 < body0 and body0 > 0: candles.append('hammer')
+    if c1 < o1 and us0 > body0*2 and ls0 < body0 and body0 > 0: candles.append('inverted_hammer')
+    if c1 < o1 and c0 > o0 and c0 > o1 and o0 < c1: candles.append('bullish_engulfing')
+    if c1 > o1 and c0 < o0 and c0 < o1 and o0 > c1: candles.append('bearish_engulfing')
+    if c2 < o2 and body1/(h1-l1+1e-9) < 0.3 and c0 > o0 and c0 > (o2+c2)/2: candles.append('morning_star')
+    if c2 > o2 and body1/(h1-l1+1e-9) < 0.3 and c0 < o0 and c0 < (o2+c2)/2: candles.append('evening_star')
+
     print(json.dumps({
         'rsi': round(float(rsi_s.iloc[-1]), 1),
         'bb_upper': round(bb_u, 4), 'bb_mid': round(float(mid.iloc[-1]), 4), 'bb_lower': round(bb_l, 4),
@@ -2143,7 +2265,24 @@ else:
         'adx': round(float(adx_s.iloc[-1]), 1), 'pdi': round(float(pdi_s.iloc[-1]), 1), 'mdi': round(float(mdi_s.iloc[-1]), 1),
         'macd': round(float(macd_s.iloc[-1]), 4), 'macd_signal': round(float(sig_s.iloc[-1]), 4),
         'ma20': round(float(mid.iloc[-1]), 4), 'ma50': round(float(c.rolling(50).mean().iloc[-1]), 4),
+        'ma5': round(ma5, 4) if ma5 else None,
+        'ma10': round(ma10, 4) if ma10 else None,
+        'ma200': round(ma200, 4) if ma200 else None,
         'price': round(last, 4),
+        'will_r': round(will_r, 1),
+        'obv_trend': obv_trend,
+        'vol_ratio': vol_ratio,
+        'mfi': round(mfi, 1),
+        'cmf': cmf,
+        'roc20': roc20, 'roc5': roc5,
+        'ich_signal': ich_signal,
+        'price_vs_52h': price_vs_52h, 'price_vs_52l': price_vs_52l,
+        'fib_bull': fib_bull, 'fib_bear': fib_bear,
+        'vpt_trend': vpt_trend,
+        'sar_signal': sar_signal,
+        'gap_up': gap_up, 'gap_down': gap_down,
+        'bear_div': bear_div, 'bull_div': bull_div,
+        'candles': candles,
     }))
 `;
   return yfRun(py);

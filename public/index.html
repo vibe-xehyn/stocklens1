@@ -1590,7 +1590,7 @@ function toggleWatch(id, btn) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatPrice(p, cur) {
   if (p == null) return '···';
-  const sym = (cur === 'KRW' || cur === 'KRW') ? '₩' : '$';
+  const sym = (cur === 'KRW' || cur === 'KRW' || cur === '₩') ? '₩' : '$';
   return sym + p.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
@@ -2221,7 +2221,7 @@ function renderBuySignalsCard(data) {
   return `<div class="card" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div>
-        <div class="home-section-title" style="margin-bottom:0">투자 신호 <span style="font-size:10px;color:var(--muted);font-weight:400">시가총액 상위 1000개</span></div>
+        <div class="home-section-title" style="margin-bottom:0">투자 신호 <span style="font-size:10px;color:var(--muted);font-weight:400">시가총액 상위 2000개</span></div>
         ${updatedAt ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${updatedAt} 기준</div>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:6px">
