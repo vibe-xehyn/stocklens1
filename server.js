@@ -1820,7 +1820,9 @@ ${newsText || '관련 뉴스 없음'}
       parsed.breakdown = detBreak;
       // 비한국어 문자 제거 (한글, 영문, 숫자, 기본 특수문자만 허용)
       const sanitize = v => typeof v === 'string'
-        ? v.replace(/[^\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F a-zA-Z0-9%.,·()\-+~:/?!\n""''【】]/g, '')
+        ? v.replace(/[a-z]+(?=[\uAC00-\uD7A3])/g, '')   // 한글 앞 소문자 제거 (베트남어 등 혼용 방지)
+           .replace(/(?<=[\uAC00-\uD7A3])[a-z]+/g, '')   // 한글 뒤 소문자 제거
+           .replace(/[^\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F a-zA-Z0-9%.,·()\-+~:/?!\n""''【】]/g, '')
            .replace(/\s+/g, ' ').trim()
         : v;
       return Object.fromEntries(Object.entries(parsed).map(([k,v]) => [k, sanitize(v)]));
