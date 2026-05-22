@@ -3466,7 +3466,7 @@ async function precomputeAllSignals(opts = {}) {
       for (const r of _signalStore.values()) counts[r.signal] = (counts[r.signal]||0) + 1;
       const c = s => counts[s]||0;
       console.log(`  ✓ 시그널 사전 계산 완료 (${ok}/${universe.length}, 강력매수:${c('강력매수')} 매수:${c('매수')} 약매수:${c('약매수')} 중립:${c('중립')} 약매도:${c('약매도')} 매도:${c('매도')} 강력매도:${c('강력매도')})`);
-      _saveSignalCache(); // 디스크에 저장 (서버 재시작 시 재사용)
+      if (isFull) _saveSignalCache(); // 디스크에 저장 — full 계산 시에만 (워밍업이 덮어쓰지 않도록)
     } finally {
       _signalsComputing = null;
     }
