@@ -2279,6 +2279,18 @@ const _screenerCriteria = [
   { fn: d => d.pbr && d.pbr < 1 },
 ];
 
+let _screenerDataCache = null;
+
+async function _getScreenerData() {
+  if (_screenerDataCache) return _screenerDataCache;
+  const res = await fetch('/api/screener-data');
+  _screenerDataCache = await res.json();
+  return _screenerDataCache;
+}
+
+// 홈 로드 시 백그라운드 프리페치
+setTimeout(() => _getScreenerData().catch(() => {}), 3000);
+
 async function applyScreener(idx) {
   document.querySelectorAll('[id^=screenerBtn]').forEach(b => {
     b.classList.remove('active'); b.style.borderColor='var(--border)'; b.style.color='var(--muted)'; b.style.background='transparent';
@@ -2288,12 +2300,11 @@ async function applyScreener(idx) {
 
   const el = document.getElementById('screenerResults');
   if (!el) return;
-  el.innerHTML = '<div style="color:var(--muted)">전체 종목 데이터 로딩 중...</div>';
+  if (!_screenerDataCache) el.innerHTML = '<div style="color:var(--muted)">데이터 로딩 중...</div>';
 
   let data;
   try {
-    const res = await fetch('/api/screener-data');
-    data = await res.json();
+    data = await _getScreenerData();
   } catch(e) {
     el.innerHTML = '<div style="color:var(--red)">데이터 로딩 실패</div>';
     return;

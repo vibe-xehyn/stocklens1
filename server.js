@@ -2153,7 +2153,7 @@ print(json.dumps(result))
 
 app.get('/api/screener-data', async (_, res) => {
   try {
-    const data = await cached('screener', 1800_000, async () => {
+    const data = await cached('screener', SIGNAL_CACHE_TTL, async () => {
       // KR: NAVER + 배치 polling으로 KR_UNIVERSE 전체 가격 수집
       const krResults = await fetchNaverMarket();
 
@@ -2229,7 +2229,9 @@ print(json.dumps(result))
 `;
       const usResults = await _pyExecLong(usPy);
 
-      return { ...krResults, ...usResults };
+      const result = { ...krResults, ...usResults };
+      _saveScreenerCache(result); // 디스크에 저장 (서버 재시작 시 재사용)
+      return result;
     });
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2375,6 +2377,7 @@ const _signalStore = new Map();
 let _signalsUpdatedAt = 0;
 let _signalsComputing = null; // 진행 중인 Promise (race 방지)
 const SIGNAL_CACHE_FILE = join(__dirname, '.signal-cache.json');
+const SCREENER_CACHE_FILE = join(__dirname, '.screener-cache.json');
 const SIGNAL_CACHE_TTL = 24 * 60 * 60 * 1000; // 24시간 (매일 00:00 KST 갱신)
 
 function _saveSignalCache() {
@@ -2382,6 +2385,24 @@ function _saveSignalCache() {
     const data = { updatedAt: _signalsUpdatedAt, entries: [..._signalStore.entries()] };
     writeFileSync(SIGNAL_CACHE_FILE, JSON.stringify(data), 'utf-8');
   } catch(e) { console.log('  ⚠ 시그널 캐시 저장 실패:', e.message); }
+}
+
+function _saveScreenerCache(data) {
+  try { writeFileSync(SCREENER_CACHE_FILE, JSON.stringify({ updatedAt: Date.now(), data }), 'utf-8'); }
+  catch(e) { console.log('  ⚠ 스크리너 캐시 저장 실패:', e.message); }
+}
+
+function _loadScreenerCache() {
+  try {
+    if (!existsSync(SCREENER_CACHE_FILE)) return false;
+    const c = JSON.parse(readFileSync(SCREENER_CACHE_FILE, 'utf-8'));
+    if (!c.updatedAt || !c.data) return false;
+    if (Date.now() - c.updatedAt > SIGNAL_CACHE_TTL) return false;
+    setC('screener', c.data, SIGNAL_CACHE_TTL);
+    const age = Math.round((Date.now() - c.updatedAt) / 60000);
+    console.log(`  ✓ 스크리너 캐시 로드 (${Object.keys(c.data).length}개, ${age}분 전 계산)`);
+    return true;
+  } catch(e) { console.log('  ⚠ 스크리너 캐시 로드 실패:', e.message); return false; }
 }
 
 function _loadSignalCache() {
@@ -2550,6 +2571,7 @@ app.get('/api/all-signals', (req, res) => {
 });
 
 // 서버 시작 전 시그널 캐시 즉시 로드 (API 첫 요청부터 바로 응답)
+_loadScreenerCache();
 _loadSignalCache();
 
 app.listen(PORT, () => {
@@ -2623,7 +2645,15 @@ async function warmupCache() {
       const hrs = (ms / 3600000).toFixed(1);
       console.log(`  ✓ 다음 시그널 계산 예약: ${next.toISOString()} (${hrs}시간 후)`);
       setTimeout(async () => {
-        console.log('  ⏰ 00:00 KST — 일일 시그널 정밀 분석 시작');
+        console.log('  ⏰ 00:00 KST — 일일 스크리너 + 시그널 정밀 분석 시작');
+        // 1) 스크리너 캐시 갱신
+        try {
+          _c.delete('screener'); // 인메모리 캐시 무효화
+          const r = await fetch(`http://localhost:${PORT}/api/screener-data`);
+          await r.json();
+          console.log('  ✓ 스크리너 갱신 완료');
+        } catch(e) { console.log('  ⚠ 스크리너 갱신 실패:', e.message); }
+        // 2) 시그널 정밀 분석
         try { await precomputeAllSignals({ full: true }); } catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
         scheduleNextMidnightKST(); // 다음 날 예약
       }, ms);
