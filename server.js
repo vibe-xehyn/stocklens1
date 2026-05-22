@@ -2719,16 +2719,14 @@ for peer in peers_list:
         price = float(h['Close'].iloc[-1]) if len(h) > 0 else (pfi.last_price or 0)
         prev  = float(h['Close'].iloc[-2]) if len(h) > 1 else price
         chg   = (price-prev)/prev*100 if prev else 0
-        _per = pi.get('trailingPE') or (round(price/pi['trailingEps'],1) if pi.get('trailingEps') and pi['trailingEps']>0 and price>0 else None)
-        _pbr = pi.get('priceToBook') or (round(price/pi['bookValue'],2) if pi.get('bookValue') and pi['bookValue']>0 and price>0 else None)
         result.append({
             'ticker': peer,
             'name': pi.get('shortName') or pi.get('longName') or peer,
             'price': round(price, 2),
             'changePct': round(chg, 2),
-            'per': _per,
+            'per': pi.get('trailingPE'),
             'forwardPer': pi.get('forwardPE'),
-            'pbr': _pbr,
+            'pbr': pi.get('priceToBook'),
             'roe': round((pi.get('returnOnEquity') or 0)*100, 1) or None,
             'marketCap': pfi.market_cap,
             'revenueGrowth': round((pi.get('revenueGrowth') or 0)*100, 1) or None,
@@ -2746,8 +2744,7 @@ main = {
     'ticker': '${yfticker}'.replace('.KS',''),
     'name': info.get('shortName') or info.get('longName') or '',
     'price': round(p0,2), 'changePct': round(chg0,2),
-    'per': info.get('trailingPE') or (round(p0/info['trailingEps'],1) if info.get('trailingEps') and info['trailingEps']>0 and p0>0 else None),
-    'pbr': info.get('priceToBook') or (round(p0/info['bookValue'],2) if info.get('bookValue') and info['bookValue']>0 and p0>0 else None),
+    'per': info.get('trailingPE'), 'pbr': info.get('priceToBook'),
     'roe': round((info.get('returnOnEquity') or 0)*100,1) or None,
     'revenueGrowth': round((info.get('revenueGrowth') or 0)*100,1) or None,
     'profitMargin': round((info.get('profitMargins') or 0)*100,1) or None,
@@ -2755,7 +2752,24 @@ main = {
 }
 print(json.dumps({'sector': sector, 'industry': industry, 'main': main, 'peers': result}, ensure_ascii=False, default=str))
 `;
-      try { return await yfRun(py); } catch { return { sector:'', industry:'', peers:[] }; }
+      const raw = await yfRun(py).catch(() => ({ sector:'', industry:'', peers:[] }));
+      // KR 종목: 스크리너 캐시로 PER/PBR 보완 (NAVER 데이터가 더 정확)
+      if (market === 'kr') {
+        const sc = getC('screener') || {};
+        const fill = (item) => {
+          const code = (item.ticker||'').replace('.KS','');
+          const cached = sc[code];
+          if (cached) {
+            if (item.per == null && cached.per) item.per = cached.per;
+            if (item.pbr == null && cached.pbr) item.pbr = cached.pbr;
+            if (item.roe == null && cached.roe) item.roe = cached.roe;
+          }
+          return item;
+        };
+        if (raw.main) fill(raw.main);
+        if (raw.peers) raw.peers = raw.peers.map(fill);
+      }
+      return raw;
     });
     res.json(data);
   } catch(e) { res.json({ sector:'', industry:'', peers:[] }); }
