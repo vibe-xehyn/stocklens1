@@ -124,7 +124,7 @@
     display: flex; align-items: flex-start; justify-content: space-between;
     margin-bottom: 24px; gap: 16px; flex-wrap: nowrap;
   }
-  .stock-title h1 { font-size: 28px; font-weight: 800; letter-spacing: -1px; }
+  .stock-title h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
   .stock-title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
   .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; margin-top: 6px; font-weight: 600; }
   .badge-kr { background: #1e3a5f; color: #60a5fa; }
@@ -208,7 +208,7 @@
   .watchlist-btn.watching { background: rgba(245,158,11,0.1); border-color: var(--yellow); color: var(--yellow); }
 
   /* Home Screen */
-  .home-wrap { padding: 28px 24px; }
+  .home-wrap { padding: 20px 24px; }
   .home-hero { text-align: center; padding: 32px 0 28px; }
   .home-hero h1 { font-size: 40px; font-weight: 900; letter-spacing: -2px; margin-bottom: 8px; }
   .home-hero h1 span { color: var(--accent); }
@@ -217,16 +217,16 @@
   @media(max-width:900px){ .home-indices { grid-template-columns: repeat(3,1fr); } }
   .home-idx-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 14px; text-align: center; box-shadow: var(--shadow);
+    padding: 10px 14px; text-align: center; box-shadow: var(--shadow);
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .home-idx-card:hover { border-color: var(--border2); box-shadow: var(--shadow-md); }
   .home-idx-name { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-  .home-idx-val { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
+  .home-idx-val { font-size: 16px; font-weight: 800; letter-spacing: -0.5px; }
   .home-idx-chg { font-size: 12px; font-weight: 600; margin-top: 3px; }
   .home-stocks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
   @media(max-width:700px){ .home-stocks-grid { grid-template-columns: 1fr; } }
-  .home-section-title { font-size: 14px; font-weight: 800; margin-bottom: 14px; color: var(--text); letter-spacing: -0.2px; }
+  .home-section-title { font-size: 15px; font-weight: 800; margin-bottom: 14px; color: var(--text); letter-spacing: -0.3px; }
   .home-stock-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.12s; margin: 0 -4px; padding-left: 4px; padding-right: 4px; border-radius: 4px; }
   .home-stock-row:last-child { border-bottom: none; }
   .home-stock-row:hover { background: var(--surface2); border-bottom-color: transparent; }
@@ -394,6 +394,57 @@
     /* 와이드 테이블: 컨테이너 안에서만 가로 스크롤 (모바일에서 컬럼 압축 방지) */
     .h-scroll-table { min-width: 560px; }
   }
+
+  /* ── 모달 ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 14px; padding: 24px; width: 100%; max-width: 400px;
+    margin: 0 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    animation: modalIn 0.18s ease;
+  }
+  @keyframes modalIn { from { opacity:0; transform: scale(0.95) translateY(8px); } to { opacity:1; transform: none; } }
+  .modal-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+  .modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+  .modal-field { margin-bottom: 14px; }
+  .modal-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+  .modal-input {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 14px;
+    outline: none; transition: border-color 0.15s; font-family: inherit;
+  }
+  .modal-input:focus { border-color: var(--accent); background: var(--surface3); }
+  .modal-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+  .modal-btn-primary {
+    flex: 1; padding: 10px; border-radius: 8px; border: none;
+    background: var(--accent2); color: #fff; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: background 0.15s; font-family: inherit;
+  }
+  .modal-btn-primary:hover { background: var(--accent); }
+  .modal-btn-cancel {
+    padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .modal-segment { display: flex; gap: 3px; background: var(--surface2); border-radius: 8px; padding: 3px; margin-bottom: 4px; }
+  .modal-seg-btn {
+    flex: 1; padding: 8px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 700; transition: all 0.15s; font-family: inherit;
+    background: transparent; color: var(--muted);
+  }
+  .modal-seg-btn.active-buy { background: rgba(22,163,74,0.15); color: #16a34a; }
+  .modal-seg-btn.active-sell { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .modal-price-tag {
+    display: inline-block; padding: 4px 10px; background: var(--surface2);
+    border-radius: 6px; font-size: 12px; color: var(--muted); margin-top: 6px;
+  }
+  .modal-price-tag strong { color: var(--text); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -737,15 +788,20 @@ function renderSidebar(filter = '') {
       const sym = def.market === 'kr' ? '₩' : '$';
       const priceStr = q ? sym + (q.price||0).toLocaleString(undefined,{maximumFractionDigits:2}) : '···';
       const chgStr = q ? `${up?'+':''}${(q.changePct||0).toFixed(2)}%` : '';
+      const isKrStock = def.market === 'kr';
+      const usdkrw = ratesCache?.usdkrw?.value;
+      const krwStr = (!isKrStock && q?.price && usdkrw)
+        ? `<div style="font-size:9px;color:var(--muted)">≈ ₩${Math.round(q.price * usdkrw).toLocaleString()}</div>` : '';
       html += `
         <div class="stock-item ${def.id === currentDef.id ? 'active' : ''}" onclick="selectStock('${def.id}')">
           <div class="stock-left">
-            <div class="ticker">${def.displayTicker}</div>
-            <div class="sname">${def.name}</div>
+            <div class="ticker">${isKrStock ? def.name : def.displayTicker}</div>
+            <div class="sname">${isKrStock ? def.displayTicker : def.name}</div>
           </div>
           <div class="stock-right">
             <div class="stock-price ${up ? 'up' : 'down'}">${priceStr}</div>
             <div class="stock-chg ${up ? 'up' : 'down'}">${chgStr}</div>
+            ${krwStr}
           </div>
         </div>`;
     });
@@ -901,8 +957,9 @@ function renderMain(def, q, chart, news) {
     <!-- Header -->
     <div class="stock-header">
       <div class="stock-title">
-        <h1>${def.displayTicker}&nbsp;<span style="font-size:20px;color:var(--muted);font-weight:400">${q.name || def.name}</span></h1>
-        <div style="margin-top:4px">
+        <h1>${q.name || def.name}</h1>
+        <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:14px;color:var(--muted);font-weight:600">${def.displayTicker}</span>
           <span class="badge ${isKr ? 'badge-kr' : 'badge-us'}">${isKr ? '한국' : 'US'}</span>
           <span class="badge badge-${def.exchange}">${def.exchange}</span>
         </div>
@@ -914,8 +971,8 @@ function renderMain(def, q, chart, news) {
           <button class="watchlist-btn ${watchlist.has(def.id)?'watching':''}" onclick="toggleWatch('${def.id}',this)">
             ${watchlist.has(def.id) ? '★ 관심종목' : '☆ 관심종목'}
           </button>
-          <button onclick="showAddToPortfolio()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">포트폴리오 추가</button>
-          <button onclick="showAddAlert()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer">알림 설정</button>
+          <button onclick="showAddToPortfolio()" style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">포트폴리오</button>
+          <button onclick="showAddAlert()" style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='var(--yellow)';this.style.color='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">알림</button>
         </div>
       </div>
       <div class="price-block" id="priceBlock">
@@ -923,27 +980,21 @@ function renderMain(def, q, chart, news) {
       </div>
     </div>
 
-    <!-- AI Analysis -->
+    <!-- Signal Analysis -->
     <div class="ai-card" id="aiCard">
       <div class="ai-header">
-        <div class="ai-title">AI 투자 의견</div>
+        <div class="ai-title">투자 신호 분석 <span class="ai-badge">AI 요약 포함</span></div>
       </div>
-      <div class="ai-loading"><div class="spinner"></div> AI 분석 중... (기술적 지표 및 뉴스 종합 분석)</div>
+      <div class="ai-loading"><div class="spinner"></div> 분석 중...</div>
     </div>
 
-    <!-- Key Metrics -->
-    <div class="cards-grid">
-      ${metricCard('PER', q.per != null ? q.per.toFixed(1)+'x' : 'N/A', q.forwardPer != null ? 'Forward: '+q.forwardPer.toFixed(1)+'x' : '주가수익비율', gradeClass(q.per,'per'), q.per, 0, 60)}
-      ${metricCard('PBR', q.pbr != null ? q.pbr.toFixed(2)+'x' : 'N/A', '주가순자산비율', gradeClass(q.pbr,'pbr'), q.pbr, 0, 8)}
-      ${metricCard('ROE', q.roe != null ? q.roe.toFixed(1)+'%' : 'N/A', '자기자본이익률', gradeClass(q.roe,'roe'), q.roe, 0, 50)}
-      ${metricCard('배당수익률', q.div != null && q.div > 0 ? q.div.toFixed(2)+'%' : '없음', '연간 배당률', q.div > 0 ? gradeClass(q.div,'div') : '', q.div, 0, 8)}
-    </div>
+
 
     <!-- Chart + Score -->
     <div class="two-col">
       <div class="chart-card">
         <div class="chart-header">
-          <span class="chart-title">주가 차트 <span style="color:var(--muted);font-size:12px;font-weight:400">(Yahoo Finance 실시간)</span></span>
+          <span class="chart-title">주가 차트</span>
           <div class="chart-tabs">
             ${['1wk','1mo','3mo','6mo','1y'].map(r => `
               <button class="chart-tab ${r===currentRange?'active':''}" onclick="changeRange('${r}',this)">${rangeLabel(r)}</button>
@@ -954,7 +1005,7 @@ function renderMain(def, q, chart, news) {
       </div>
 
       <div class="card" style="display:flex;flex-direction:column;gap:16px">
-        <div class="chart-title">종합 투자 점수 <span style="font-size:11px;color:var(--muted);font-weight:400">(자체 산출)</span></div>
+        <div class="chart-title">종합 점수</div>
         ${scoreHTML(score)}
         ${q.recommendation ? `
           <div style="padding:10px;background:var(--surface2);border-radius:8px;font-size:12px">
@@ -1413,12 +1464,12 @@ function priceBlockHTML(q, up, sym) {
   const isUs = sym === '$';
   const usdkrw = ratesCache?.usdkrw?.value;
   const krwPrice = (isUs && q.price && usdkrw)
-    ? `<div style="font-size:13px;color:var(--muted);margin-top:2px">≈ ₩${Math.round(q.price * usdkrw).toLocaleString()}</div>`
+    ? `<div style="font-size:15px;font-weight:600;color:var(--text2);margin-bottom:2px">≈ ₩${Math.round(q.price * usdkrw).toLocaleString()}</div>`
     : '';
   return `
     <div class="current-price ${up?'up':'down'}">${sym}${q.price?.toLocaleString(undefined,{maximumFractionDigits:2})??'···'}</div>
-    <div class="price-change ${up?'up':'down'}">${up?'+':''}${q.change?.toFixed(2)??''} (${up?'+':''}${q.changePct?.toFixed(2)??''}%)</div>
     ${krwPrice}
+    <div class="price-change ${up?'up':'down'}">${up?'+':''}${q.change?.toFixed(2)??''} (${up?'+':''}${q.changePct?.toFixed(2)??''}%)</div>
     <div style="font-size:12px;color:var(--muted);margin-top:4px">
       52주 ${sym}${q.low52?.toLocaleString(undefined,{maximumFractionDigits:2})??'-'} – ${sym}${q.high52?.toLocaleString(undefined,{maximumFractionDigits:2})??'-'}
     </div>`;
@@ -1549,9 +1600,13 @@ function formatMarketCap(mc, isKr) {
     const jo = mc / 1e12;
     return jo >= 1 ? jo.toFixed(1) + '조' : (mc / 1e8).toFixed(0) + '억';
   }
-  if (mc >= 1e12) return '$' + (mc/1e12).toFixed(2) + 'T';
-  if (mc >= 1e9)  return '$' + (mc/1e9).toFixed(1) + 'B';
-  return '$' + (mc/1e6).toFixed(0) + 'M';
+  // 미국: 달러 + 원화 환산
+  const usdkrw = ratesCache?.usdkrw?.value;
+  const usdStr = mc >= 1e12 ? '$' + (mc/1e12).toFixed(2) + 'T' : mc >= 1e9 ? '$' + (mc/1e9).toFixed(1) + 'B' : '$' + (mc/1e6).toFixed(0) + 'M';
+  if (!usdkrw) return usdStr;
+  const krw = mc * usdkrw;
+  const krwStr = krw >= 1e12 ? (krw/1e12).toFixed(1) + '조' : (krw/1e8).toFixed(0) + '억';
+  return usdStr + ' (≈' + krwStr + ')';
 }
 
 function formatVolume(v) {
@@ -1863,15 +1918,22 @@ async function renderHome(opts = {}) {
 
   const stockRowHTML = d => {
     const up = (d.changePct||0) >= 0;
-    const sym = d.market === 'kr' ? '₩' : '$';
+    const isKrStock = d.market === 'kr';
+    const sym = isKrStock ? '₩' : '$';
+    const mainLabel = isKrStock ? d.name : d.displayTicker;
+    const subLabel  = isKrStock ? d.displayTicker : d.name;
+    const usdkrw = ratesCache?.usdkrw?.value;
+    const krwHint = (!isKrStock && d.price && usdkrw)
+      ? `<div style="font-size:10px;color:var(--muted)">≈ ₩${Math.round(d.price * usdkrw).toLocaleString()}</div>` : '';
     return `<div class="home-stock-row" onclick="selectStock('${d.id}')">
       <div class="home-stock-info">
-        <div class="home-stock-ticker">${d.displayTicker}</div>
-        <div class="home-stock-name">${d.name}</div>
+        <div class="home-stock-ticker">${mainLabel}</div>
+        <div class="home-stock-name">${subLabel}</div>
       </div>
       <div class="home-stock-price">
         <div class="home-stock-pval ${up?'up':'down'}">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
         <div class="home-stock-pchg ${up?'up':'down'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%</div>
+        ${krwHint}
       </div>
     </div>`;
   };
@@ -1889,15 +1951,18 @@ async function renderHome(opts = {}) {
         <p>한국 · 미국 주식 실시간 분석 &amp; AI 투자 의견</p>
       </div>
 
-      <div class="home-indices">${idxHTML || ''}</div>
+      <div class="home-indices" style="margin-bottom:20px">${idxHTML || ''}</div>
 
-      <!-- 등락 상위 -->
+      <!-- 투자신호 (메인 기능 - 최우선) -->
+      <div id="buySignalsCard">${renderBuySignalsCard(null)}</div>
+
+      <!-- 등락 상위/하락 -->
       <div class="home-stocks-grid" style="margin-bottom:24px">
-        ${stocksSection('상승 상위', gainers)}
-        ${stocksSection('하락 상위', losers)}
+        ${stocksSection('📈 상승 상위', gainers)}
+        ${stocksSection('📉 하락 상위', losers)}
       </div>
 
-      <!-- 한국 주식 전체 -->
+      <!-- 한국 주식 -->
       <div class="home-section-title" style="margin-bottom:12px">한국 주식</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
         ${chunkArray(krAll, Math.ceil(krAll.length/3)).map(group =>
@@ -1905,10 +1970,7 @@ async function renderHome(opts = {}) {
         ).join('')}
       </div>
 
-      <!-- 매크로 대시보드 -->
-      ${renderMacroDashboard(macro)}
-
-      <!-- 미국 주식 전체 -->
+      <!-- 미국 주식 -->
       <div class="home-section-title" style="margin-bottom:12px">미국 주식</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
         ${chunkArray(usAll, Math.ceil(usAll.length/3)).map(group =>
@@ -1916,14 +1978,14 @@ async function renderHome(opts = {}) {
         ).join('')}
       </div>
 
+      <!-- 매크로 대시보드 -->
+      ${renderMacroDashboard(macro)}
+
       <!-- 포트폴리오 & 알림 -->
       <div class="home-stocks-grid" style="margin-bottom:24px">
         ${renderPortfolioCard(all)}
         ${renderAlertsCard(all)}
       </div>
-
-      <!-- 매수신호 -->
-      <div id="buySignalsCard">${renderBuySignalsCard(null)}</div>
 
       <!-- 가치투자 스크리너 -->
       ${renderScreenerCard(all)}
@@ -2076,32 +2138,32 @@ function renderBuySignalsCard(data) {
   const serverCounts = data?.counts || {};
   const isSell = _buySignalMode === 'sell';
 
-  // 매수/매도 모드 토글
-  const modeToggle = `<div style="display:flex;gap:3px;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;margin-bottom:10px">
-    <button onclick="switchBuyMode('buy')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${!isSell?'rgba(22,163,74,0.15)':'transparent'};color:${!isSell?'#16a34a':'var(--muted)'}">매수</button>
-    <button onclick="switchBuyMode('sell')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${isSell?'rgba(220,38,38,0.15)':'transparent'};color:${isSell?'#ef4444':'var(--muted)'}">매도</button>
-  </div>`;
+  const modeToggle = '';  // 헤더에 통합됨
 
-  // 마켓 탭 (KR/US/전체)
+  // 마켓 탭 (우측 세그먼트)
   const MARKET_TABS = [
     { key:'all', label:'전체', count: serverCounts.all ?? allBuys.length },
     { key:'kr',  label:'한국', count: serverCounts.kr ?? allBuys.filter(d=>d.market==='kr').length },
     { key:'us',  label:'미국', count: serverCounts.us ?? allBuys.filter(d=>d.market==='us').length },
   ];
-  const marketBar = `<div style="display:flex;gap:3px;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;margin-bottom:10px">
-    ${MARKET_TABS.map(m => {
-      const active = m.key === _buySignalMarket;
-      return `<button onclick="switchBuyMarket('${m.key}')" style="flex:1;padding:5px 4px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${active?'var(--accent2)':'transparent'};color:${active?'#fff':'var(--muted)'}">
-        ${m.label} <span style="font-size:10px;opacity:0.8">${m.count}</span>
-      </button>`;
-    }).join('')}
+  const marketBar = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">
+    <div style="font-size:11px;color:var(--muted)">
+      ${MARKET_TABS.find(m=>m.key===_buySignalMarket)?.count ?? 0}개 종목
+    </div>
+    <div style="display:flex;gap:2px;background:var(--surface2);border-radius:6px;padding:2px">
+      ${MARKET_TABS.map(m => {
+        const active = m.key === _buySignalMarket;
+        return `<button onclick="switchBuyMarket('${m.key}')" style="padding:3px 10px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;border:none;transition:all 0.15s;background:${active?'var(--accent2)':'transparent'};color:${active?'#fff':'var(--muted)'}">${m.label}</button>`;
+      }).join('')}
+    </div>
   </div>`;
 
   // 신호 탭
   const SIG_TABS = isSell ? ['전체', '강력매도', '매도', '약매도'] : ['전체', '강력매수', '매수', '약매수'];
+  // serverCounts에 신호별 실제 전체 수가 있음 (50개 제한 전)
   const sigCounts = {};
-  SIG_TABS.slice(1).forEach(t => { sigCounts[t] = allBuys.filter(d => d.signal === t).length; });
-  sigCounts['전체'] = allBuys.length;
+  SIG_TABS.slice(1).forEach(t => { sigCounts[t] = serverCounts[t] ?? allBuys.filter(d => d.signal === t).length; });
+  sigCounts['전체'] = SIG_TABS.slice(1).reduce((s, t) => s + (sigCounts[t] || 0), 0);
   const sigBar = `<div style="display:flex;gap:3px;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;margin-bottom:14px">
     ${SIG_TABS.map(t => {
       const active = t === _buySignalTab;
@@ -2112,43 +2174,69 @@ function renderBuySignalsCard(data) {
     }).join('')}
   </div>`;
 
-  const filtered = (_buySignalTab === '전체' ? allBuys : allBuys.filter(d => d.signal === _buySignalTab)).slice(0, 50);
+  const filtered = _buySignalTab === '전체' ? allBuys : allBuys.filter(d => d.signal === _buySignalTab);
 
-  const cards = filtered.map(d => {
+  const scoreBarHtml = (score, ss) => {
+    const abs = Math.abs(score);
+    const pct = Math.min(100, abs / 1.6);
+    const label = score > 0 ? `+${score}` : `${score}`;
+    return `<div style="display:flex;align-items:center;gap:4px">
+      <div style="width:48px;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${ss.color};border-radius:2px"></div></div>
+      <span style="font-size:10px;color:${ss.color};font-weight:700;min-width:28px">${label}</span>
+    </div>`;
+  };
+
+  const rows = filtered.map((d, i) => {
     const up = (d.changePct || 0) >= 0;
     const isUs = d.market === 'us';
     const sym = isUs ? '$' : '₩';
     const fallbackStyle = isSell ? SIG_STYLE['약매도'] : SIG_STYLE['약매수'];
     const ss = SIG_STYLE[d.signal] || fallbackStyle;
     const def = STOCK_DEFS.find(s => s.id === d.ticker) || {};
-    return `<div onclick="selectStock('${d.ticker}')" style="background:${ss.bg};border-radius:8px;padding:8px 10px;cursor:pointer;border:1px solid ${ss.border};flex:1;min-width:130px;max-width:180px" onmouseover="this.style.borderColor='${ss.color}'" onmouseout="this.style.borderColor='${ss.border}'">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-        <span style="font-weight:700;font-size:12px">${def.displayTicker || d.ticker}</span>
-        <span style="font-size:9px;font-weight:800;color:${ss.color}">${ss.icon} ${d.signal}</span>
+    const displayName = d.name || def.name || d.ticker;
+    const displayTicker = def.displayTicker || d.ticker;
+    const krwLine = isUs && d.price && ratesCache?.usdkrw?.value
+      ? `<div style="font-size:10px;color:var(--muted)">≈ ₩${Math.round(d.price * ratesCache.usdkrw.value).toLocaleString()}</div>` : '';
+    return `<div onclick="selectStock('${d.ticker}')" style="display:flex;align-items:center;gap:8px;padding:9px 8px;border-radius:8px;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+      <span style="font-size:11px;color:var(--muted);width:18px;text-align:right;flex-shrink:0">${i+1}</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:1px">
+          <span style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${displayName}</span>
+          <span style="font-size:10px;font-weight:800;color:${ss.color};background:${ss.bg};border:1px solid ${ss.border};padding:1px 6px;border-radius:10px;white-space:nowrap;flex-shrink:0">${d.signal}</span>
+        </div>
+        <div style="font-size:10px;color:var(--muted)">${displayTicker}</div>
       </div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.name || def.name || ''}</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'};font-size:13px">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</span>
-        <span style="font-size:10px;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%</span>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-weight:700;font-size:13px">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
+        <div style="font-size:11px;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%</div>
+        ${krwLine}
       </div>
-      <div style="font-size:9px;color:var(--muted);margin-top:4px">확신 ${d.confidence}%</div>
+      <div style="flex-shrink:0;text-align:right;min-width:52px">
+        ${scoreBarHtml(d.score||0, ss)}
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">${d.score>0?'+':''}${d.score||0}점</div>
+      </div>
     </div>`;
   }).join('');
 
   return `<div class="card" style="margin-bottom:24px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div class="home-section-title">${isSell ? '매도신호' : '투자신호'} <span style="font-size:10px;color:var(--muted);font-weight:500">시가총액 상위 1000개 기업</span></div>
-      <div style="display:flex;align-items:center;gap:8px">
-        ${updatedAt ? `<span style="font-size:10px;color:var(--muted)">${updatedAt} 기준</span>` : ''}
-        <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">새로고침</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div class="home-section-title" style="margin-bottom:0">투자 신호 <span style="font-size:10px;color:var(--muted);font-weight:400">시가총액 상위 1000개</span></div>
+        ${updatedAt ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${updatedAt} 기준</div>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div style="display:flex;gap:2px;background:var(--surface2);border-radius:6px;padding:2px">
+          <button onclick="switchBuyMode('buy')" style="padding:4px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:none;transition:all 0.15s;background:${!isSell?'rgba(22,163,74,0.2)':'transparent'};color:${!isSell?'#16a34a':'var(--muted)'}">매수</button>
+          <button onclick="switchBuyMode('sell')" style="padding:4px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:none;transition:all 0.15s;background:${isSell?'rgba(220,38,38,0.2)':'transparent'};color:${isSell?'#ef4444':'var(--muted)'}">매도</button>
+        </div>
+        <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer" title="새로고침">↻</button>
       </div>
     </div>
-    ${modeToggle}
     ${loading
-      ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> 전체 종목 분석 중...</div>`
+      ? `<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span> 신호 데이터 로딩 중...</div>`
       : `${marketBar}${sigBar}${filtered.length
-          ? `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:8px;max-height:380px;overflow-y:auto;padding-right:4px">${cards}</div>`
-          : `<div style="color:var(--muted);font-size:13px">해당 신호 종목이 없습니다</div>`}`
+          ? `<div style="max-height:480px;overflow-y:auto;padding-right:4px">${rows}</div>`
+          : `<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">해당하는 종목이 없습니다</div>`}`
     }
   </div>`;
 }
@@ -2320,57 +2408,147 @@ async function applyScreener(idx) {
 
   if (!matched.length) { el.innerHTML = '<div style="color:var(--muted)">조건에 맞는 종목 없음</div>'; return; }
 
-  el.innerHTML = `<div class="card-strip" style="display:flex;flex-wrap:wrap;gap:8px">${matched.map(d => {
+  const fmtSafe = (v, decimals=1, min=-9999, max=9999) =>
+    (typeof v === 'number' && isFinite(v) && v > min && v < max) ? v.toFixed(decimals) : null;
+
+  el.innerHTML = `<div>${matched.map(d => {
     const up = (d.changePct||0) >= 0;
     const isUs = d.market === 'us';
     const sym = isUs ? '$' : '₩';
-    const metaLine = [
-      d.per ? `PER ${d.per.toFixed(1)}` : '',
-      d.roe ? `ROE ${d.roe.toFixed(1)}%` : '',
-      d.pbr ? `PBR ${d.pbr.toFixed(2)}` : '',
-      d.div ? `배당 ${d.div.toFixed(1)}%` : '',
+    // STOCK_DEFS에서 정확한 이름 우선 사용
+    const def = STOCK_DEFS.find(s => s.ticker === d.ticker || s.id === d.id) || {};
+    const displayName = def.name || d.name || d.ticker;
+    const displayTicker = def.displayTicker || d.ticker || d.id;
+    const isKrStock = d.market === 'kr' || /^[0-9]{6}$/.test(displayTicker);
+    const mainLabel = isKrStock ? displayName : displayTicker;
+    const subLabel = isKrStock ? displayTicker : displayName;
+    const usdkrw = ratesCache?.usdkrw?.value;
+    const krwHint = (!isKrStock && d.price && usdkrw)
+      ? `<span style="font-size:10px;color:var(--muted)"> ≈ ₩${Math.round(d.price*usdkrw).toLocaleString()}</span>` : '';
+    // 이상값 필터 (PER>500, PBR<0, ROE<-100 등 제외)
+    const per = fmtSafe(d.per, 1, 0, 500);
+    const pbr = fmtSafe(d.pbr, 2, 0, 200);
+    const roe = fmtSafe(d.roe, 1, -100, 200);
+    const div = fmtSafe(d.div, 1, 0, 50);
+    const metaParts = [
+      per ? `PER ${per}` : '',
+      pbr ? `PBR ${pbr}` : '',
+      roe ? `ROE ${roe}%` : '',
+      div ? `배당 ${div}%` : '',
     ].filter(Boolean).join(' · ');
-    return `<div onclick="selectStock('${d.id}')" style="background:var(--surface2);border-radius:8px;padding:10px 14px;cursor:pointer;min-width:140px;border:1px solid transparent" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='transparent'">
-      <div style="font-weight:700">${d.displayTicker || d.id}</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${d.name || ''}</div>
-      <div style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
-      <div style="font-size:11px;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%</div>
-      ${metaLine ? `<div style="font-size:10px;color:var(--muted);margin-top:4px">${metaLine}</div>` : ''}
+    return `<div onclick="selectStock('${d.id || d.ticker}')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 8px;border-radius:8px;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+      <div style="min-width:0;flex:1;margin-right:12px">
+        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mainLabel}</div>
+        <div style="font-size:10px;color:var(--muted)">${subLabel}${metaParts ? ' · '+metaParts : ''}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
+        <div style="font-size:11px;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%${krwHint}</div>
+      </div>
     </div>`;
   }).join('')}</div>`;
 }
 
-function showAddToPortfolio() {
-  const def = currentDef;
-  const q = quoteCache[def.id] || {};
-  const price = parseFloat(prompt(`${def.name} 매수가 (현재 ${q.price?.toLocaleString() || '-'}):`, q.price || ''));
-  if (isNaN(price)) return;
-  const qty = parseFloat(prompt('수량:'));
-  if (isNaN(qty) || qty <= 0) return;
-  addToPortfolio(def, price, qty);
-  alert(`${def.name} ${qty}주 @ ${price.toLocaleString()} 포트폴리오에 추가됨`);
+// ── 포트폴리오 모달 ──────────────────────────────────────────────────────────
+let _portfolioDef = null;
+
+function showAddToPortfolio(defOverride) {
+  _portfolioDef = defOverride || currentDef;
+  const q = quoteCache[_portfolioDef.id] || {};
+  const sym = _portfolioDef.market === 'kr' ? '₩' : '$';
+  const isKr = _portfolioDef.market === 'kr';
+  document.getElementById('portfolioModalSub').textContent = _portfolioDef.name + ' 매수 정보 입력';
+  const priceEl = document.getElementById('portfolioPrice');
+  priceEl.value = q.price ? (isKr ? Math.round(q.price) : q.price.toFixed(2)) : '';
+  document.getElementById('portfolioQty').value = '';
+  document.getElementById('portfolioCurPrice').innerHTML = q.price
+    ? `현재가 <strong>${sym}${q.price.toLocaleString(undefined,{maximumFractionDigits:isKr?0:2})}</strong>` : '';
+  document.getElementById('portfolioPreview').style.display = 'none';
+  document.getElementById('portfolioModal').classList.add('open');
+  setTimeout(() => priceEl.focus(), 100);
 }
+
+function updatePortfolioPreview() {
+  const price = parseFloat(document.getElementById('portfolioPrice').value);
+  const qty = parseFloat(document.getElementById('portfolioQty').value);
+  const preview = document.getElementById('portfolioPreview');
+  if (!isNaN(price) && !isNaN(qty) && price > 0 && qty > 0) {
+    const sym = (_portfolioDef?.market === 'kr') ? '₩' : '$';
+    const total = price * qty;
+    preview.style.display = 'block';
+    document.getElementById('portfolioTotalVal').textContent =
+      sym + total.toLocaleString(undefined, { maximumFractionDigits: _portfolioDef?.market === 'kr' ? 0 : 2 });
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+function confirmPortfolioAdd() {
+  const price = parseFloat(document.getElementById('portfolioPrice').value);
+  const qty = parseFloat(document.getElementById('portfolioQty').value);
+  if (isNaN(price) || price <= 0) {
+    document.getElementById('portfolioPrice').focus();
+    document.getElementById('portfolioPrice').style.borderColor = 'var(--red)';
+    setTimeout(() => document.getElementById('portfolioPrice').style.borderColor = '', 1500);
+    return;
+  }
+  if (isNaN(qty) || qty <= 0) {
+    document.getElementById('portfolioQty').focus();
+    document.getElementById('portfolioQty').style.borderColor = 'var(--red)';
+    setTimeout(() => document.getElementById('portfolioQty').style.borderColor = '', 1500);
+    return;
+  }
+  addToPortfolio(_portfolioDef, price, qty);
+  closePortfolioModal();
+  // 홈이면 재렌더
+  if (isHomePage) renderHome({ skipFetch: true });
+}
+
+function closePortfolioModal() {
+  document.getElementById('portfolioModal').classList.remove('open');
+}
+
+function showPortfolioAdd() { showAddToPortfolio(null); }
+
+// ── 알림 모달 ────────────────────────────────────────────────────────────────
+let _alertType = 'above';
 
 function showAddAlert() {
   const def = currentDef;
   const q = quoteCache[def.id] || {};
-  const type = confirm(`${def.name}\n\n확인(OK) = 목표가 알림 (현재가 이상)\n취소(Cancel) = 손절가 알림 (현재가 이하)`) ? 'above' : 'below';
-  const targetPrice = parseFloat(prompt(`${type === 'above' ? '목표가' : '손절가'} 입력 (현재 ${q.price?.toLocaleString() || '-'}):`));
-  if (isNaN(targetPrice)) return;
-  addAlert(def, targetPrice, type);
-  alert(`${def.name} ${type==='above'?'목표가':'손절가'} ${targetPrice.toLocaleString()} 알림 설정됨`);
+  const sym = def.market === 'kr' ? '₩' : '$';
+  const isKr = def.market === 'kr';
+  document.getElementById('alertModalSub').textContent = def.name + ' 가격 알림';
+  document.getElementById('alertPrice').value = '';
+  document.getElementById('alertCurPrice').innerHTML = q.price
+    ? `현재가 <strong>${sym}${q.price.toLocaleString(undefined,{maximumFractionDigits:isKr?0:2})}</strong>` : '';
+  setAlertType('above');
+  document.getElementById('alertModal').classList.add('open');
+  setTimeout(() => document.getElementById('alertPrice').focus(), 100);
 }
 
-function showPortfolioAdd() {
-  const ticker = prompt('티커 입력 (예: 005930, NVDA):');
-  if (!ticker) return;
-  const def = STOCK_DEFS.find(d => d.ticker === ticker.toUpperCase() || d.ticker === ticker);
-  if (!def) { alert('종목을 찾을 수 없습니다. 먼저 검색해서 상세보기 후 추가하세요.'); return; }
-  const price = parseFloat(prompt('매수가:'));
-  const qty = parseFloat(prompt('수량:'));
-  if (isNaN(price) || isNaN(qty)) return;
-  addToPortfolio(def, price, qty);
-  renderHome({ skipFetch: true });
+function setAlertType(type) {
+  _alertType = type;
+  document.getElementById('alertTypeAbove').className = 'modal-seg-btn' + (type === 'above' ? ' active-buy' : '');
+  document.getElementById('alertTypeBelow').className = 'modal-seg-btn' + (type === 'below' ? ' active-sell' : '');
+  document.getElementById('alertTypeHint').textContent =
+    type === 'above' ? '현재가 이상이 되면 알림' : '현재가 이하가 되면 알림';
+}
+
+function confirmAlertAdd() {
+  const price = parseFloat(document.getElementById('alertPrice').value);
+  if (isNaN(price) || price <= 0) {
+    document.getElementById('alertPrice').style.borderColor = 'var(--red)';
+    setTimeout(() => document.getElementById('alertPrice').style.borderColor = '', 1500);
+    return;
+  }
+  addAlert(currentDef, price, _alertType);
+  closeAlertModal();
+  if (isHomePage) renderHome({ skipFetch: true });
+}
+
+function closeAlertModal() {
+  document.getElementById('alertModal').classList.remove('open');
 }
 
 function requestNotificationPermission() {
@@ -2540,6 +2718,19 @@ function mobileSearchSelectResult(r) {
 }
 
 
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closePortfolioModal();
+    closeAlertModal();
+    closeMobileSearch();
+  }
+  if (e.key === 'Enter') {
+    if (document.getElementById('portfolioModal').classList.contains('open')) confirmPortfolioAdd();
+    if (document.getElementById('alertModal').classList.contains('open')) confirmAlertAdd();
+  }
+});
+
 function closeMobileSearch() {
   document.getElementById('mobileSearchDrawer').classList.remove('open');
   document.getElementById('mobileSearchInput').value = '';
@@ -2549,5 +2740,58 @@ function closeMobileSearch() {
   _mobileTab = 'home';
 }
 </script>
+
+<!-- ── 포트폴리오 추가 모달 ── -->
+<div class="modal-overlay" id="portfolioModal" onclick="if(event.target===this)closePortfolioModal()">
+  <div class="modal-box">
+    <div class="modal-title">포트폴리오 추가</div>
+    <div class="modal-sub" id="portfolioModalSub">종목 매수 정보를 입력하세요</div>
+    <div class="modal-field">
+      <div class="modal-label">매수가</div>
+      <input class="modal-input" id="portfolioPrice" type="number" placeholder="0" step="any" oninput="updatePortfolioPreview()">
+      <div class="modal-price-tag" id="portfolioCurPrice"></div>
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">수량 (주)</div>
+      <input class="modal-input" id="portfolioQty" type="number" placeholder="0" step="any" oninput="updatePortfolioPreview()">
+    </div>
+    <div id="portfolioPreview" style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px;display:none">
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted)">총 매수금액</span>
+        <span id="portfolioTotalVal" style="font-weight:700"></span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closePortfolioModal()">취소</button>
+      <button class="modal-btn-primary" onclick="confirmPortfolioAdd()">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 알림 설정 모달 ── -->
+<div class="modal-overlay" id="alertModal" onclick="if(event.target===this)closeAlertModal()">
+  <div class="modal-box">
+    <div class="modal-title">가격 알림 설정</div>
+    <div class="modal-sub" id="alertModalSub">목표가 또는 손절가 알림을 설정하세요</div>
+    <div class="modal-field">
+      <div class="modal-label">알림 유형</div>
+      <div class="modal-segment">
+        <button class="modal-seg-btn active-buy" id="alertTypeAbove" onclick="setAlertType('above')">📈 목표가 도달</button>
+        <button class="modal-seg-btn" id="alertTypeBelow" onclick="setAlertType('below')">📉 손절가 도달</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px" id="alertTypeHint">현재가 이상이 되면 알림</div>
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">목표가격</div>
+      <input class="modal-input" id="alertPrice" type="number" placeholder="0" step="any">
+      <div class="modal-price-tag" id="alertCurPrice"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closeAlertModal()">취소</button>
+      <button class="modal-btn-primary" onclick="confirmAlertAdd()">설정</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

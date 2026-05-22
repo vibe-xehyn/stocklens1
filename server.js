@@ -2156,29 +2156,36 @@ for i in range(0, len(tickers_ks), chunk_size):
                 p = float(cl.iloc[-1])
                 prev = float(cl.iloc[-2]) if len(cl)>=2 else p
                 if p > 0:
-                    try: name = yf.Ticker(ks).fast_info.display_name or code
-                    except: name = code
-                    result[code] = {'market':'kr','price':round(p,0),'changePct':round((p-prev)/prev*100,2) if prev else 0,'name':name}
+                    result[code] = {'market':'kr','price':round(p,0),'changePct':round((p-prev)/prev*100,2) if prev else 0}
             except: pass
     except: pass
 print(json.dumps(result))
 `;
       const krExtra = await _pyExecLong(krPy);
+      for (const [code, item] of Object.entries(krExtra)) {
+        item.name = _krNameMap.get(code) || code;
+      }
       Object.assign(results, krExtra);
     } catch {}
   }
   return results;
 }
 
-app.get('/api/screener-data', async (_, res) => {
+let _isScreenerUpdating = false;
+async function updateScreenerBackground() {
+  if (_isScreenerUpdating) {
+    console.log('  ⚠️ 이미 스크리너 백그라운드 갱신이 진행 중입니다.');
+    return getC('screener');
+  }
+  _isScreenerUpdating = true;
+  console.log('  🔄 스크리너 백그라운드 갱신 시작...');
   try {
-    const data = await cached('screener', SIGNAL_CACHE_TTL, async () => {
-      // KR: NAVER + 배치 polling으로 KR_UNIVERSE 전체 가격 수집
-      const krResults = await fetchNaverMarket();
+    // KR: NAVER + 배치 polling으로 KR_UNIVERSE 전체 가격 수집
+    const krResults = await fetchNaverMarket();
 
-      // US: yfinance 주간 1y 배치 (interval='1wk' — 일간 대비 5배 적은 데이터 → 빠름)
-      const usTickers = SP500.slice(0, 200); // 200개 제한 (속도)
-      const usPy = `
+    // US: yfinance 주간 1y 배치 (interval='1wk' — 일간 대비 5배 적은 데이터 → 빠름)
+    const usTickers = SP500.slice(0, 200); // 200개 제한 (속도)
+    const usPy = `
 import yfinance as yf, json, warnings, os
 warnings.filterwarnings('ignore')
 os.environ['PYTHONWARNINGS'] = 'ignore'
@@ -2246,14 +2253,38 @@ try:
 except Exception: pass
 print(json.dumps(result))
 `;
-      let usResults = {};
-      try { usResults = await _pyExecLong(usPy); } catch(e) { console.warn("US 스크리너 실패, KR만 사용:", e.message?.slice(0,80)); }
+    let usResults = {};
+    try { usResults = await _pyExecLong(usPy); } catch(e) { console.warn("US 스크리너 실패, KR만 사용:", e.message?.slice(0,80)); }
 
-      const result = { ...krResults, ...usResults };
-      if (Object.keys(result).length > 0) _saveScreenerCache(result);
-      return result;
-    });
-    res.json(data);
+    const result = { ...krResults, ...usResults };
+    if (Object.keys(result).length > 0) {
+      setC('screener', result, SIGNAL_CACHE_TTL);
+      _saveScreenerCache(result);
+      console.log(`  ✓ 스크리너 백그라운드 갱신 완료 (${Object.keys(result).length}개 종목)`);
+      // 로드된 데이터로부터 _krNameMap 복원
+      for (const [code, item] of Object.entries(result)) {
+        if (item.market === 'kr' && item.name) {
+          _krNameMap.set(code, item.name);
+        }
+      }
+    }
+    return result;
+  } catch (e) {
+    console.error('  ⚠ 스크리너 백그라운드 갱신 에러:', e.message);
+    return getC('screener') || {};
+  } finally {
+    _isScreenerUpdating = false;
+  }
+}
+
+app.get('/api/screener-data', async (_, res) => {
+  try {
+    let data = getC('screener');
+    if (!data) {
+      console.log('  ℹ 스크리너 캐시 미존재 — 즉시 동기 백그라운드 갱신 수행');
+      data = await updateScreenerBackground();
+    }
+    res.json(data || {});
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2327,24 +2358,26 @@ async function fetchTopByMarketCap(limit = 700) {
 
     const candidates = [];
 
-    // KR: KOSPI 200 + KOSDAQ 100
-    const krJobs = [['KOSPI', 2], ['KOSDAQ', 1]];
-    await Promise.allSettled(krJobs.map(async ([mkt, pages]) => {
-      for (let p = 1; p <= pages; p++) {
-        try {
-          const d = await fetchJSON(`https://m.stock.naver.com/api/stocks/marketValue/${mkt}?page=${p}&pageSize=100`);
-          for (const s of (d.stocks || [])) {
-            const mcRaw = parseFloat(s.marketValueRaw || '0');
-            if (!mcRaw || !s.itemCode) continue;
-            candidates.push({
-              ticker: s.itemCode,
-              market: 'kr',
-              name: s.stockName,
-              mcapUsd: mcRaw / fx,
-            });
-          }
-        } catch {}
-      }
+    // KR: KOSPI 800 + KOSDAQ 1200 (모든 페이지 병렬 요청으로 초고속 실행)
+    const krPages = [];
+    for (let p = 1; p <= 8; p++) krPages.push({ mkt: 'KOSPI', p });
+    for (let p = 1; p <= 12; p++) krPages.push({ mkt: 'KOSDAQ', p });
+
+    await Promise.allSettled(krPages.map(async ({ mkt, p }) => {
+      try {
+        const d = await fetchJSON(`https://m.stock.naver.com/api/stocks/marketValue/${mkt}?page=${p}&pageSize=100`);
+        for (const s of (d.stocks || [])) {
+          const mcRaw = parseFloat(s.marketValueRaw || '0');
+          if (!mcRaw || !s.itemCode) continue;
+          _krNameMap.set(s.itemCode, s.stockName); // 글로벌 KR 종목명 맵에 이름 저장
+          candidates.push({
+            ticker: s.itemCode,
+            market: 'kr',
+            name: s.stockName,
+            mcapUsd: mcRaw / fx,
+          });
+        }
+      } catch {}
     }));
 
     // US: NASDAQ 300 + NYSE 300
@@ -2377,8 +2410,7 @@ async function fetchTopByMarketCap(limit = 700) {
       console.log('  ⚠ 시가총액 랭킹 불충분 — 폴백 목록 사용');
       return [
         ...['005930','000660','005380','000270','035420','035720','068270','105560','066570','012450',
-            '086790','006400','096770','373220','207940','003670','034020','247540','033780','015760',
-            '259960','323410','055550','018260'].map(t => ({ ticker: t, market: 'kr', name: t, mcapUsd: 0 })),
+            '086790','006400','096770','373220','207940','003670','034020','247540','003670','034020'].map(t => ({ ticker: t, market: 'kr', name: _krNameMap.get(t) || t, mcapUsd: 0 })),
         ...['NVDA','AAPL','MSFT','GOOGL','AMZN','META','TSLA','NFLX','AMD','AVGO',
             'QCOM','TSM','INTC','JPM','BRK-B','V','MA','LLY','UNH','PLTR','CRM','ORCL','XOM','WMT']
            .map(t => ({ ticker: t, market: 'us', name: t, mcapUsd: 0 })),
@@ -2400,6 +2432,21 @@ const SIGNAL_CACHE_FILE = join(__dirname, '.signal-cache.json');
 const SCREENER_CACHE_FILE = join(__dirname, '.screener-cache.json');
 const SIGNAL_CACHE_TTL = 24 * 60 * 60 * 1000; // 24시간 (매일 00:00 KST 갱신)
 
+// 글로벌 KR 종목명 맵
+const _krNameMap = new Map();
+const INITIAL_KR_NAMES = {
+  '005930': '삼성전자', '000660': 'SK하이닉스', '373220': 'LG에너지솔루션', '207940': '삼성바이오로직스',
+  '005380': '현대차', '000270': '기아', '005490': 'POSCO홀딩스', '035420': 'NAVER',
+  '035720': '카카오', '068270': '셀트리온', '105560': 'KB금융', '055550': '신한지주',
+  '086790': '하나금융지주', '066570': 'LG전자', '006400': '삼성SDI', '012450': '한화에어로스페이스',
+  '018260': '삼성에스디에스', '259960': '크래프톤', '323410': '카카오뱅크', '033780': 'KT&G',
+  '015760': '한국전력', '096770': 'SK이노베이션', '247540': '에코프로비엠', '003670': '포스코퓨처엠',
+  '034020': '두산에너빌리티'
+};
+for (const [k, v] of Object.entries(INITIAL_KR_NAMES)) {
+  _krNameMap.set(k, v);
+}
+
 function _saveSignalCache() {
   try {
     const data = { updatedAt: _signalsUpdatedAt, entries: [..._signalStore.entries()] };
@@ -2416,11 +2463,18 @@ function _loadScreenerCache() {
   try {
     if (!existsSync(SCREENER_CACHE_FILE)) return false;
     const c = JSON.parse(readFileSync(SCREENER_CACHE_FILE, 'utf-8'));
-    if (!c.updatedAt || !c.data) return false;
-    if (Date.now() - c.updatedAt > SIGNAL_CACHE_TTL) return false;
+    if (!c.data) return false;
+    // 디스크 캐시가 존재하면 우선 메모리에 항상 로드해 API 응답 즉시성 확보
     setC('screener', c.data, SIGNAL_CACHE_TTL);
-    const age = Math.round((Date.now() - c.updatedAt) / 60000);
+    const age = Math.round((Date.now() - (c.updatedAt || 0)) / 60000);
     console.log(`  ✓ 스크리너 캐시 로드 (${Object.keys(c.data).length}개, ${age}분 전 계산)`);
+    
+    // 로드된 데이터로부터 _krNameMap 복원
+    for (const [code, item] of Object.entries(c.data)) {
+      if (item.market === 'kr' && item.name) {
+        _krNameMap.set(code, item.name);
+      }
+    }
     return true;
   } catch(e) { console.log('  ⚠ 스크리너 캐시 로드 실패:', e.message); return false; }
 }
@@ -2429,15 +2483,18 @@ function _loadSignalCache() {
   try {
     if (!existsSync(SIGNAL_CACHE_FILE)) return false;
     const data = JSON.parse(readFileSync(SIGNAL_CACHE_FILE, 'utf-8'));
-    if (!data.updatedAt || !data.entries?.length) return false;
-    if (Date.now() - data.updatedAt > SIGNAL_CACHE_TTL) {
-      console.log('  ℹ 시그널 캐시 만료됨 — 재계산 필요');
-      return false;
-    }
+    if (!data.entries?.length) return false;
+    
     _signalStore.clear();
-    for (const [k, v] of data.entries) _signalStore.set(k, v);
-    _signalsUpdatedAt = data.updatedAt;
-    const age = Math.round((Date.now() - data.updatedAt) / 60000);
+    for (const [k, v] of data.entries) {
+      _signalStore.set(k, v);
+      // 로드된 데이터로부터 _krNameMap 복원
+      if (v.market === 'kr' && v.name) {
+        _krNameMap.set(k, v.name);
+      }
+    }
+    _signalsUpdatedAt = data.updatedAt || Date.now();
+    const age = Math.round((Date.now() - _signalsUpdatedAt) / 60000);
     console.log(`  ✓ 시그널 캐시 로드 (${_signalStore.size}개, ${age}분 전 계산)`);
     return true;
   } catch(e) { console.log('  ⚠ 시그널 캐시 로드 실패:', e.message); return false; }
@@ -2650,17 +2707,15 @@ async function warmupCache() {
   // 4. 스크리너 워밍업 후 즉시 시그널 사전 계산
   setTimeout(async () => {
     try {
-      await cached('screener', 1800_000, async () => {
-        const r = await fetch(`http://localhost:${PORT}/api/screener-data`);
-        return r.json();
+      // 백그라운드 갱신을 비동기로 시작하되 완료 후 시그널 계산
+      updateScreenerBackground().then(async () => {
+        console.log('  ✓ 스크리너 워밍업 완료');
+        // 5. 시그널 캐시 없으면 screener 데이터로 빠르게 계산 (15초, API 호출 없음)
+        if (_signalStore.size === 0) {
+          try { await precomputeAllSignals({ full: false }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
+        }
       });
-      console.log('  ✓ 스크리너 워밍업 완료');
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
-
-    // 5. 시그널 캐시 없으면 screener 데이터로 빠르게 계산 (15초, API 호출 없음)
-    if (_signalStore.size === 0) {
-      try { await precomputeAllSignals({ full: false }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
-    }
 
     // 6. 매일 00:00 KST(=UTC 15:00)에 자동 재계산 — opts.full로 전체 종목 정밀 분석
     const scheduleNextMidnightKST = () => {
@@ -2673,11 +2728,9 @@ async function warmupCache() {
       console.log(`  ✓ 다음 시그널 계산 예약: ${next.toISOString()} (${hrs}시간 후)`);
       setTimeout(async () => {
         console.log('  ⏰ 00:00 KST — 일일 스크리너 + 시그널 정밀 분석 시작');
-        // 1) 스크리너 캐시 갱신
+        // 1) 스크리너 캐시 갱신 (백그라운드 함수를 직접 호출)
         try {
-          _c.delete('screener'); // 인메모리 캐시 무효화
-          const r = await fetch(`http://localhost:${PORT}/api/screener-data`);
-          await r.json();
+          await updateScreenerBackground();
           console.log('  ✓ 스크리너 갱신 완료');
         } catch(e) { console.log('  ⚠ 스크리너 갱신 실패:', e.message); }
         // 2) 시그널 정밀 분석
