@@ -2000,19 +2000,12 @@ function buildIdxHTML(indices) {
 }
 
 async function renderHome(opts = {}) {
-  let indices = indicesCache || [];
-  let macro = macroCache || {};
-  const hasCached = indices.length > 0 || Object.keys(macro).length > 0;
+  const indices = indicesCache || [];
+  const macro = macroCache || {};
 
-  if (!hasCached) {
-    document.getElementById('mainContent').innerHTML =
-      `<div class="loading-overlay"><div class="spinner"></div> 시장 데이터 로딩 중...</div>`;
-    try {
-      [indices, macro] = await Promise.all([api('/api/indices'), api('/api/macro')]);
-      if (indices?.length) indicesCache = indices;
-      if (macro && Object.keys(macro).length) macroCache = macro;
-    } catch {}
-  } else if (!opts.skipFetch) {
+  // 항상 즉시 렌더 — 데이터 없으면 빈 상태로 표시
+  // 백그라운드에서 데이터 갱신 후 해당 영역만 업데이트
+  if (!opts.skipFetch) {
     Promise.all([api('/api/indices'), api('/api/macro')]).then(([ni, nm]) => {
       if (ni?.length) indicesCache = ni;
       if (nm && Object.keys(nm).length) macroCache = nm;
