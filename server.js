@@ -1783,13 +1783,18 @@ ${newsText || '관련 뉴스 없음'}
   "risk": "구체적인 리스크 요인 및 주의사항"
 }`;
 
-      // ── 결정론적 시그널 (홈 매수신호 탭과 동일 값 보장) ──
-      // 사전계산된 값이 있으면 그대로 사용 → 홈과 100% 일치
-      // 없으면 현재 데이터로 계산 (신규 종목 등)
+      // ── 결정론적 시그널 (항상 _signalStore 기준 — 전 영역 동일 보장) ──
       const _stored = _signalStore.get(symbol);
-      const { signal: detSignal, confidence: detConf, score: detScore, breakdown: detBreak, reasons: detReasons } =
-        _stored ? { signal: _stored.signal, confidence: _stored.confidence, score: _stored.score, breakdown: _stored.breakdown, reasons: _stored.reasons }
-                : computeSignal(t, q, flow, macro);
+      let _sig;
+      if (_stored) {
+        _sig = _stored;
+      } else {
+        // store에 없는 종목: 계산 후 저장해 이후 일관성 보장
+        _sig = computeSignal(t, q, flow, macro);
+        _sig.symbol = symbol; _sig.market = isKr ? 'kr' : 'us';
+        _signalStore.set(symbol, _sig);
+      }
+      const { signal: detSignal, confidence: detConf, score: detScore, breakdown: detBreak, reasons: detReasons } = _sig;
       const breakStr = `기술 ${detBreak.technical>=0?'+':''}${detBreak.technical} / 가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth} / 모멘텀 ${detBreak.momentum>=0?'+':''}${detBreak.momentum} / 수급 ${detBreak.flow>=0?'+':''}${detBreak.flow} / 심리 ${detBreak.sentiment>=0?'+':''}${detBreak.sentiment} / 매크로 ${detBreak.macro>=0?'+':''}${detBreak.macro}`;
       const reasonStr = detReasons.length ? detReasons.slice(0,8).join(', ') : '특이사항 없음';
 
@@ -2089,30 +2094,44 @@ const KR_UNIVERSE = [
   '251270','251440','253450','256840','259850','263720','263750','264850','265520','267270',
 ];
 
-// NAVER 배치 API로 KR 종목 가격 수집
+// NAVER 배치 API로 KR 종목 가격/PER/PBR 수집
 async function fetchNaverMarket() {
   const results = {};
-  // NAVER sise_market_sum 페이지 1 (세션 없이도 50개 가능)
-  try {
-    const r = await fetch('https://finance.naver.com/sise/field_submit.naver?menu=market_sum&returnUrl=http%3A%2F%2Ffinance.naver.com%2Fsise%2Fsise_market_sum.naver%3Fsosok%3D0&fieldIds=per&fieldIds=pbr&fieldIds=dvr&sosok=0&pageNo=1', {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://finance.naver.com/' }
-    });
-    const html = await r.text();
-    const rowBlockRe = /href="\/item\/main\.naver\?code=([0-9]{6})"[^>]*class="tltle">([^<]+)<\/a>([\s\S]*?)(?=href="\/item\/main\.naver\?code=|<\/tbody>)/g;
-    let m;
-    while ((m = rowBlockRe.exec(html)) !== null) {
-      const code = m[1], name = m[2].trim(), block = m[3];
-      const priceM = block.match(/class="number">\s*([\d,]+)\s*</);
-      const pctM = block.match(/nv01">\s*([\-\d.]+)%/);
-      const numAll = [...block.matchAll(/class="number">\s*([\d.,\-]+)\s*</g)].map(x => parseFloat(x[1].replace(/,/g,''))||null);
-      const price = priceM ? parseFloat(priceM[1].replace(/,/g,'')) : 0;
-      const changePct = pctM ? parseFloat(pctM[1]) : 0;
-      const per = numAll[numAll.length - 3] || null;
-      const pbr = numAll[numAll.length - 2] || null;
-      const div = numAll[numAll.length - 1] || null;
-      if (price > 0) results[code] = { market: 'kr', name, price, changePct, per, pbr, div };
+  // field_list 쿠키로 PER/PBR/배당 컬럼 활성화 (field_submit은 302 리다이렉트로 쿠키 손실)
+  // 코스피(sosok=0) + 코스닥(sosok=1) 각 6페이지 → 최대 ~300개
+  const naverHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    'Referer': 'https://finance.naver.com/',
+    'Cookie': 'field_list=12|00000012'
+  };
+  const rowBlockRe = /href="\/item\/main\.naver\?code=([0-9]{6})"[^>]*class="tltle">([^<]+)<\/a>([\s\S]*?)(?=href="\/item\/main\.naver\?code=|<\/tbody>)/g;
+  for (const sosok of ['0', '1']) {
+    for (let page = 1; page <= 6; page++) {
+      try {
+        const r = await fetch(`https://finance.naver.com/sise/sise_market_sum.naver?sosok=${sosok}&pageNo=${page}`, { headers: naverHeaders });
+        const buf = await r.arrayBuffer();
+        const html = new TextDecoder('euc-kr').decode(buf);
+        if (!html.includes('tltle')) break; // 마지막 페이지 이후
+        rowBlockRe.lastIndex = 0;
+        let m;
+        while ((m = rowBlockRe.exec(html)) !== null) {
+          const code = m[1], name = m[2].trim(), block = m[3];
+          const priceM = block.match(/class="number">\s*([\d,]+)\s*</);
+          const pctM = block.match(/(?:nv01|nv02)">\s*([\-\d.]+)%/);
+          const numAll = [...block.matchAll(/class="number">\s*([\d.,\-]+)\s*</g)].map(x => parseFloat(x[1].replace(/,/g,''))||null);
+          const price = priceM ? parseFloat(priceM[1].replace(/,/g,'')) : 0;
+          const changePct = pctM ? parseFloat(pctM[1]) : 0;
+          const rawPer = numAll[numAll.length - 3];
+          const rawPbr = numAll[numAll.length - 2];
+          const rawDiv = numAll[numAll.length - 1];
+          const per = (rawPer > 0 && rawPer < 500) ? rawPer : null;
+          const pbr = (rawPbr > 0 && rawPbr < 100) ? rawPbr : null;
+          const div = (rawDiv > 0 && rawDiv < 50) ? rawDiv : null;
+          if (price > 0) results[code] = { market: 'kr', name, price, changePct, per, pbr, div };
+        }
+      } catch {}
     }
-  } catch {}
+  }
 
   // 나머지 KR 종목: yfinance .KS 배치 다운로드
   const remaining = KR_UNIVERSE.filter(c => !results[c]);
@@ -2227,10 +2246,11 @@ try:
 except Exception: pass
 print(json.dumps(result))
 `;
-      const usResults = await _pyExecLong(usPy);
+      let usResults = {};
+      try { usResults = await _pyExecLong(usPy); } catch(e) { console.warn("US 스크리너 실패, KR만 사용:", e.message?.slice(0,80)); }
 
       const result = { ...krResults, ...usResults };
-      _saveScreenerCache(result); // 디스크에 저장 (서버 재시작 시 재사용)
+      if (Object.keys(result).length > 0) _saveScreenerCache(result);
       return result;
     });
     res.json(data);
@@ -2547,15 +2567,21 @@ app.get('/api/buy-signals', (req, res) => {
     .filter(r => market === 'all' || r.market === market)
     .sort((a, b) => mode === 'sell' ? a.score - b.score : b.score - a.score);
 
-  // counts는 항상 전체 기준 (마켓 필터 무관)
+  // counts: 선택된 마켓 기준으로 계산
   const counts = {};
-  for (const r of allSignals) counts[r.signal] = (counts[r.signal] || 0) + 1;
+  for (const r of all) counts[r.signal] = (counts[r.signal] || 0) + 1;
   counts.kr = allSignals.filter(r => r.market === 'kr').length;
   counts.us = allSignals.filter(r => r.market === 'us').length;
   counts.all = allSignals.length;
 
   res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
-  res.json({ buys: all.slice(0, 50), total: all.length, counts, updatedAt: _signalsUpdatedAt });
+  // 각 신호 카테고리별 상위 50개씩 반환 (모든 탭에 데이터)
+  const bySignal = {};
+  for (const sig of SIGNALS) {
+    bySignal[sig] = all.filter(r => r.signal === sig).slice(0, 50);
+  }
+  const buys = SIGNALS.flatMap(s => bySignal[s]);
+  res.json({ buys, total: all.length, counts, updatedAt: _signalsUpdatedAt });
 });
 
 // 단일 종목 시그널 즉시 조회 (분석 페이지에서 AI 호출 전 빠르게 표시용)
