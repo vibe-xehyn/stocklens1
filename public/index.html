@@ -1356,7 +1356,7 @@ function renderPeersHTML(d, sym) {
                 <div style="font-size:10px;color:var(--muted)">${isKr ? p.ticker : p.name}</div>
               </td>
               <td style="text-align:right;padding:8px;color:${up?'var(--green)':'var(--red)'};font-weight:700">${up?'+':''}${fmt(p.changePct)}%</td>
-              <td style="text-align:right;padding:8px">${p.per ? fmt(p.per)+'x' : 'N/A'}</td>
+              <td style="text-align:right;padding:8px">${p.per ? fmt(p.per)+'x' : p.forwardPer ? `<span style="color:var(--muted)">${fmt(p.forwardPer)}x<sup style="font-size:8px">선행</sup></span>` : (p.profitMargin != null && p.profitMargin < 0 ? '<span style="color:var(--red)">적자</span>' : 'N/A')}</td>
               <td style="text-align:right;padding:8px">${p.pbr ? fmt(p.pbr)+'x' : 'N/A'}</td>
               <td style="text-align:right;padding:8px;color:${(p.roe||0)>15?'var(--green)':'var(--text)'}">${p.roe ? fmt(p.roe)+'%' : 'N/A'}</td>
               <td style="text-align:right;padding:8px;color:${(p.revenueGrowth||0)>0?'var(--green)':'var(--red)'}">${p.revenueGrowth ? (p.revenueGrowth>0?'+':'')+fmt(p.revenueGrowth)+'%' : 'N/A'}</td>
