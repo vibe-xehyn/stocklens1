@@ -3238,17 +3238,17 @@ async function warmupCache() {
       });
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
 
-    // 6. 매일 00:00 KST(=UTC 15:00)에 자동 재계산 — opts.full로 전체 종목 정밀 분석
+    // 6. 매일 20:00 KST(=UTC 11:00)에 자동 재계산 — opts.full로 전체 종목 정밀 분석
     const scheduleNextMidnightKST = () => {
       const now = new Date();
       const next = new Date(now);
-      next.setUTCHours(15, 0, 0, 0); // 00:00 KST = 15:00 UTC
+      next.setUTCHours(11, 0, 0, 0); // 20:00 KST = 11:00 UTC
       if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
       const ms = next - now;
       const hrs = (ms / 3600000).toFixed(1);
       console.log(`  ✓ 다음 시그널 계산 예약: ${next.toISOString()} (${hrs}시간 후)`);
       setTimeout(async () => {
-        console.log('  ⏰ 00:00 KST — 일일 스크리너 + 시그널 정밀 분석 시작');
+        console.log('  ⏰ 20:00 KST — 일일 스크리너 + 시그널 정밀 분석 시작');
         // 1) 스크리너 캐시 갱신 (백그라운드 함수를 직접 호출)
         try {
           await updateScreenerBackground();
