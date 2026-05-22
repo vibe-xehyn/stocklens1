@@ -2121,13 +2121,13 @@ async function fetchNaverMarket() {
           const numAll = [...block.matchAll(/class="number">\s*([\d.,\-]+)\s*</g)].map(x => parseFloat(x[1].replace(/,/g,''))||null);
           const price = priceM ? parseFloat(priceM[1].replace(/,/g,'')) : 0;
           const changePct = pctM ? parseFloat(pctM[1]) : 0;
-          const rawPer = numAll[numAll.length - 3];
-          const rawPbr = numAll[numAll.length - 2];
-          const rawDiv = numAll[numAll.length - 1];
+          // NAVER 컬럼 순서: 가격, (등락금액), (등락%), [발행주식수], PER, PBR
+          // → 마지막 2개가 PER, PBR (배당 컬럼은 쿠키에 미포함)
+          const rawPer = numAll[numAll.length - 2];
+          const rawPbr = numAll[numAll.length - 1];
           const per = (rawPer > 0 && rawPer < 500) ? rawPer : null;
           const pbr = (rawPbr > 0 && rawPbr < 100) ? rawPbr : null;
-          const div = (rawDiv > 0 && rawDiv < 50) ? rawDiv : null;
-          if (price > 0) results[code] = { market: 'kr', name, price, changePct, per, pbr, div };
+          if (price > 0) results[code] = { market: 'kr', name, price, changePct, per, pbr };
         }
       } catch {}
     }
