@@ -3238,27 +3238,32 @@ async function warmupCache() {
       });
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
 
-    // 6. 매일 20:00 KST(=UTC 11:00)에 자동 재계산 — opts.full로 전체 종목 정밀 분석
-    const scheduleNextMidnightKST = () => {
+    // 6. 매일 06:00 KST(=UTC 21:00 전날), 18:00 KST(=UTC 09:00) 하루 2회 재계산
+    const runSignalUpdate = async (label) => {
+      console.log(`  ⏰ ${label} KST — 스크리너 + 시그널 정밀 분석 시작`);
+      try { await updateScreenerBackground(); console.log('  ✓ 스크리너 갱신 완료'); }
+      catch(e) { console.log('  ⚠ 스크리너 갱신 실패:', e.message); }
+      try { await precomputeAllSignals({ full: true }); }
+      catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
+    };
+    const scheduleNext = () => {
       const now = new Date();
-      const next = new Date(now);
-      next.setUTCHours(11, 0, 0, 0); // 20:00 KST = 11:00 UTC
-      if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+      // UTC 기준 다음 실행 시각 후보: 09:00(=18:00 KST), 21:00(=06:00 KST)
+      const candidates = [9, 21].map(h => {
+        const d = new Date(now);
+        d.setUTCHours(h, 0, 0, 0);
+        if (d <= now) d.setUTCDate(d.getUTCDate() + 1);
+        return d;
+      });
+      const next = candidates.reduce((a, b) => a < b ? a : b);
+      const label = next.getUTCHours() === 9 ? '18:00' : '06:00';
       const ms = next - now;
-      const hrs = (ms / 3600000).toFixed(1);
-      console.log(`  ✓ 다음 시그널 계산 예약: ${next.toISOString()} (${hrs}시간 후)`);
+      console.log(`  ✓ 다음 시그널 계산 예약: ${next.toISOString()} (${(ms/3600000).toFixed(1)}시간 후, ${label} KST)`);
       setTimeout(async () => {
-        console.log('  ⏰ 20:00 KST — 일일 스크리너 + 시그널 정밀 분석 시작');
-        // 1) 스크리너 캐시 갱신 (백그라운드 함수를 직접 호출)
-        try {
-          await updateScreenerBackground();
-          console.log('  ✓ 스크리너 갱신 완료');
-        } catch(e) { console.log('  ⚠ 스크리너 갱신 실패:', e.message); }
-        // 2) 시그널 정밀 분석
-        try { await precomputeAllSignals({ full: true }); } catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
-        scheduleNextMidnightKST(); // 다음 날 예약
+        await runSignalUpdate(label);
+        scheduleNext();
       }, ms);
     };
-    scheduleNextMidnightKST();
+    scheduleNext();
   }, 8000);
 }
