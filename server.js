@@ -1261,6 +1261,44 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
     if (cp.includes('doji'))              { breakdown.technical -= 2;  reasons.push('도지(추세 전환 가능)'); }
   }
 
+  // MFI (Money Flow Index) — 거래량 가중 RSI: RSI와 다른 방향이면 발산 경고
+  if (typeof t.mfi === 'number') {
+    if (t.mfi < 20)      { breakdown.technical += 8;  reasons.push(`MFI ${t.mfi.toFixed(0)} 과매도(거래량확인)`); }
+    else if (t.mfi < 30) breakdown.technical += 4;
+    else if (t.mfi > 80) { breakdown.technical -= 8;  reasons.push(`MFI ${t.mfi.toFixed(0)} 과매수(거래량확인)`); }
+    else if (t.mfi > 70) breakdown.technical -= 4;
+    // RSI와 MFI 발산: 가격과 거래량 방향 불일치 = 추세 반전 경고
+    if (typeof t.rsi === 'number') {
+      if (t.rsi > 65 && t.mfi < 45) { breakdown.technical -= 6; reasons.push('RSI↑MFI↓ 발산(추세약화경고)'); }
+      if (t.rsi < 35 && t.mfi > 55) { breakdown.technical += 6; reasons.push('RSI↓MFI↑ 발산(반등가능성)'); }
+    }
+  }
+
+  // CMF (Chaikin Money Flow) — 매집/분산
+  if (typeof t.cmf === 'number') {
+    if (t.cmf > 0.2)       { breakdown.technical += 7;  reasons.push(`CMF ${t.cmf.toFixed(2)} 강한 매집`); }
+    else if (t.cmf > 0.05) breakdown.technical += 3;
+    else if (t.cmf < -0.2) { breakdown.technical -= 7;  reasons.push(`CMF ${t.cmf.toFixed(2)} 강한 분산`); }
+    else if (t.cmf < -0.05) breakdown.technical -= 3;
+  }
+
+  // ROC (Rate of Change) — 단기/중기 모멘텀
+  if (typeof t.roc20 === 'number') {
+    if (t.roc20 > 20)       { breakdown.technical += 8;  reasons.push(`ROC(20) +${t.roc20.toFixed(0)}% 강한모멘텀`); }
+    else if (t.roc20 > 10)  breakdown.technical += 4;
+    else if (t.roc20 > 5)   breakdown.technical += 2;
+    else if (t.roc20 < -20) { breakdown.technical -= 8;  reasons.push(`ROC(20) ${t.roc20.toFixed(0)}% 급락`); }
+    else if (t.roc20 < -10) breakdown.technical -= 4;
+    else if (t.roc20 < -5)  breakdown.technical -= 2;
+  }
+
+  // 이치모쿠 구름대
+  if (typeof t.ich_signal === 'number') {
+    if (t.ich_signal === 1)       { breakdown.technical += 10; reasons.push('이치모쿠 구름 위(강세)'); }
+    else if (t.ich_signal === -1) { breakdown.technical -= 10; reasons.push('이치모쿠 구름 아래(약세)'); }
+    // 구름 안 = 불확실 → 다른 신호에 의존
+  }
+
   // 52주 고/저점 돌파
   if (typeof t.price_vs_52h === 'number') {
     if (t.price_vs_52h >= 0.98)      { breakdown.technical += 12; reasons.push('52주 신고가 근접/돌파'); }
@@ -1269,7 +1307,30 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
       { breakdown.technical -= 12; reasons.push('52주 신저가 근접'); }
   }
 
-  // ═══ 2. 가치 지표 - 그린블라트 매직포뮬러 + 린치 PEG (최대 ±50점) ═
+  // ═══ 2. 가치 지표 - 그린블라트 매직포뮬러 + 린치 PEG + 그레이엄 (최대 ±60점) ═
+  // [그레이엄 넘버] 적정가 = sqrt(22.5 × EPS × BPS). 현재가가 밑이면 저평가
+  if (q.eps > 0 && q.bps > 0) {
+    const graham = Math.sqrt(22.5 * q.eps * q.bps);
+    const margin = (graham - q.price) / graham; // 안전마진
+    if (margin > 0.5)       { breakdown.value += 20; reasons.push(`그레이엄 안전마진 ${(margin*100).toFixed(0)}% 극저평가`); }
+    else if (margin > 0.3)  { breakdown.value += 14; reasons.push(`그레이엄 안전마진 ${(margin*100).toFixed(0)}%`); }
+    else if (margin > 0.1)  { breakdown.value += 7;  reasons.push(`그레이엄 넘버 하회(저평가)`); }
+    else if (margin < -0.5) { breakdown.value -= 12; reasons.push(`그레이엄 넘버 ${(Math.abs(margin)*100).toFixed(0)}% 초과(과평가)`); }
+    else if (margin < -0.2) breakdown.value -= 6;
+  }
+
+  // [Fed 모델] 이익수익률(EY) vs 10년 국채금리: EY > 국채금리면 주식이 싸다
+  if (typeof q.per === 'number' && q.per > 0 && macro.us10y?.value > 0) {
+    const ey = 100 / q.per;
+    const bondYield = macro.us10y.value;
+    const spread = ey - bondYield; // 양수 = 주식이 채권보다 유리
+    if (spread > 5)       { breakdown.value += 12; reasons.push(`Fed모델 EY-국채 스프레드 +${spread.toFixed(1)}%p 저평가`); }
+    else if (spread > 2)  { breakdown.value += 7;  reasons.push(`Fed모델 스프레드 +${spread.toFixed(1)}%p`); }
+    else if (spread > 0)  breakdown.value += 3;
+    else if (spread < -3) { breakdown.value -= 10; reasons.push(`Fed모델 스프레드 ${spread.toFixed(1)}%p 주식 고평가`); }
+    else if (spread < -1) breakdown.value -= 4;
+  }
+
   // [린치 핵심] PEG: 성장 대비 가격. PEG<1=저평가, <0.5=극저평가
   if (typeof q.pegRatio === 'number' && q.pegRatio > 0) {
     if (q.pegRatio < 0.5)       { breakdown.value += 22; reasons.push(`PEG ${q.pegRatio.toFixed(2)} 극저평가(린치)`); }
@@ -1428,7 +1489,7 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
     breakdown.momentum -= 5;
   }
 
-  // ═══ 6. 수급 - CAN SLIM I + 공매도 (최대 ±20점) ═══════════════════
+  // ═══ 6. 수급 - CAN SLIM I + 공매도 + 내부자매매 + 숏스퀴즈 (최대 ±35점) ═
   if (typeof flow.institutionPct === 'number') {
     if (flow.institutionPct > 85)      { breakdown.flow += 7; reasons.push('기관 집중 보유'); }
     else if (flow.institutionPct > 70) breakdown.flow += 4;
@@ -1458,6 +1519,26 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
     else if (pc < 0.7) breakdown.flow += 2;
   }
 
+  // [내부자 매매 방향] 내부자 순매수 = 가장 강력한 매수 신호 중 하나
+  if (Array.isArray(flow.insiderTx) && flow.insiderTx.length > 0) {
+    const recent = flow.insiderTx.slice(0, 5); // 최근 5건
+    const buys  = recent.filter(tx => tx.type === 'Buy'  || tx.type === 'Purchase').length;
+    const sells = recent.filter(tx => tx.type === 'Sell' || tx.type === 'Sale').length;
+    if (buys > 0 && sells === 0)  { breakdown.flow += 10; reasons.push(`내부자 순매수 ${buys}건(강한 신호)`); }
+    else if (buys > sells)        { breakdown.flow += 5;  reasons.push(`내부자 매수 우세(${buys}vs${sells})`); }
+    else if (sells > buys * 2)    { breakdown.flow -= 7;  reasons.push(`내부자 대량매도 ${sells}건`); }
+    else if (sells > buys)        breakdown.flow -= 3;
+  }
+
+  // [숏 스퀴즈 감지] 공매도 많은데 모멘텀 상승 = 숏커버 폭발 가능
+  if (typeof flow.shortPct === 'number' && flow.shortPct > 15 && breakdown.momentum > 5) {
+    breakdown.flow += 8; reasons.push(`숏스퀴즈 가능(공매도 ${flow.shortPct.toFixed(0)}%+상승모멘텀)`);
+  }
+  // 공매도 많은데 하락 중 = 추가 하락 압력
+  if (typeof flow.shortPct === 'number' && flow.shortPct > 20 && breakdown.momentum < -5) {
+    breakdown.flow -= 5; reasons.push('고공매도+하락모멘텀=추가하락위험');
+  }
+
   // ═══ 7. 심리/애널리스트 (최대 ±20점) ═══════════════════════════════
   if (typeof q.recommendation === 'string') {
     const rec = q.recommendation.toLowerCase();
@@ -1477,6 +1558,31 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
     else if (upside < 0)   breakdown.sentiment -= 2;
   }
 
+  // 배당 성장 투자 (Dividend Growth Investing)
+  if (typeof q.div === 'number' && q.div > 0) {
+    if (q.div > 5 && q.revenueGrowth > 5)       { breakdown.sentiment += 8; reasons.push(`배당 ${q.div.toFixed(1)}%+성장(배당성장주)`); }
+    else if (q.div > 3 && q.revenueGrowth > 0)  { breakdown.sentiment += 5; reasons.push(`배당 ${q.div.toFixed(1)}%(안정 배당)`); }
+    else if (q.div > 2)                          breakdown.sentiment += 2;
+    // 배당수익률 > 국채금리면 주식 보유 유리
+    if (macro.us10y?.value && q.div > macro.us10y.value) {
+      breakdown.sentiment += 4; reasons.push('배당수익률 > 국채금리(매력적)');
+    }
+  }
+
+  // Beta 리스크 조정: 고베타 + 과매수 = 하락 시 큰 폭 손실
+  if (typeof q.beta === 'number') {
+    if (q.beta > 2.0 && t.rsi > 70)       { breakdown.sentiment -= 8;  reasons.push(`고베타${q.beta.toFixed(1)}+과매수=하락위험`); }
+    else if (q.beta > 1.5 && t.rsi > 65)  breakdown.sentiment -= 4;
+    else if (q.beta < 0.5 && t.rsi < 40)  { breakdown.sentiment += 5;  reasons.push(`저베타${q.beta.toFixed(1)}+저RSI=방어적매수`); }
+    else if (q.beta < 0 )                  { breakdown.sentiment += 3;  reasons.push('음의베타(헤지효과)'); }
+  }
+
+  // 애널리스트 커버리지 적으면 = 미발굴 보석 가능 (소형주 숨겨진 알파)
+  if (typeof q.numberOfAnalysts === 'number') {
+    if (q.numberOfAnalysts <= 3 && breakdown.value > 5)  { breakdown.sentiment += 5; reasons.push('소수 커버리지+저평가=숨겨진기회'); }
+    else if (q.numberOfAnalysts >= 30)                    breakdown.sentiment -= 2; // 과도한 관심 = 고평가 위험
+  }
+
   // ═══ 8. 매크로 - 드러켄밀러식 하향식 (최대 ±12점) ══════════════════
   if (macro.vix && typeof macro.vix.value === 'number') {
     const vix = macro.vix.value;
@@ -1492,6 +1598,33 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
     else if (macro.us10y.chg > 0.1)  breakdown.macro -= 2;
     else if (macro.us10y.chg < -0.2) { breakdown.macro += 5; reasons.push('금리 급락(호재)'); }
     else if (macro.us10y.chg < -0.1) breakdown.macro += 2;
+  }
+
+  // 장단기 금리차 (수익률 곡선): 역전 = 경기침체 선행지표
+  if (macro.us10y?.value && macro.us3m?.value) {
+    const spread = macro.us10y.value - macro.us3m.value;
+    if (spread > 1.5)       { breakdown.macro += 5; reasons.push(`금리차 +${spread.toFixed(1)}%p(경기확장)`); }
+    else if (spread > 0.5)  breakdown.macro += 2;
+    else if (spread < -0.5) { breakdown.macro -= 6; reasons.push(`수익률곡선역전 ${spread.toFixed(1)}%p(침체위험)`); }
+    else if (spread < 0)    breakdown.macro -= 3;
+  }
+
+  // 달러 강세/약세 영향 (미국주식 기준)
+  if (macro.dxy && typeof macro.dxy.chg === 'number') {
+    if (macro.dxy.chg > 1.0)        { breakdown.macro -= 4; reasons.push('달러 급등(신흥국·원자재 부담)'); }
+    else if (macro.dxy.chg < -1.0)  { breakdown.macro += 4; reasons.push('달러 약세(위험자산 호재)'); }
+  }
+
+  // 금 가격 상승 = 안전자산 선호 = 주식 부정적
+  if (macro.gold && typeof macro.gold.chg === 'number') {
+    if (macro.gold.chg > 2.0)       { breakdown.macro -= 3; reasons.push('금 급등(안전자산선호)'); }
+    else if (macro.gold.chg < -2.0) { breakdown.macro += 2; reasons.push('금 하락(위험선호)'); }
+  }
+
+  // 유가 급등 = 인플레이션 우려 (에너지 섹터 제외 일반적 부정)
+  if (macro.oil && typeof macro.oil.chg === 'number') {
+    if (macro.oil.chg > 3.0)        { breakdown.macro -= 3; reasons.push('유가 급등(인플레이션)'); }
+    else if (macro.oil.chg < -3.0)  { breakdown.macro += 2; reasons.push('유가 하락(소비여력)'); }
   }
 
   // ═══ 최종 점수 합산 (범위 약 ±160) ════════════════════════════════
@@ -1603,6 +1736,44 @@ function calcTechnicalsJS(bars) {
   // ADX는 dx의 Wilder 평균 — 마지막 값만 근사
   const adx = dx; // 단순화 (정확도 약간 손해, 시그널엔 충분)
 
+  // MFI (Money Flow Index, 14) — 거래량 가중 RSI
+  const vol = bars.map(b => +(b.volume ?? 0));
+  const typicalPrice = close.map((c, i) => (c + high[i] + low[i]) / 3);
+  const rawMoneyFlow = typicalPrice.map((tp, i) => tp * vol[i]);
+  let posMF = 0, negMF = 0;
+  for (let i = n - 14; i < n; i++) {
+    if (typicalPrice[i] > typicalPrice[i-1]) posMF += rawMoneyFlow[i];
+    else negMF += rawMoneyFlow[i];
+  }
+  const mfi = negMF === 0 ? 100 : 100 - 100 / (1 + posMF / negMF);
+
+  // CMF (Chaikin Money Flow, 20) — 매집/분산 -1~+1
+  let cmfNum = 0, cmfDen = 0;
+  for (let i = Math.max(0, n - 20); i < n; i++) {
+    const hl = high[i] - low[i];
+    if (hl > 0) cmfNum += ((close[i] - low[i]) - (high[i] - close[i])) / hl * vol[i];
+    cmfDen += vol[i];
+  }
+  const cmf = cmfDen > 0 ? cmfNum / cmfDen : 0;
+
+  // ROC (Rate of Change, 20일) — 가격 모멘텀
+  const roc20 = n >= 21 ? (close[n-1] - close[n-21]) / close[n-21] * 100 : null;
+  const roc5  = n >= 6  ? (close[n-1] - close[n-6])  / close[n-6]  * 100 : null;
+
+  // 이치모쿠 구름대 (Ichimoku Cloud)
+  const ichHigh = (arr, p, i) => Math.max(...arr.slice(Math.max(0, i-p+1), i+1));
+  const ichLow  = (arr, p, i) => Math.min(...arr.slice(Math.max(0, i-p+1), i+1));
+  const tenkan  = n >= 9  ? (ichHigh(high, 9,  n-1) + ichLow(low, 9,  n-1)) / 2 : null;
+  const kijun   = n >= 26 ? (ichHigh(high, 26, n-1) + ichLow(low, 26, n-1)) / 2 : null;
+  const senkouA = (tenkan != null && kijun != null) ? (tenkan + kijun) / 2 : null;
+  const senkouB = n >= 52 ? (ichHigh(high, 52, n-1) + ichLow(low, 52, n-1)) / 2 : null;
+  // 구름 위 = 강세, 구름 아래 = 약세
+  const ichCloudTop    = (senkouA != null && senkouB != null) ? Math.max(senkouA, senkouB) : null;
+  const ichCloudBottom = (senkouA != null && senkouB != null) ? Math.min(senkouA, senkouB) : null;
+  const ichSignal = ichCloudTop != null
+    ? (close[n-1] > ichCloudTop ? 1 : close[n-1] < ichCloudBottom ? -1 : 0)
+    : null; // +1=구름위(강세), -1=구름아래(약세), 0=구름안(중립)
+
   // MA5, MA10, MA200
   const ma5  = n >= 5   ? sma(close, 5,   n-1) : null;
   const ma10 = n >= 10  ? sma(close, 10,  n-1) : null;
@@ -1614,7 +1785,6 @@ function calcTechnicalsJS(bars) {
   const willR = hh14 !== ll14 ? -100 * (hh14 - close[n-1]) / (hh14 - ll14) : -50;
 
   // OBV (On-Balance Volume)
-  const vol = bars.map(b => +(b.volume ?? 0));
   let obv = 0;
   const obvArr = [0];
   for (let i = 1; i < n; i++) {
@@ -1687,6 +1857,11 @@ function calcTechnicalsJS(bars) {
     candles,
     price_vs_52h: priceVs52H != null ? Math.round(priceVs52H * 1000) / 1000 : null,
     price_vs_52l: priceVs52L != null ? Math.round(priceVs52L * 1000) / 1000 : null,
+    mfi: r(mfi),
+    cmf: Math.round(cmf * 1000) / 1000,
+    roc20: roc20 != null ? Math.round(roc20 * 10) / 10 : null,
+    roc5:  roc5  != null ? Math.round(roc5  * 10) / 10 : null,
+    ich_signal: ichSignal,
     price: r(close[n-1]),
   };
 }
