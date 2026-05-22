@@ -2685,15 +2685,44 @@ industry = info.get('industry','')
 
 # 동종 업계 경쟁사 (yfinance recommendations로 유사 종목 찾기)
 peer_map = {
-    'Semiconductors': ['NVDA','AMD','INTC','AVGO','QCOM','TSM','MU','AMAT','KLAC','LRCX'],
+    # ── 반도체 ──
+    'Semiconductors': ['NVDA','AMD','INTC','AVGO','QCOM','TSM','MU','000660.KS','005930.KS'],
+    'Semiconductor Equipment & Materials': ['AMAT','KLAC','LRCX','ASML','TER'],
+    # ── 소프트웨어 / 인터넷 ──
+    'Software—Application': ['MSFT','CRM','ADBE','NOW','WDAY','INTU','ORCL'],
+    'Software—Infrastructure': ['MSFT','ORCL','PANW','CRWD','ZS'],
     'Software': ['MSFT','ORCL','CRM','ADBE','SAP','NOW','WDAY','INTU'],
-    'Internet': ['GOOGL','META','AMZN','NFLX','SNAP','PINS'],
+    'Internet Content & Information': ['GOOGL','META','NFLX','035420.KS','035720.KS','BIDU'],
+    'Internet': ['GOOGL','META','AMZN','NFLX','035420.KS','035720.KS'],
+    # ── 전자/가전 ──
     'Consumer Electronics': ['AAPL','SONY','005930.KS','000660.KS','066570.KS'],
-    'E-commerce': ['AMZN','BABA','JD','EBAY','SHOP','WMT'],
-    'Finance': ['JPM','BAC','WFC','GS','MS','C','BRK-B'],
-    'Pharma': ['LLY','JNJ','PFE','ABBV','MRK','BMY','GILD'],
+    'Electronic Components': ['AVGO','TXN','MCHP','066570.KS','005930.KS'],
+    # ── 전기차 / 자동차 ──
+    'Auto Manufacturers': ['TSLA','TM','F','GM','005380.KS','000270.KS','HMC'],
     'Automotive': ['TSLA','TM','F','GM','005380.KS','000270.KS'],
+    # ── 배터리 / 2차전지 ──
+    'Specialty Chemicals': ['373220.KS','006400.KS','051910.KS','LTHM','ALB'],
+    'Electrical Equipment & Parts': ['373220.KS','006400.KS','012450.KS','ENPH','FSLR'],
+    # ── 금융 ──
+    'Banks—Diversified': ['JPM','BAC','WFC','GS','105560.KS','055550.KS','086790.KS'],
+    'Banks—Regional': ['105560.KS','055550.KS','086790.KS','JPM','BAC'],
+    'Financial Services': ['JPM','GS','MS','V','MA','105560.KS'],
+    'Finance': ['JPM','BAC','WFC','GS','MS','C'],
+    # ── 바이오 / 제약 ──
+    'Biotechnology': ['AMGN','GILD','REGN','VRTX','068270.KS','207940.KS'],
+    'Drug Manufacturers—General': ['LLY','JNJ','PFE','ABBV','MRK','BMY'],
+    'Pharma': ['LLY','JNJ','PFE','ABBV','MRK','BMY','GILD'],
+    # ── 에너지 ──
+    'Oil & Gas Integrated': ['XOM','CVX','COP','BP','SHEL'],
     'Energy': ['XOM','CVX','COP','BP','SHEL'],
+    # ── 유통 / 이커머스 ──
+    'Internet Retail': ['AMZN','BABA','JD','SHOP','WMT','EBAY'],
+    'E-commerce': ['AMZN','BABA','JD','EBAY','SHOP','WMT'],
+    # ── 통신 ──
+    'Telecom Services': ['T','VZ','TMUS','S'],
+    'Communication Services': ['GOOGL','META','NFLX','T','VZ'],
+    # ── 철강 / 소재 ──
+    'Steel': ['005490.KS','NUE','X','STLD'],
     'default': []
 }
 
