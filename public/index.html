@@ -1299,7 +1299,7 @@ function renderPeersHTML(d, sym) {
 
   // 바 차트 비교: ROE, 매출성장, 순이익률
   const isKr = sym === '₩';
-  const label = p => isKr ? (p.name || p.ticker) : p.ticker;
+  const peerLabel = p => isKr ? (p.name || p.ticker) : p.ticker;
   const allItems = [{ ticker: d.main?.ticker||'현재', name: d.main?.name||'', roe: d.main?.roe, revenueGrowth: d.main?.revenueGrowth, profitMargin: d.main?.profitMargin, per: d.main?.per, isMain: true }, ...peers];
   const barChart = (label, key, unit='%', isGoodHigh=true) => {
     const vals = allItems.map(p => p[key] ?? null);
@@ -1315,7 +1315,7 @@ function renderPeersHTML(d, sym) {
         const good = isGoodHigh ? v > 0 : v < 0;
         const color = p.isMain ? 'var(--accent)' : (good ? 'var(--green)' : 'var(--red)');
         return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-          <div style="width:52px;font-size:10px;${p.isMain?'font-weight:700;color:var(--text)':'color:var(--muted)'};text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">${label(p)}</div>
+          <div style="width:52px;font-size:10px;${p.isMain?'font-weight:700;color:var(--text)':'color:var(--muted)'};text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">${peerLabel(p)}</div>
           <div style="flex:1;background:var(--surface2);border-radius:3px;height:10px">
             <div style="width:${pct}%;height:100%;background:${color};border-radius:3px;${p.isMain?'opacity:1':'opacity:0.7'}"></div>
           </div>
