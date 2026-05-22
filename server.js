@@ -1627,9 +1627,151 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
     else if (macro.oil.chg < -3.0)  { breakdown.macro += 2; reasons.push('유가 하락(소비여력)'); }
   }
 
-  // ═══ 최종 점수 합산 (범위 약 ±160) ════════════════════════════════
-  const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
+  // ═══ 9. 추가 기술/계절/복합 신호 ═══════════════════════════════════
 
+  // 파라볼릭 SAR
+  if (typeof t.sar_signal === 'number') {
+    if (t.sar_signal === 1)  { breakdown.technical += 6; reasons.push('SAR 매수(추세상승)'); }
+    else                     { breakdown.technical -= 6; reasons.push('SAR 매도(추세하락)'); }
+  }
+
+  // 피보나치 지지/저항
+  if (t.fib_bull) { breakdown.technical += 8; reasons.push('피보나치 지지선 위(매수)'); }
+  if (t.fib_bear) { breakdown.technical -= 8; reasons.push('피보나치 저항선 아래(매도)'); }
+
+  // VPT 추세
+  if (typeof t.vpt_trend === 'number') {
+    if (t.vpt_trend === 1)  breakdown.technical += 4;
+    else                    breakdown.technical -= 4;
+  }
+
+  // 갭 신호
+  if (t.gap_up)   { breakdown.technical += 8; reasons.push('상승 갭(강한 수급)'); }
+  if (t.gap_down) { breakdown.technical -= 8; reasons.push('하락 갭(매도 압력)'); }
+
+  // RSI 다이버전스
+  if (t.bear_div) { breakdown.technical -= 10; reasons.push('베어리시 다이버전스(추세 약화)'); }
+  if (t.bull_div) { breakdown.technical += 10; reasons.push('불리시 다이버전스(반등 가능)'); }
+
+  // EV/EBITDA 근사 (marketCap / ebitda, 부채 무시한 근사치)
+  if (q.ebitda > 0 && q.marketCap > 0) {
+    const evEbitda = q.marketCap / q.ebitda;
+    if (evEbitda < 8)        { breakdown.value += 10; reasons.push(`EV/EBITDA ${evEbitda.toFixed(1)}x 저평가`); }
+    else if (evEbitda < 12)  breakdown.value += 5;
+    else if (evEbitda < 20)  breakdown.value += 1;
+    else if (evEbitda > 40)  { breakdown.value -= 8; reasons.push(`EV/EBITDA ${evEbitda.toFixed(1)}x 고평가`); }
+    else if (evEbitda > 30)  breakdown.value -= 4;
+  }
+
+  // FCF 수익률 (버핏 최선호 가치 지표)
+  if (q.freeCashflow > 0 && q.marketCap > 0) {
+    const fcfYield = q.freeCashflow / q.marketCap * 100;
+    if (fcfYield > 8)       { breakdown.value += 12; reasons.push(`FCF수익률 ${fcfYield.toFixed(1)}%(버핏 기준 우수)`); }
+    else if (fcfYield > 5)  { breakdown.value += 7;  reasons.push(`FCF수익률 ${fcfYield.toFixed(1)}%`); }
+    else if (fcfYield > 3)  breakdown.value += 3;
+    else if (fcfYield < 0)  breakdown.value -= 5;
+  }
+
+  // 이익 품질 (FCF vs EPS 괴리 — 분식회계 탐지)
+  // FCF << 순이익이면 이익이 현금으로 안 들어오는 것 = 회계 조작 가능성
+  if (q.freeCashflow != null && q.eps > 0 && q.marketCap > 0) {
+    const sharesApprox = q.marketCap / (q.price || 1);
+    const netIncomeApprox = q.eps * sharesApprox;
+    if (netIncomeApprox > 0) {
+      const earningsQuality = q.freeCashflow / netIncomeApprox;
+      if (earningsQuality > 1.2)      { breakdown.quality += 8; reasons.push('FCF>순이익(고품질이익)'); }
+      else if (earningsQuality > 0.8) breakdown.quality += 3;
+      else if (earningsQuality < 0.3) { breakdown.quality -= 10; reasons.push('FCF<<순이익(이익품질의심)'); }
+      else if (earningsQuality < 0.5) breakdown.quality -= 5;
+    }
+  }
+
+  // 가치함정 탐지 (저PER이지만 매출 감소 = 함정)
+  if (typeof q.per === 'number' && q.per < 15 && typeof q.revenueGrowth === 'number' && q.revenueGrowth < -10) {
+    breakdown.value -= 12; reasons.push('가치함정 경고: 저PER+매출감소');
+  }
+
+  // 경제적 해자 종합점수 (ROE+마진+성장 동시 충족)
+  const moatScore =
+    (q.roe > 20 ? 1 : 0) +
+    (q.grossMargin > 40 ? 1 : 0) +
+    (q.operatingMargin > 15 ? 1 : 0) +
+    (q.revenueGrowth > 10 ? 1 : 0) +
+    (q.freeCashflow > 0 ? 1 : 0);
+  if (moatScore >= 5)      { breakdown.quality += 15; reasons.push('경제적 해자 최고등급(5/5)'); }
+  else if (moatScore >= 4) { breakdown.quality += 9;  reasons.push('경제적 해자 우수(4/5)'); }
+  else if (moatScore >= 3) breakdown.quality += 4;
+  else if (moatScore <= 1) breakdown.quality -= 5;
+
+  // 계절성 효과 (통계적으로 검증된 패턴)
+  const month = new Date().getMonth() + 1; // 1~12
+  if (month === 1)                         { breakdown.momentum += 5;  reasons.push('1월 효과(소형주 강세)'); }
+  else if (month === 11 || month === 12)   { breakdown.momentum += 4;  reasons.push('Q4 산타랠리 시즌'); }
+  else if (month >= 5 && month <= 9)       { breakdown.momentum -= 2;  } // Sell in May 효과
+
+  // ═══ 최종: 리스크 거부권 + 확신도 승수 ════════════════════════════
+  let rawScore = Object.values(breakdown).reduce((a, b) => a + b, 0);
+
+  // ── 리스크 거부권: 아래 조건 시 매수 신호 강제 차단 ──────────────
+  const riskVetos = [];
+  // 유동성 위기 (currentRatio < 0.5 = 단기 부도 위험)
+  if (q.currentRatio != null && q.currentRatio < 0.5) {
+    riskVetos.push('유동성위기(CR<0.5)');
+    rawScore = Math.min(rawScore, -20); // 매수 불가
+  }
+  // 영업적자 + 음수FCF + 고부채 = 파산 위험 삼각형
+  if (q.operatingMargin < 0 && q.freeCashflow < 0 && q.debtToEquity > 200) {
+    riskVetos.push('파산위험삼각형(영업적자+음FCF+고부채)');
+    rawScore = Math.min(rawScore, -30);
+  }
+  // VIX 60 이상 = 시장 패닉, 강력매수 차단
+  if (macro.vix?.value > 60) {
+    riskVetos.push(`시장패닉(VIX ${macro.vix.value.toFixed(0)})`);
+    rawScore = Math.min(rawScore, 10);
+  }
+  // 수익률곡선 깊은 역전 + 고PER = 이중 위험
+  if (macro.us10y?.value && macro.us3m?.value &&
+      (macro.us10y.value - macro.us3m.value) < -1.0 && q.per > 40) {
+    riskVetos.push('금리역전+고PER=이중위험');
+    rawScore -= 15;
+  }
+  if (riskVetos.length > 0) reasons.push(`⚠️ 리스크거부권: ${riskVetos.join(', ')}`);
+
+  // ── 확신도 승수: 여러 팩터 일치 시 점수 증폭 ──────────────────────
+  const posFactor = [
+    breakdown.technical > 15,
+    breakdown.value > 15,
+    breakdown.quality > 10,
+    breakdown.growth > 8,
+    breakdown.momentum > 8,
+    breakdown.flow > 5,
+  ].filter(Boolean).length;
+  const negFactor = [
+    breakdown.technical < -15,
+    breakdown.value < -10,
+    breakdown.quality < -8,
+    breakdown.growth < -8,
+    breakdown.momentum < -8,
+    breakdown.flow < -5,
+  ].filter(Boolean).length;
+
+  // 4개 이상 팩터 동시 강세 = 확신도 높음, 점수 20% 증폭
+  if (posFactor >= 4 && rawScore > 0) {
+    rawScore = Math.round(rawScore * 1.2);
+    reasons.push(`✅ ${posFactor}개 팩터 동시 강세 — 확신도 높음`);
+  }
+  if (negFactor >= 4 && rawScore < 0) {
+    rawScore = Math.round(rawScore * 1.2);
+    reasons.push(`🔴 ${negFactor}개 팩터 동시 약세 — 하락 확신`);
+  }
+
+  // 상충 신호 (강한 매수+강한 매도 동시) = 점수 감쇠 (불확실성)
+  if (posFactor >= 2 && negFactor >= 2) {
+    rawScore = Math.round(rawScore * 0.7);
+    reasons.push('⚡ 강세·약세 신호 충돌 — 불확실성 높음');
+  }
+
+  const score = rawScore;
   let signal, confidence;
   const abs = Math.abs(score);
   if      (score >= 60)  { signal = '강력매수'; confidence = Math.min(95, 72 + abs * 0.15); }
@@ -1840,8 +1982,61 @@ function calcTechnicalsJS(bars) {
   // 52주 고/저점 (bars가 충분하면 계산, 아니면 null)
   const high52 = n >= 200 ? Math.max(...high.slice(n-252 < 0 ? 0 : n-252, n)) : Math.max(...high);
   const low52  = n >= 200 ? Math.min(...low.slice(n-252 < 0 ? 0 : n-252, n))  : Math.min(...low);
-  const priceVs52H = high52 > 0 ? close[n-1] / high52 : null; // 1.0 = 52주 신고가
-  const priceVs52L = low52  > 0 ? close[n-1] / low52  : null; // 1.0 = 52주 신저가
+  const priceVs52H = high52 > 0 ? close[n-1] / high52 : null;
+  const priceVs52L = low52  > 0 ? close[n-1] / low52  : null;
+
+  // 피보나치 지지/저항 (52주 고/저 기준)
+  const fibRange = high52 - low52;
+  const fib236 = high52 - fibRange * 0.236;
+  const fib382 = high52 - fibRange * 0.382;
+  const fib500 = high52 - fibRange * 0.500;
+  const fib618 = high52 - fibRange * 0.618;
+  const fib786 = high52 - fibRange * 0.786;
+  const fibLevels = [fib236, fib382, fib500, fib618, fib786];
+  const cp = close[n-1];
+  const fibNearest = fibLevels.reduce((best, lv) => Math.abs(cp-lv) < Math.abs(cp-best) ? lv : best, fib382);
+  const nearFibPct = fibRange > 0 ? Math.abs(cp - fibNearest) / fibRange : 1;
+  const fibBull = nearFibPct < 0.03 && cp >= fibNearest; // 피보나치 지지 위 = 매수
+  const fibBear = nearFibPct < 0.03 && cp <  fibNearest; // 피보나치 저항 아래 = 매도
+
+  // VPT (Volume Price Trend) — OBV 개선판
+  let vpt = 0;
+  const vptArr = [0];
+  for (let i = 1; i < n; i++) {
+    const pctChg = close[i-1] > 0 ? (close[i] - close[i-1]) / close[i-1] : 0;
+    vpt += vol[i] * pctChg;
+    vptArr.push(vpt);
+  }
+  const vpt10avg = vptArr.slice(n-10, n).reduce((a,b)=>a+b,0) / 10;
+  const vptTrend = vpt > vpt10avg ? 1 : -1;
+
+  // Parabolic SAR
+  let sarBull = true, sarVal = low[0], sarEP = high[0], sarAF = 0.02;
+  for (let i = 1; i < n; i++) {
+    if (sarBull) {
+      sarVal = sarVal + sarAF * (sarEP - sarVal);
+      sarVal = Math.min(sarVal, low[i-1], i > 1 ? low[i-2] : low[i-1]);
+      if (low[i] < sarVal) { sarBull = false; sarVal = sarEP; sarEP = low[i]; sarAF = 0.02; }
+      else if (high[i] > sarEP) { sarEP = high[i]; sarAF = Math.min(sarAF + 0.02, 0.2); }
+    } else {
+      sarVal = sarVal - sarAF * (sarVal - sarEP);
+      sarVal = Math.max(sarVal, high[i-1], i > 1 ? high[i-2] : high[i-1]);
+      if (high[i] > sarVal) { sarBull = true; sarVal = sarEP; sarEP = high[i]; sarAF = 0.02; }
+      else if (low[i] < sarEP) { sarEP = low[i]; sarAF = Math.min(sarAF + 0.02, 0.2); }
+    }
+  }
+  const sarSignal = sarBull ? 1 : -1; // +1=가격>SAR(매수), -1=가격<SAR(매도)
+
+  // 갭 (오늘 저가 > 전일 고가 = 상승갭)
+  const gapUp   = n >= 2 && low[n-1] > high[n-2];
+  const gapDown = n >= 2 && high[n-1] < low[n-2];
+
+  // RSI 다이버전스 (가격 신고 but RSI 낮으면 = 베어리시)
+  const priceHigh20 = Math.max(...close.slice(Math.max(0, n-21), n-1));
+  const priceLow20  = Math.min(...close.slice(Math.max(0, n-21), n-1));
+  const rsiNow = rsi;
+  const bearDiv = cp > priceHigh20 * 0.99 && rsiNow < 65; // 가격 신고 but RSI 약함
+  const bullDiv = cp < priceLow20  * 1.01 && rsiNow > 35; // 가격 신저 but RSI 강함
 
   const r = v => v == null ? null : Math.round(v * 10) / 10;
   return {
@@ -1862,6 +2057,11 @@ function calcTechnicalsJS(bars) {
     roc20: roc20 != null ? Math.round(roc20 * 10) / 10 : null,
     roc5:  roc5  != null ? Math.round(roc5  * 10) / 10 : null,
     ich_signal: ichSignal,
+    fib_bull: fibBull, fib_bear: fibBear,
+    vpt_trend: vptTrend,
+    sar_signal: sarSignal,
+    gap_up: gapUp, gap_down: gapDown,
+    bear_div: bearDiv, bull_div: bullDiv,
     price: r(close[n-1]),
   };
 }
