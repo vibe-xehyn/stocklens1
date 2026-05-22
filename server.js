@@ -875,37 +875,81 @@ app.get('/api/trading-status', (_, res) => {
 });
 
 // 초기 로딩 통합 엔드포인트 (trading-status + indices + rates 한 번에)
-app.get('/api/init', async (_, res) => {
-  const now = new Date();
-  const kstMs = now.getTime() + 9 * 3600_000;
-  const kstDate = new Date(kstMs);
-  const kstDay = kstDate.getUTCDay();
-  const kstMin = kstDate.getUTCHours() * 60 + kstDate.getUTCMinutes();
-  const kr = kstDay >= 1 && kstDay <= 5 && kstMin >= 540 && kstMin < 930;
-  const etOffset = usETOffset(now);
-  const etMs = now.getTime() + etOffset * 3600_000;
-  const etDate = new Date(etMs);
-  const etDay = etDate.getUTCDay();
-  const etMin = etDate.getUTCHours() * 60 + etDate.getUTCMinutes();
-  const us = etDay >= 1 && etDay <= 5 && etMin >= 570 && etMin < 960;
+const RATES_CACHE_FILE = join(__dirname, '.rates-cache.json');
+const INIT_CACHE_FILE  = join(__dirname, '.init-cache.json');
+(function loadInitCaches() {
+  try {
+    if (existsSync(RATES_CACHE_FILE)) {
+      const c = JSON.parse(readFileSync(RATES_CACHE_FILE, 'utf-8'));
+      if (c.data && Date.now() - c.savedAt < 3600_000) setC('rates', c.data, 300_000);
+    }
+  } catch {}
+  try {
+    if (existsSync(INIT_CACHE_FILE)) {
+      const c = JSON.parse(readFileSync(INIT_CACHE_FILE, 'utf-8'));
+      if (c.data && Date.now() - c.savedAt < 3600_000) {
+        setC('initPayload', c.data, 60_000);
+        console.log('  \u2713 init \ucf90\uc2dc \ub85c\ub4dc (\ub514\uc2a4\ud06c)');
+      }
+    }
+  } catch {}
+})();
 
-  const ttl = (kr || us) ? 15_000 : 120_000;
+function getTradingStatus() {
+  const now = new Date();
+  const kstDate = new Date(now.getTime() + 9 * 3600_000);
+  const kstDay = kstDate.getUTCDay(), kstMin = kstDate.getUTCHours()*60+kstDate.getUTCMinutes();
+  const kr = kstDay>=1&&kstDay<=5&&kstMin>=540&&kstMin<930;
+  const etDate = new Date(now.getTime() + usETOffset(now)*3600_000);
+  const etDay = etDate.getUTCDay(), etMin = etDate.getUTCHours()*60+etDate.getUTCMinutes();
+  const us = etDay>=1&&etDay<=5&&etMin>=570&&etMin<960;
+  return { kr, us };
+}
+
+async function fetchInitData() {
+  const pairs = [['usdkrw','usdkrw'],['usdjpy','usdjpy'],['eurusd','eurusd'],['dx.f','dxy']];
   const [indices, rates] = await Promise.all([
     cached('indices', 60_000, () => Promise.all([
       krIndex('KOSPI','KOSPI'), krIndex('KOSDAQ','KOSDAQ'),
       yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'),
     ])).catch(() => []),
     cached('rates', 300_000, async () => {
-      const pairs = [['usdkrw','usdkrw'],['usdjpy','usdjpy'],['eurusd','eurusd'],['dx.f','dxy']];
-      const rates = {};
-      await Promise.allSettled(pairs.map(async ([sym, key]) => {
-        try { const q = await stooqQuote(sym); rates[key] = { value: q.price, change: q.changePct }; } catch {}
+      const r = {};
+      await Promise.allSettled(pairs.map(async ([sym,key]) => {
+        try { const q=await stooqQuote(sym); r[key]={value:q.price,change:q.changePct}; } catch {}
       }));
-      return rates;
+      return r;
     }).catch(() => ({})),
   ]);
+  return { indices, rates };
+}
+
+app.get('/api/init', async (_, res) => {
+  const trading = getTradingStatus();
+  const ttl = (trading.kr||trading.us) ? 15_000 : 120_000;
+  const stale = getC('initPayload');
+  if (stale) {
+    res.setHeader('Cache-Control', `public, max-age=${Math.floor(ttl/1000)}, stale-while-revalidate=30`);
+    res.json({ ...stale, trading });
+    setImmediate(async () => {
+      try {
+        _c.delete('initPayload'); _c.delete('indices'); _c.delete('rates');
+        const d = await fetchInitData();
+        setC('initPayload', d, 60_000);
+        writeFileSync(INIT_CACHE_FILE,  JSON.stringify({savedAt:Date.now(),data:d}), 'utf-8');
+        writeFileSync(RATES_CACHE_FILE, JSON.stringify({savedAt:Date.now(),data:d.rates}), 'utf-8');
+        writeFileSync(INDICES_CACHE_FILE, JSON.stringify({savedAt:Date.now(),data:d.indices}), 'utf-8');
+      } catch {}
+    });
+    return;
+  }
+  const d = await fetchInitData();
+  setC('initPayload', d, 60_000);
+  try { writeFileSync(INIT_CACHE_FILE,  JSON.stringify({savedAt:Date.now(),data:d}), 'utf-8'); } catch {}
+  try { writeFileSync(RATES_CACHE_FILE, JSON.stringify({savedAt:Date.now(),data:d.rates}), 'utf-8'); } catch {}
+  try { writeFileSync(INDICES_CACHE_FILE, JSON.stringify({savedAt:Date.now(),data:d.indices}), 'utf-8'); } catch {}
   res.setHeader('Cache-Control', `public, max-age=${Math.floor(ttl/1000)}, stale-while-revalidate=30`);
-  res.json({ trading: { kr, us }, indices, rates });
+  res.json({ trading, ...d });
 });
 
 // Full quote — detail view
