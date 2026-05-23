@@ -3433,7 +3433,7 @@ async function precomputeAllSignals(opts = {}) {
     try {
       // AI 분석 캐시 초기화 (재계산 시 최신 신호 반영)
       for (const k of _c.keys()) { if (k.startsWith('ai:')) _c.delete(k); }
-      const universe = await fetchTopByMarketCap(2000);
+      const universe = await fetchTopByMarketCap(1000);
       if (!universe.length) {
         console.log('  ⚠ 시가총액 랭킹 비어있음 — 시그널 계산 중단');
         return;
