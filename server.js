@@ -26,27 +26,30 @@ const getGrok = () => new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'h
 //   gemini-2.0-flash-lite: 30/1500
 //   gemini-2.0-flash:      15/200   (낮은 한도 — 빨리 소진됨)
 async function geminiGenerate(systemPrompt, userPrompt, { temperature = 0, maxTokens = 1024 } = {}) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not set');
+  const keys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
+  if (!keys.length) throw new Error('GEMINI_API_KEY not set');
   const models = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
   let lastErr;
-  for (const model of models) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-      const body = {
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
-      };
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (!r.ok) { lastErr = new Error(`Gemini ${model} ${r.status}: ${(await r.text()).slice(0, 120)}`); continue; }
-      const j = await r.json();
-      const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) { lastErr = new Error(`Gemini ${model} empty response`); continue; }
-      return text;
-    } catch (e) { lastErr = e; }
+  // 키별 × 모델별 조합 시도 (키1-모델1 → 키1-모델2 → ... → 키2-모델1 → ...)
+  for (let ki = 0; ki < keys.length; ki++) {
+    for (const model of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keys[ki]}`;
+        const body = {
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+        };
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) { lastErr = new Error(`Gemini key${ki+1} ${model} ${r.status}: ${(await r.text()).slice(0, 120)}`); continue; }
+        const j = await r.json();
+        const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) { lastErr = new Error(`Gemini key${ki+1} ${model} empty response`); continue; }
+        return text;
+      } catch (e) { lastErr = e; }
+    }
   }
-  throw lastErr || new Error('Gemini all models failed');
+  throw lastErr || new Error('Gemini all keys/models failed');
 }
 
 app.use(compression({ level: 6 })); // gzip 압축
