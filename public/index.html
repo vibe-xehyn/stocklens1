@@ -941,9 +941,9 @@ async function loadAndRenderMain(def) {
       api(`/api/peers?symbol=${def.ticker}&market=${def.market}`).then(d => {
         const el = document.getElementById('peersContainer');
         if (el) el.innerHTML = renderPeersHTML(d, def.market === 'kr' ? '₩' : '$');
-      }).catch(() => {
+      }).catch(e => {
         const el = document.getElementById('peersContainer');
-        if (el) el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">비교 데이터 없음</div>';
+        if (el) el.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:8px">비교 데이터 없음 (${e?.message||'unknown'})</div>`;
       }),
       api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(d => {
         const el = document.getElementById('factorContainer');
