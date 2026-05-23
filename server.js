@@ -2583,8 +2583,15 @@ app.get('/api/earnings', async (req, res) => {
     const data = await cached(`earn:${symbol}`, 3600_000, async () => {
       const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
       const py = `
-import yfinance as yf, json
+import yfinance as yf, json, re, math
 import pandas as pd
+
+def safe(v):
+    if v is None: return None
+    try:
+        f = float(v)
+        return None if (math.isnan(f) or math.isinf(f)) else f
+    except: return v
 
 t = yf.Ticker('${yfticker}')
 result = {}
@@ -2611,9 +2618,9 @@ try:
         quarters = []
         for col in qi.columns[:6]:
             try:
-                rev = float(qi.loc['Total Revenue', col]) if 'Total Revenue' in qi.index else None
-                oi  = float(qi.loc['Operating Income', col]) if 'Operating Income' in qi.index else None
-                ni  = float(qi.loc['Net Income', col]) if 'Net Income' in qi.index else None
+                rev = safe(qi.loc['Total Revenue', col]) if 'Total Revenue' in qi.index else None
+                oi  = safe(qi.loc['Operating Income', col]) if 'Operating Income' in qi.index else None
+                ni  = safe(qi.loc['Net Income', col]) if 'Net Income' in qi.index else None
                 quarters.append({'date': str(col)[:10], 'revenue': rev, 'operatingIncome': oi, 'netIncome': ni})
             except: pass
         result['quarterlyFinancials'] = quarters
@@ -2664,7 +2671,8 @@ try:
         result['fwdEpsGrowth'] = round(float(row.get('growth',0) or 0)*100, 1)
 except: pass
 
-print(json.dumps(result, ensure_ascii=False, default=str))
+out = json.dumps(result, ensure_ascii=False, default=str)
+print(re.sub(r'\\bNaN\\b', 'null', out))
 `;
       try { return await _pyExecLong(py); } catch(e) { console.error('earnings 실패:', symbol, e.message?.slice(0,120)); return {}; }
     });
