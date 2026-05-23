@@ -3213,27 +3213,26 @@ async function fetchTopByMarketCap(limit = 700) {
 
     const candidates = [];
 
-    // KR: KOSPI 800 + KOSDAQ 1200 (모든 페이지 병렬 요청으로 초고속 실행)
+    // KR: KOSPI + KOSDAQ — 3개씩 배치로 요청 (20개 동시→rate limit 방지)
     const krPages = [];
     for (let p = 1; p <= 8; p++) krPages.push({ mkt: 'KOSPI', p });
     for (let p = 1; p <= 12; p++) krPages.push({ mkt: 'KOSDAQ', p });
 
-    await Promise.allSettled(krPages.map(async ({ mkt, p }) => {
-      try {
-        const d = await fetchJSON(`https://m.stock.naver.com/api/stocks/marketValue/${mkt}?page=${p}&pageSize=100`);
-        for (const s of (d.stocks || [])) {
-          const mcRaw = parseFloat(s.marketValueRaw || '0');
-          if (!mcRaw || !s.itemCode) continue;
-          _krNameMap.set(s.itemCode, s.stockName); // 글로벌 KR 종목명 맵에 이름 저장
-          candidates.push({
-            ticker: s.itemCode,
-            market: 'kr',
-            name: s.stockName,
-            mcapUsd: mcRaw / fx,
-          });
-        }
-      } catch {}
-    }));
+    for (let i = 0; i < krPages.length; i += 3) {
+      const batch = krPages.slice(i, i + 3);
+      await Promise.allSettled(batch.map(async ({ mkt, p }) => {
+        try {
+          const d = await fetchJSON(`https://m.stock.naver.com/api/stocks/marketValue/${mkt}?page=${p}&pageSize=100`);
+          for (const s of (d.stocks || [])) {
+            const mcRaw = parseFloat(s.marketValueRaw || '0');
+            if (!mcRaw || !s.itemCode) continue;
+            _krNameMap.set(s.itemCode, s.stockName);
+            candidates.push({ ticker: s.itemCode, market: 'kr', name: s.stockName, mcapUsd: mcRaw / fx });
+          }
+        } catch {}
+      }));
+      if (i + 3 < krPages.length) await new Promise(r => setTimeout(r, 200));
+    }
 
     // US: NASDAQ 1000 + NYSE 1000
     const usJobs = [['NASDAQ', 10], ['NYSE', 10]];
