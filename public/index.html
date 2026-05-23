@@ -1208,7 +1208,8 @@ function renderFactorHTML(breakdown, score, signal, reasons) {
 
 // ── 분기 실적 렌더링 ──────────────────────────────────────────────────────────
 function renderEarningsHTML(d, isKr, sym) {
-  if (!d) return '<div style="color:var(--muted);font-size:13px">데이터 없음</div>';
+  if (!d || !Object.keys(d).filter(k=>!k.startsWith('_')).length)
+    return '<div style="color:var(--muted);font-size:13px;padding:8px">데이터 없음</div>';
   const fmtNum = (v, unit='') => v != null ? (Math.abs(v)>=1e12 ? (v/1e12).toFixed(1)+'T' : Math.abs(v)>=1e9 ? (v/1e9).toFixed(1)+'B' : Math.abs(v)>=1e8 ? (v/1e8).toFixed(0)+'억' : v.toLocaleString()) + unit : 'N/A';
   const pct = v => v != null ? (v>0?'+':'')+v.toFixed(1)+'%' : 'N/A';
 

@@ -2666,7 +2666,7 @@ except: pass
 
 print(json.dumps(result, ensure_ascii=False, default=str))
 `;
-      try { return await yfRun(py); } catch { return {}; }
+      try { return await _pyExecLong(py); } catch { return {}; }
     });
     res.json(data);
   } catch(e) { res.json({}); }
