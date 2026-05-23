@@ -2646,10 +2646,21 @@ ${newsText || '관련 뉴스 없음'}
         console.error('analysis GROQ 실패:', symbol, groqErr.message?.slice(0, 120));
         // 2차: Gemini (무료 한도 GROQ보다 훨씬 큼 — 모델 자동 fallback)
         try {
-          const raw = await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 1024 });
-          const m = raw.match(/\{[\s\S]*\}/);
-          if (!m) throw new Error('Gemini response parsing failed');
-          parsed = JSON.parse(m[0]);
+          const raw = await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 });
+          // responseMimeType=application/json이면 raw 자체가 JSON
+          let jsonStr = raw.trim();
+          if (!jsonStr.startsWith('{')) {
+            const m = jsonStr.match(/\{[\s\S]*\}/);
+            if (!m) throw new Error(`Gemini text not JSON: ${raw.slice(0, 100)}`);
+            jsonStr = m[0];
+          }
+          // 잘린 JSON 복구 시도: 마지막 } 까지만 사용
+          try { parsed = JSON.parse(jsonStr); }
+          catch {
+            const lastBrace = jsonStr.lastIndexOf('}');
+            if (lastBrace > 0) parsed = JSON.parse(jsonStr.slice(0, lastBrace + 1));
+            else throw new Error('Gemini JSON parse failed');
+          }
         } catch (gemErr) {
           console.error('analysis Gemini 실패:', symbol, gemErr.message?.slice(0, 120));
           parsed = { ...fallback };
