@@ -287,9 +287,22 @@ function _pyExec(script, timeout=30000) {
   return new Promise((res,rej)=>{
     execFile('python3',['-c',script],{maxBuffer:10e6,timeout},(err,out,serr)=>{
       if(err) return rej(new Error(serr.split('\n').filter(Boolean).pop()||err.message));
-      // Python json.dumps outputs NaN/Infinity which are invalid JSON — replace with null
-      const clean = out.replace(/\bNaN\b/g,'null').replace(/\bInfinity\b/g,'null').replace(/-Infinity\b/g,'null');
-      try{res(JSON.parse(clean));}catch{rej(new Error('yfinance: invalid JSON: '+out.slice(0,80)));}
+      // Python json.dumps with default=str + NaN/Inf produces invalid JSON.
+      // Sanitize: NaN/Infinity/-Infinity/nan/NaT (uppercase + lowercase + pandas types) → null
+      let clean = out
+        .replace(/(-?\bInfinity\b)/g,'null')
+        .replace(/\bNaN\b/g,'null')
+        .replace(/\bnan\b/g,'null')
+        .replace(/\bNaT\b/g,'null')
+        .replace(/"NaT"/g,'null')
+        .replace(/\bundefined\b/g,'null');
+      try { return res(JSON.parse(clean)); } catch {}
+      // 한 번 더 시도: JSON 객체 부분만 추출 (시작 { 또는 [부터)
+      try {
+        const m = clean.match(/[\{\[][\s\S]*[\}\]]/);
+        if (m) return res(JSON.parse(m[0]));
+      } catch {}
+      rej(new Error('yfinance: invalid JSON: '+out.slice(0,200).replace(/\n/g,' ')));
     });
   });
 }
