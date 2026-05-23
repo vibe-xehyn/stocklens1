@@ -588,6 +588,7 @@ let sidebarCache = {};  // id -> { price, changePct } — Stooq 기반, 빠름
 let quoteCache = {};    // id -> full quote — Yahoo/NAVER 기반
 let watchlist = new Set();
 let analysisCache = {};  // ticker -> { data, ts }
+let chartCache = {};     // `${ticker}:${range}` -> chartData
 let priceChart = null;
 let currentRange = '1mo';
 let autoRefreshTimer = null;
@@ -918,8 +919,15 @@ async function loadAndRenderMain(def) {
       api(`/api/chart?symbol=${def.ticker}&range=${currentRange}&market=${def.market}`),
     ]);
     quoteCache[def.id] = { ...def, ...q };
+    chartCache[`${def.ticker}:${currentRange}`] = chart;
     // Render immediately with quote+chart, then load AI analysis and news async
     renderMain(def, q, chart, []);
+    // 나머지 범위 백그라운드 프리페치
+    ['1wk','1mo','3mo','6mo','1y'].filter(r => r !== currentRange).forEach(r => {
+      const ck = `${def.ticker}:${r}`;
+      if (!chartCache[ck]) api(`/api/chart?symbol=${def.ticker}&range=${r}&market=${def.market}`)
+        .then(d => { chartCache[ck] = d; }).catch(() => {});
+    });
     // Load all async data in parallel
     const [news] = await Promise.all([
       api(`/api/news?symbol=${def.ticker}&market=${def.market}`).catch(() => []),
@@ -1638,10 +1646,17 @@ async function changeRange(range, btn) {
   currentRange = range;
   document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
+  const cacheKey = `${currentDef.ticker}:${range}`;
+  const q = quoteCache[currentDef.id];
+  const sym = currentDef.market === 'kr' ? '₩' : '$';
+  if (chartCache[cacheKey]) {
+    drawChart(chartCache[cacheKey], sym, q?.changePct >= 0);
+    return;
+  }
   try {
     const chart = await api(`/api/chart?symbol=${currentDef.ticker}&range=${range}&market=${currentDef.market}`);
-    const q = quoteCache[currentDef.id];
-    drawChart(chart, currentDef.market === 'kr' ? '₩' : '$', q?.changePct >= 0);
+    chartCache[cacheKey] = chart;
+    drawChart(chart, sym, q?.changePct >= 0);
   } catch(e) { console.error(e); }
 }
 
