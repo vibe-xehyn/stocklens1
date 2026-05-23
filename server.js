@@ -3695,6 +3695,44 @@ app.get('/api/admin/recompute-signals', async (req, res) => {
   precomputeAllSignals({ full: true }).catch(e => console.error('강제 재계산 실패:', e.message));
 });
 
+// 상위 N개 종목의 LLM 분석 사전 계산 (백그라운드)
+// 캐시(`ai:${symbol}`)를 채워두어 사용자 첫 클릭이 즉시 응답되도록 함
+let _llmPrecomputing = false;
+async function precomputeTopAnalysis(N = 100) {
+  if (_llmPrecomputing) return;
+  _llmPrecomputing = true;
+  try {
+    // 시가총액 상위 N개 (signal store 우선, 없으면 universe fetch)
+    let targets = [..._signalStore.values()].slice(0, N).map(s => ({ ticker: s.symbol, market: s.market }));
+    if (targets.length < N) {
+      const uni = await fetchTopByMarketCap(N).catch(() => []);
+      targets = uni.slice(0, N);
+    }
+    console.log(`  🤖 상위 ${targets.length}개 LLM 분석 사전 계산 시작 (${(targets.length*16/60).toFixed(0)}분 예상)...`);
+    let done = 0, skipped = 0, failed = 0;
+    for (const t of targets) {
+      if (getC(`ai:${t.ticker}`)) { skipped++; done++; continue; }
+      try {
+        const url = `http://localhost:${PORT}/api/analysis?symbol=${t.ticker}&market=${t.market}`;
+        const r = await fetch(url, { signal: AbortSignal.timeout(45000) });
+        if (r.ok) done++; else failed++;
+      } catch { failed++; }
+      if (done % 20 === 0 && done > 0) console.log(`  🤖 LLM 사전 계산 진행: ${done}/${targets.length} (skip:${skipped} fail:${failed})`);
+      await new Promise(r => setTimeout(r, 500)); // gentle rate limit
+    }
+    console.log(`  ✓ LLM 사전 계산 완료: ${done}/${targets.length} (skip:${skipped} fail:${failed})`);
+  } finally {
+    _llmPrecomputing = false;
+  }
+}
+
+// 관리자 전용: LLM 분석 사전 계산 트리거
+app.get('/api/admin/precompute-llm', async (req, res) => {
+  const N = parseInt(req.query.n) || 100;
+  res.json({ ok: true, message: `LLM 사전 계산 시작 (상위 ${N}개, 백그라운드)` });
+  precomputeTopAnalysis(N).catch(e => console.error('LLM 사전 계산 실패:', e.message));
+});
+
 // 매수/매도 신호: mode(buy|sell) + market(kr/us/all) + signal 필터 + limit=50
 // 매일 00:00 KST에 사전 계산된 _signalStore 에서 즉시 반환 (재계산 없음)
 app.get('/api/buy-signals', (req, res) => {
@@ -3799,6 +3837,10 @@ async function warmupCache() {
         if (_signalStore.size === 0) {
           try { await precomputeAllSignals({ full: false }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
         }
+        // 6. 상위 100개 LLM 분석 사전 계산 (백그라운드, ~25분) — 첫 클릭 즉시 응답 보장
+        setTimeout(() => {
+          precomputeTopAnalysis(100).catch(e => console.log('  ⚠ LLM 사전 계산 실패:', e.message));
+        }, 30_000); // 30초 후 시작 (다른 워밍업 작업과 분리)
       });
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
 
@@ -3809,6 +3851,10 @@ async function warmupCache() {
       catch(e) { console.log('  ⚠ 스크리너 갱신 실패:', e.message); }
       try { await precomputeAllSignals({ full: true }); }
       catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
+      // 시그널 갱신 시 ai: 캐시도 무효화됨 → 상위 100개 LLM 재계산
+      setTimeout(() => {
+        precomputeTopAnalysis(100).catch(e => console.log('  ⚠ LLM 사전 계산 실패:', e.message));
+      }, 60_000);
     };
     const scheduleNext = () => {
       const now = new Date();
