@@ -20,6 +20,35 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const getGrok = () => new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
 
+// Gemini fallback (GROQ 429/실패 시 사용)
+// 모델별 무료 티어 (분당/일별):
+//   gemini-2.5-flash-lite: 15/1000  (가장 높은 한도 — 1차 선택)
+//   gemini-2.0-flash-lite: 30/1500
+//   gemini-2.0-flash:      15/200   (낮은 한도 — 빨리 소진됨)
+async function geminiGenerate(systemPrompt, userPrompt, { temperature = 0, maxTokens = 1024 } = {}) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY not set');
+  const models = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+  let lastErr;
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+      };
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { lastErr = new Error(`Gemini ${model} ${r.status}: ${(await r.text()).slice(0, 120)}`); continue; }
+      const j = await r.json();
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) { lastErr = new Error(`Gemini ${model} empty response`); continue; }
+      return text;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('Gemini all models failed');
+}
+
 app.use(compression({ level: 6 })); // gzip 압축
 app.use(express.static(join(__dirname, 'public'), {
   maxAge: '1d',          // JS/CSS/이미지 24시간 브라우저 캐시
@@ -2590,7 +2619,10 @@ ${newsText || '관련 뉴스 없음'}
         risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
       };
 
+      const sysPrompt = `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.`;
+
       let parsed;
+      // 1차: GROQ (Llama 3.3 70B, 빠르지만 무료 한도 적음)
       try {
         if (!_hasGrok) throw new Error('GROQ_API_KEY not set');
         const msg = await getGrok().chat.completions.create({
@@ -2599,18 +2631,26 @@ ${newsText || '관련 뉴스 없음'}
           seed: hashSeed(symbol),
           max_tokens: 1024,
           messages: [
-            { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.` },
+            { role: 'system', content: sysPrompt },
             { role: 'user', content: prompt }
           ],
         });
-
         const raw = msg.choices[0].message.content;
         const m = raw.match(/\{[\s\S]*\}/);
         if (!m) throw new Error('AI response parsing failed');
         parsed = JSON.parse(m[0]);
-      } catch (llmErr) {
-        console.error('analysis LLM 실패:', symbol, llmErr.message?.slice(0, 120));
-        parsed = { ...fallback };
+      } catch (groqErr) {
+        console.error('analysis GROQ 실패:', symbol, groqErr.message?.slice(0, 120));
+        // 2차: Gemini (무료 한도 GROQ보다 훨씬 큼 — 모델 자동 fallback)
+        try {
+          const raw = await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 1024 });
+          const m = raw.match(/\{[\s\S]*\}/);
+          if (!m) throw new Error('Gemini response parsing failed');
+          parsed = JSON.parse(m[0]);
+        } catch (gemErr) {
+          console.error('analysis Gemini 실패:', symbol, gemErr.message?.slice(0, 120));
+          parsed = { ...fallback };
+        }
       }
       // AI signal/confidence는 결정론적 결과로 덮어쓰기
       parsed.signal = detSignal;
