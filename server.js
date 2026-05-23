@@ -287,7 +287,9 @@ function _pyExec(script, timeout=30000) {
   return new Promise((res,rej)=>{
     execFile('python3',['-c',script],{maxBuffer:10e6,timeout},(err,out,serr)=>{
       if(err) return rej(new Error(serr.split('\n').filter(Boolean).pop()||err.message));
-      try{res(JSON.parse(out));}catch{rej(new Error('yfinance: invalid JSON: '+out.slice(0,80)));}
+      // Python json.dumps outputs NaN/Infinity which are invalid JSON — replace with null
+      const clean = out.replace(/\bNaN\b/g,'null').replace(/\bInfinity\b/g,'null').replace(/-Infinity\b/g,'null');
+      try{res(JSON.parse(clean));}catch{rej(new Error('yfinance: invalid JSON: '+out.slice(0,80)));}
     });
   });
 }
