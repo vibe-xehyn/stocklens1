@@ -2449,9 +2449,51 @@ else:
 // AI 분석
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/analysis', async (req, res) => {
-  const { symbol, market } = req.query;
+  const { symbol, market, quick } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   const _hasGrok = !!process.env.GROQ_API_KEY;
+  const isKr = market === 'kr';
+
+  // ── quick=1: 결정론적 데이터만 즉시 반환 (LLM 호출 생략, ~50ms) ──
+  // 프런트는 quick으로 팩터 카드 먼저 렌더링 후, 전체 분석은 백그라운드로 별도 요청
+  if (quick === '1') {
+    try {
+      let sig = _signalStore.get(symbol);
+      if (!sig) {
+        // 캐시된 ai:${symbol}이 있으면 거기서 가져오기 (이전에 LLM까지 호출된 적 있는 경우)
+        const aiCached = getC(`ai:${symbol}`);
+        if (aiCached) return res.json(aiCached);
+        // store에 없고 캐시도 없음 → 최소 데이터로 즉시 계산
+        const [techR, quoteR, flowR] = await Promise.allSettled([
+          getTechnicals(symbol, isKr),
+          (async () => {
+            const cq = getC(`q:${symbol}`);
+            if (cq) return cq;
+            if (isKr) { const [q,fin]=await Promise.all([krQuote(symbol),krFinancials(symbol)]); return {...q,...fin}; }
+            return usQuote(symbol);
+          })(),
+          getFlowData(symbol, isKr),
+        ]);
+        const t = techR.status==='fulfilled'?techR.value:{};
+        const q = quoteR.status==='fulfilled'?quoteR.value:{};
+        const flow = flowR.status==='fulfilled'?flowR.value:{};
+        sig = computeSignal(t, q, flow, {});
+        sig.symbol = symbol; sig.market = isKr?'kr':'us';
+        _signalStore.set(symbol, sig);
+      }
+      const reasonStr = sig.reasons?.length ? sig.reasons.slice(0,8).join(', ') : '특이사항 없음';
+      return res.json({
+        signal: sig.signal, confidence: sig.confidence, score: sig.score,
+        breakdown: sig.breakdown, reasons: sig.reasons,
+        price_move: '', // quick 모드: 비워둠 (전체 호출에서 채워짐)
+        summary: `종합 점수 ${sig.score}점 기준 ${sig.signal} 의견입니다. ${reasonStr}`,
+        technical: '', fundamental: '', flow: '', sentiment: '', risk: '',
+        _quick: true,
+      });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
 
   try {
     const data = await cached(`ai:${symbol}`, 86400_000, async () => {

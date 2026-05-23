@@ -931,7 +931,6 @@ async function loadAndRenderMain(def) {
     // Load all async data in parallel
     const [news] = await Promise.all([
       api(`/api/news?symbol=${def.ticker}&market=${def.market}`).catch(() => []),
-      loadAIAnalysis(def),
       api(`/api/flow?symbol=${def.ticker}&market=${def.market}`).then(d => {
         const el = document.getElementById('flowContainer');
         if (el) el.innerHTML = renderFlowHTML(d, def.market === 'us');
@@ -953,9 +952,17 @@ async function loadAndRenderMain(def) {
         const el = document.getElementById('peersContainer');
         if (el) el.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:8px">비교 데이터 없음 (${e?.message||'unknown'})</div>`;
       }),
-      api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(d => {
+      // 1단계: quick=1로 결정론적 팩터 데이터 즉시 가져오기 (~50ms)
+      api(`/api/analysis?symbol=${def.ticker}&market=${def.market}&quick=1`).then(d => {
         const el = document.getElementById('factorContainer');
         if (el) el.innerHTML = renderFactorHTML(d.breakdown, d.score, d.signal, d.reasons);
+        // AI 카드도 quick 결과로 즉시 표시
+        renderAICardQuick(def, d);
+        // 2단계: 백그라운드로 전체 LLM 분석 호출 → 도착 시 AI 카드 narrative 업데이트
+        api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(full => {
+          analysisCache[def.ticker] = { data: full, ts: Date.now() };
+          renderAICardFull(def, full);
+        }).catch(() => {});
       }).catch(() => {
         const el = document.getElementById('factorContainer');
         if (el) el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">팩터 데이터 없음</div>';
@@ -1504,72 +1511,65 @@ function renderFlowHTML(d, isUs) {
 }
 
 // ── AI 분석 ───────────────────────────────────────────────────────────────────
-async function loadAIAnalysis(def) {
+// AI 카드 렌더링 (quick과 full 공용 — full은 narrative 채워서 추가 표시)
+function renderAICard(def, data, { loadingNarrative = false } = {}) {
   const el = document.getElementById('aiCard');
-  if (!el) return;
-  try {
-    const cached = analysisCache[def.ticker];
-    const data = (cached && Date.now() - cached.ts < 10 * 60 * 1000)
-      ? cached.data
-      : await api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`);
-    analysisCache[def.ticker] = { data, ts: Date.now() };
-    const q = quoteCache[def.id] || {};
-    const up = (q.changePct ?? 0) >= 0;
-    const sigClass = {
-      '강력매수': 'signal-strong-buy', '매수': 'signal-buy', '약매수': 'signal-weak-buy',
-      '중립': 'signal-neutral',
-      '약매도': 'signal-weak-sell', '매도': 'signal-sell', '강력매도': 'signal-strong-sell'
-    }[data.signal] || 'signal-neutral';
-    const sigIcon = {
-      '강력매수': '▲▲', '매수': '▲', '약매수': '△',
-      '중립': '◆',
-      '약매도': '▽', '매도': '▼', '강력매도': '▼▼'
-    }[data.signal] || '◆';
-    const sigSub = {
-      '강력매수': '강한 매수 신호 — 적극 매수 고려',
-      '매수': '매수 우위 — 분할 매수 고려',
-      '약매수': '소폭 매수 우위 — 소량 진입 고려',
-      '중립': '관망 — 추가 신호 확인 후 진입',
-      '약매도': '소폭 매도 우위 — 신규 진입 자제',
-      '매도': '매도 우위 — 비중 축소 고려',
-      '강력매도': '강한 매도 신호 — 손절/매도 고려'
-    }[data.signal] || '관망';
-    const confColor = data.confidence >= 70 ? '#22c55e' : data.confidence >= 50 ? '#f59e0b' : '#ef4444';
-    el.innerHTML = `
-      <div class="ai-header">
-        <div class="ai-title">AI 투자 의견</div>
-        <div class="ai-signal">
-          <div>
-            <span class="signal-pill ${sigClass}">${sigIcon} ${data.signal}</span>
-            <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px">${sigSub}</div>
-          </div>
-          <div class="confidence-bar-wrap">
-            <div class="confidence-label"><span>확신도</span><span>${data.confidence}%</span></div>
-            <div class="confidence-track"><div class="confidence-fill" style="width:${data.confidence}%;background:${confColor}"></div></div>
-          </div>
+  if (!el || !data) return;
+  const q = quoteCache[def.id] || {};
+  const up = (q.changePct ?? 0) >= 0;
+  const sigClass = {
+    '강력매수': 'signal-strong-buy', '매수': 'signal-buy', '약매수': 'signal-weak-buy',
+    '중립': 'signal-neutral',
+    '약매도': 'signal-weak-sell', '매도': 'signal-sell', '강력매도': 'signal-strong-sell'
+  }[data.signal] || 'signal-neutral';
+  const sigIcon = {
+    '강력매수': '▲▲', '매수': '▲', '약매수': '△', '중립': '◆',
+    '약매도': '▽', '매도': '▼', '강력매도': '▼▼'
+  }[data.signal] || '◆';
+  const sigSub = {
+    '강력매수': '강한 매수 신호 — 적극 매수 고려',
+    '매수': '매수 우위 — 분할 매수 고려',
+    '약매수': '소폭 매수 우위 — 소량 진입 고려',
+    '중립': '관망 — 추가 신호 확인 후 진입',
+    '약매도': '소폭 매도 우위 — 신규 진입 자제',
+    '매도': '매도 우위 — 비중 축소 고려',
+    '강력매도': '강한 매도 신호 — 손절/매도 고려'
+  }[data.signal] || '관망';
+  const confColor = data.confidence >= 70 ? '#22c55e' : data.confidence >= 50 ? '#f59e0b' : '#ef4444';
+  const loadingBadge = loadingNarrative
+    ? `<span style="font-size:10px;color:var(--muted);margin-left:8px"><span class="spinner" style="display:inline-block;width:10px;height:10px;vertical-align:middle"></span> 상세 분석 생성 중...</span>` : '';
+  el.innerHTML = `
+    <div class="ai-header">
+      <div class="ai-title">AI 투자 의견${loadingBadge}</div>
+      <div class="ai-signal">
+        <div>
+          <span class="signal-pill ${sigClass}">${sigIcon} ${data.signal}</span>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px">${sigSub}</div>
+        </div>
+        <div class="confidence-bar-wrap">
+          <div class="confidence-label"><span>확신도</span><span>${data.confidence}%</span></div>
+          <div class="confidence-track"><div class="confidence-fill" style="width:${data.confidence}%;background:${confColor}"></div></div>
         </div>
       </div>
-      ${data.price_move ? `
-      <div style="padding:10px 14px;border-radius:8px;margin-bottom:12px;line-height:1.65;
-        background:${up?'rgba(34,197,94,0.07)':'rgba(239,68,68,0.07)'};font-size:14px;
-        border-left:3px solid ${up?'var(--green)':'var(--red)'};color:var(--text)">
-        <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'▲ 상승':'▼ 하락'} 원인</span>&nbsp;
-        ${data.price_move}
-      </div>` : ''}
-      <div class="ai-summary">${data.summary}</div>
-      <div class="ai-breakdown">
-        ${data.technical ? `<div class="ai-reason"><div class="ai-reason-title">기술적 분석</div><div class="ai-reason-text">${data.technical}</div></div>` : ''}
-        ${data.fundamental ? `<div class="ai-reason"><div class="ai-reason-title">펀더멘탈</div><div class="ai-reason-text">${data.fundamental}</div></div>` : ''}
-        ${data.flow ? `<div class="ai-reason"><div class="ai-reason-title">수급/주주</div><div class="ai-reason-text">${data.flow}</div></div>` : ''}
-        ${data.sentiment ? `<div class="ai-reason"><div class="ai-reason-title">뉴스/심리</div><div class="ai-reason-text">${data.sentiment}</div></div>` : ''}
-        ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
-      </div>`;
-  } catch(e) {
-    if (el) el.innerHTML = `
-      <div class="ai-header"><div class="ai-title">AI 투자 의견</div></div>
-      <div class="ai-error">${e.message.includes('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY 환경변수를 설정해주세요.' : 'AI 분석을 불러올 수 없습니다: ' + e.message}</div>`;
-  }
+    </div>
+    ${data.price_move ? `
+    <div style="padding:10px 14px;border-radius:8px;margin-bottom:12px;line-height:1.65;
+      background:${up?'rgba(34,197,94,0.07)':'rgba(239,68,68,0.07)'};font-size:14px;
+      border-left:3px solid ${up?'var(--green)':'var(--red)'};color:var(--text)">
+      <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'▲ 상승':'▼ 하락'} 원인</span>&nbsp;
+      ${data.price_move}
+    </div>` : ''}
+    <div class="ai-summary">${data.summary || ''}</div>
+    <div class="ai-breakdown">
+      ${data.technical ? `<div class="ai-reason"><div class="ai-reason-title">기술적 분석</div><div class="ai-reason-text">${data.technical}</div></div>` : ''}
+      ${data.fundamental ? `<div class="ai-reason"><div class="ai-reason-title">펀더멘탈</div><div class="ai-reason-text">${data.fundamental}</div></div>` : ''}
+      ${data.flow ? `<div class="ai-reason"><div class="ai-reason-title">수급/주주</div><div class="ai-reason-text">${data.flow}</div></div>` : ''}
+      ${data.sentiment ? `<div class="ai-reason"><div class="ai-reason-title">뉴스/심리</div><div class="ai-reason-text">${data.sentiment}</div></div>` : ''}
+      ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
+    </div>`;
 }
+function renderAICardQuick(def, data) { renderAICard(def, data, { loadingNarrative: true }); }
+function renderAICardFull(def, data)  { renderAICard(def, data, { loadingNarrative: false }); }
 
 function newsHTML(news) {
   if (!news.length) return '<div style="color:var(--muted);font-size:13px;padding:16px 0">뉴스를 불러올 수 없습니다.</div>';
