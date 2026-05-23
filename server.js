@@ -3433,10 +3433,19 @@ async function precomputeAllSignals(opts = {}) {
     try {
       // AI 분석 캐시 초기화 (재계산 시 최신 신호 반영)
       for (const k of _c.keys()) { if (k.startsWith('ai:')) _c.delete(k); }
-      const universe = await fetchTopByMarketCap(1000);
+      let universe = await fetchTopByMarketCap(1000);
+      const krCount = universe.filter(u => u.market === 'kr').length;
       if (!universe.length) {
         console.log('  ⚠ 시가총액 랭킹 비어있음 — 시그널 계산 중단');
         return;
+      }
+      // KR 데이터가 너무 적으면 (rate limit 등) 캐시 무효화 후 재조회
+      if (krCount < 200) {
+        console.log(`  ⚠ KR 유니버스 너무 작음 (${krCount}개) — 재조회 중...`);
+        _c.delete('topMcap:1000');
+        await new Promise(r => setTimeout(r, 5000));
+        universe = await fetchTopByMarketCap(1000);
+        console.log(`  ✓ 재조회 결과: KR ${universe.filter(u=>u.market==='kr').length} / US ${universe.filter(u=>u.market==='us').length}`);
       }
 
       // full모드(자정)는 기술지표+flow 실제 API 호출 → 동시성 낮춰 서버 보호
