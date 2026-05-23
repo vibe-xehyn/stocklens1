@@ -3474,6 +3474,12 @@ async function precomputeAllSignals(opts = {}) {
   return _signalsComputing;
 }
 
+// 관리자 전용: 시그널 강제 재계산
+app.get('/api/admin/recompute-signals', async (req, res) => {
+  res.json({ ok: true, message: '시그널 재계산 시작 (백그라운드)' });
+  precomputeAllSignals({ full: true }).catch(e => console.error('강제 재계산 실패:', e.message));
+});
+
 // 매수/매도 신호: mode(buy|sell) + market(kr/us/all) + signal 필터 + limit=50
 // 매일 00:00 KST에 사전 계산된 _signalStore 에서 즉시 반환 (재계산 없음)
 app.get('/api/buy-signals', (req, res) => {
