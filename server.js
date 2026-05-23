@@ -2140,15 +2140,21 @@ function calcTechnicalsJS(bars) {
 
 // 통합: yfinance 우선, 실패 시 NAVER 차트 + JS 계산으로 폴백
 async function getTechnicals(symbol, isKr) {
+  const cacheKey = `tech:${symbol}`;
+  const cached = getC(cacheKey);
+  if (cached) return cached;
   const yfticker = isKr ? symbol + '.KS' : symbol;
-  try { return await calcTechnicalsYF(yfticker); } catch {}
-  // 폴백: 6개월 OHLC 차트
-  try {
-    const bars = isKr ? await naverKrItemChart(symbol, '6mo') : await naverUsChart(symbol, '6mo');
-    const t = calcTechnicalsJS(bars);
-    if (t) return t;
-  } catch {}
-  return {};
+  let result;
+  try { result = await calcTechnicalsYF(yfticker); } catch {}
+  if (!result) {
+    try {
+      const bars = isKr ? await naverKrItemChart(symbol, '6mo') : await naverUsChart(symbol, '6mo');
+      result = calcTechnicalsJS(bars);
+    } catch {}
+  }
+  result = result || {};
+  if (Object.keys(result).length > 0) setC(cacheKey, result, 86_400_000); // 24h 캐시
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
