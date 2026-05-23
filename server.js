@@ -2625,44 +2625,44 @@ ${newsText || '관련 뉴스 없음'}
       const sysPrompt = `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.`;
 
       let parsed;
-      // 1차: GROQ (Llama 3.3 70B, 빠르지만 무료 한도 적음)
+      // 1차: Gemini (키1 → 키2, 각 키별 3개 모델 자동 시도 — 무료 한도 가장 큼)
       try {
-        if (!_hasGrok) throw new Error('GROQ_API_KEY not set');
-        const msg = await getGrok().chat.completions.create({
-          model: 'llama-3.3-70b-versatile',
-          temperature: 0,
-          seed: hashSeed(symbol),
-          max_tokens: 1024,
-          messages: [
-            { role: 'system', content: sysPrompt },
-            { role: 'user', content: prompt }
-          ],
-        });
-        const raw = msg.choices[0].message.content;
-        const m = raw.match(/\{[\s\S]*\}/);
-        if (!m) throw new Error('AI response parsing failed');
-        parsed = JSON.parse(m[0]);
-      } catch (groqErr) {
-        console.error('analysis GROQ 실패:', symbol, groqErr.message?.slice(0, 120));
-        // 2차: Gemini (무료 한도 GROQ보다 훨씬 큼 — 모델 자동 fallback)
+        const raw = await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 });
+        // responseMimeType=application/json이면 raw 자체가 JSON
+        let jsonStr = raw.trim();
+        if (!jsonStr.startsWith('{')) {
+          const m = jsonStr.match(/\{[\s\S]*\}/);
+          if (!m) throw new Error(`Gemini text not JSON: ${raw.slice(0, 100)}`);
+          jsonStr = m[0];
+        }
+        // 잘린 JSON 복구 시도: 마지막 } 까지만 사용
+        try { parsed = JSON.parse(jsonStr); }
+        catch {
+          const lastBrace = jsonStr.lastIndexOf('}');
+          if (lastBrace > 0) parsed = JSON.parse(jsonStr.slice(0, lastBrace + 1));
+          else throw new Error('Gemini JSON parse failed');
+        }
+      } catch (gemErr) {
+        console.error('analysis Gemini 실패:', symbol, gemErr.message?.slice(0, 120));
+        // 2차: GROQ (Llama 3.3 70B) — Gemini 전체 한도 초과 시 마지막 LLM 시도
         try {
-          const raw = await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 });
-          // responseMimeType=application/json이면 raw 자체가 JSON
-          let jsonStr = raw.trim();
-          if (!jsonStr.startsWith('{')) {
-            const m = jsonStr.match(/\{[\s\S]*\}/);
-            if (!m) throw new Error(`Gemini text not JSON: ${raw.slice(0, 100)}`);
-            jsonStr = m[0];
-          }
-          // 잘린 JSON 복구 시도: 마지막 } 까지만 사용
-          try { parsed = JSON.parse(jsonStr); }
-          catch {
-            const lastBrace = jsonStr.lastIndexOf('}');
-            if (lastBrace > 0) parsed = JSON.parse(jsonStr.slice(0, lastBrace + 1));
-            else throw new Error('Gemini JSON parse failed');
-          }
-        } catch (gemErr) {
-          console.error('analysis Gemini 실패:', symbol, gemErr.message?.slice(0, 120));
+          if (!_hasGrok) throw new Error('GROQ_API_KEY not set');
+          const msg = await getGrok().chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0,
+            seed: hashSeed(symbol),
+            max_tokens: 1024,
+            messages: [
+              { role: 'system', content: sysPrompt },
+              { role: 'user', content: prompt }
+            ],
+          });
+          const raw = msg.choices[0].message.content;
+          const m = raw.match(/\{[\s\S]*\}/);
+          if (!m) throw new Error('GROQ response parsing failed');
+          parsed = JSON.parse(m[0]);
+        } catch (groqErr) {
+          console.error('analysis GROQ 실패:', symbol, groqErr.message?.slice(0, 120));
           parsed = { ...fallback };
         }
       }
