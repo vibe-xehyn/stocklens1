@@ -2682,67 +2682,77 @@ app.get('/api/peers', async (req, res) => {
     const data = await cached(`peers:${symbol}`, 3600_000, async () => {
       const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
       const py = `
-import yfinance as yf, json
+import yfinance as yf, json, warnings
+warnings.filterwarnings('ignore')
 
 t = yf.Ticker('${yfticker}')
 info = t.info
+fi = t.fast_info
 sector = info.get('sector','')
 industry = info.get('industry','')
 
-# 동종 업계 경쟁사 (yfinance recommendations로 유사 종목 찾기)
 peer_map = {
-    # ── 반도체 ──
     'Semiconductors': ['NVDA','AMD','INTC','AVGO','QCOM','TSM','MU','000660.KS','005930.KS'],
     'Semiconductor Equipment & Materials': ['AMAT','KLAC','LRCX','ASML','TER'],
-    # ── 소프트웨어 / 인터넷 ──
     'Software—Application': ['MSFT','CRM','ADBE','NOW','WDAY','INTU','ORCL'],
     'Software—Infrastructure': ['MSFT','ORCL','PANW','CRWD','ZS'],
     'Software': ['MSFT','ORCL','CRM','ADBE','SAP','NOW','WDAY','INTU'],
     'Internet Content & Information': ['GOOGL','META','NFLX','035420.KS','035720.KS','BIDU'],
     'Internet': ['GOOGL','META','AMZN','NFLX','035420.KS','035720.KS'],
-    # ── 전자/가전 ──
     'Consumer Electronics': ['AAPL','SONY','005930.KS','000660.KS','066570.KS'],
     'Electronic Components': ['AVGO','TXN','MCHP','066570.KS','005930.KS'],
-    # ── 전기차 / 자동차 ──
     'Auto Manufacturers': ['TSLA','TM','F','GM','005380.KS','000270.KS','HMC'],
     'Automotive': ['TSLA','TM','F','GM','005380.KS','000270.KS'],
-    # ── 배터리 / 2차전지 ──
     'Specialty Chemicals': ['373220.KS','006400.KS','051910.KS','LTHM','ALB'],
     'Electrical Equipment & Parts': ['373220.KS','006400.KS','012450.KS','ENPH','FSLR'],
-    # ── 금융 ──
     'Banks—Diversified': ['JPM','BAC','WFC','GS','105560.KS','055550.KS','086790.KS'],
     'Banks—Regional': ['105560.KS','055550.KS','086790.KS','JPM','BAC'],
     'Financial Services': ['JPM','GS','MS','V','MA','105560.KS'],
     'Finance': ['JPM','BAC','WFC','GS','MS','C'],
-    # ── 바이오 / 제약 ──
     'Biotechnology': ['AMGN','GILD','REGN','VRTX','068270.KS','207940.KS'],
     'Drug Manufacturers—General': ['LLY','JNJ','PFE','ABBV','MRK','BMY'],
     'Pharma': ['LLY','JNJ','PFE','ABBV','MRK','BMY','GILD'],
-    # ── 에너지 ──
     'Oil & Gas Integrated': ['XOM','CVX','COP','BP','SHEL'],
     'Energy': ['XOM','CVX','COP','BP','SHEL'],
-    # ── 유통 / 이커머스 ──
     'Internet Retail': ['AMZN','BABA','JD','SHOP','WMT','EBAY'],
     'E-commerce': ['AMZN','BABA','JD','EBAY','SHOP','WMT'],
-    # ── 통신 ──
     'Telecom Services': ['T','VZ','TMUS','S'],
     'Communication Services': ['GOOGL','META','NFLX','T','VZ'],
-    # ── 철강 / 소재 ──
     'Steel': ['005490.KS','NUE','X','STLD'],
     'default': []
 }
 
 peers_list = peer_map.get(industry, peer_map.get(sector, []))
-# 현재 종목 제외
-main = '${yfticker}'.replace('.KS','')
-peers_list = [p for p in peers_list if p.replace('.KS','') != main][:6]
+main_id = '${yfticker}'.replace('.KS','')
+peers_list = [p for p in peers_list if p.replace('.KS','') != main_id][:6]
 
-if not peers_list:
-    # yfinance similar_companies
+# 배치 가격 조회 (한 번에 모두)
+all_tickers = peers_list + ['${yfticker}']
+try:
+    dl = yf.download(all_tickers, period='2d', auto_adjust=True, progress=False, group_by='ticker')
+except:
+    dl = None
+
+def get_price_chg(ticker):
     try:
-        sc = getattr(t, 'similar_companies', None) or []
-        peers_list = list(sc)[:6]
+        if dl is not None and len(all_tickers) > 1:
+            col = dl[ticker]['Close'] if ticker in dl else None
+        elif dl is not None:
+            col = dl['Close']
+        else:
+            col = None
+        if col is not None and len(col) >= 1:
+            p = float(col.iloc[-1])
+            pv = float(col.iloc[-2]) if len(col) >= 2 else p
+            return round(p,2), round((p-pv)/pv*100 if pv else 0, 2)
     except: pass
+    try:
+        fi2 = yf.Ticker(ticker).fast_info
+        p = fi2.last_price or 0
+        pv = fi2.regular_market_previous_close or p
+        return round(p,2), round((p-pv)/pv*100 if pv else 0, 2)
+    except: pass
+    return 0, 0
 
 result = []
 for peer in peers_list:
@@ -2750,15 +2760,11 @@ for peer in peers_list:
         pt = yf.Ticker(peer)
         pi = pt.info
         pfi = pt.fast_info
-        h = pt.history(period='2d')
-        price = float(h['Close'].iloc[-1]) if len(h) > 0 else (pfi.last_price or 0)
-        prev  = float(h['Close'].iloc[-2]) if len(h) > 1 else price
-        chg   = (price-prev)/prev*100 if prev else 0
+        price, chg = get_price_chg(peer)
         result.append({
             'ticker': peer,
             'name': pi.get('shortName') or pi.get('longName') or peer,
-            'price': round(price, 2),
-            'changePct': round(chg, 2),
+            'price': price, 'changePct': chg,
             'per': pi.get('trailingPE'),
             'forwardPer': pi.get('forwardPE'),
             'pbr': pi.get('priceToBook'),
@@ -2770,24 +2776,20 @@ for peer in peers_list:
         })
     except: pass
 
-# 현재 종목 데이터도 포함
-h0 = t.history(period='2d')
-p0 = float(h0['Close'].iloc[-1]) if len(h0)>0 else 0
-pv0 = float(h0['Close'].iloc[-2]) if len(h0)>1 else p0
-chg0 = (p0-pv0)/pv0*100 if pv0 else 0
-main = {
-    'ticker': '${yfticker}'.replace('.KS',''),
+p0, chg0 = get_price_chg('${yfticker}')
+main_data = {
+    'ticker': main_id,
     'name': info.get('shortName') or info.get('longName') or '',
-    'price': round(p0,2), 'changePct': round(chg0,2),
+    'price': p0, 'changePct': chg0,
     'per': info.get('trailingPE'), 'pbr': info.get('priceToBook'),
     'roe': round((info.get('returnOnEquity') or 0)*100,1) or None,
     'revenueGrowth': round((info.get('revenueGrowth') or 0)*100,1) or None,
     'profitMargin': round((info.get('profitMargins') or 0)*100,1) or None,
     'marketCap': info.get('marketCap'),
 }
-print(json.dumps({'sector': sector, 'industry': industry, 'main': main, 'peers': result}, ensure_ascii=False, default=str))
+print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'peers': result}, ensure_ascii=False, default=str))
 `;
-      const raw = await yfRun(py).catch(() => ({ sector:'', industry:'', peers:[] }));
+      const raw = await _pyExecLong(py).catch(() => ({ sector:'', industry:'', peers:[] }));
       // KR 종목: 스크리너 캐시로 PER/PBR 보완 (NAVER 데이터가 더 정확)
       if (market === 'kr') {
         const sc = getC('screener') || {};
