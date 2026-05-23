@@ -292,7 +292,7 @@ function _pyExec(script, timeout=30000) {
   });
 }
 
-function _pyExecLong(script) { return _pyExec(script, 120000); }
+function _pyExecLong(script) { return _pyExec(script, 300000); } // 5분 (US 스크리너 200개 처리)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stooq — US quotes (sidebar + indices, reliable/fast)
