@@ -2799,7 +2799,7 @@ main_data = {
 }
 print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'peers': result}, ensure_ascii=False, default=str))
 `;
-      const raw = await _pyExecLong(py).catch(() => ({ sector:'', industry:'', peers:[] }));
+      const raw = await _pyExecLong(py).catch(e => { console.error('peers 실패:', symbol, e.message?.slice(0,100)); return { sector:'', industry:'', peers:[] }; });
       // KR 종목: 스크리너 캐시로 PER/PBR 보완 (NAVER 데이터가 더 정확)
       if (market === 'kr') {
         const sc = getC('screener') || {};
@@ -2816,10 +2816,15 @@ print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'pe
         if (raw.main) fill(raw.main);
         if (raw.peers) raw.peers = raw.peers.map(fill);
       }
+      if (!raw.peers?.length) throw new Error('peers empty'); // 빈 결과 캐시 방지
       return raw;
     });
     res.json(data);
-  } catch(e) { res.json({ sector:'', industry:'', peers:[] }); }
+  } catch(e) {
+    // 캐시에서 지워서 다음 요청 시 재시도
+    _c.delete(`peers:${symbol}`);
+    res.json({ sector:'', industry:'', peers:[] });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
