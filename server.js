@@ -331,9 +331,40 @@ async function krQuote(ticker) {
     fetchJSON(`https://m.stock.naver.com/api/stock/${ticker}/basic`,nv).catch(()=>({})),
     fetchJSON(`https://polling.finance.naver.com/api/realtime/domestic/stock/${ticker}`,pv).catch(()=>({datas:[]})),
   ]);
-  const rt=rtRes.datas?.[0]??{}, info=basic.stockTradingInfo??{};
-  // 두 API 모두 실패한 경우 (price 없음) → 예외 발생
-  if (!rt.closePrice && !basic.closePrice) throw new Error('NAVER 주가 데이터 없음');
+  let rt=rtRes.datas?.[0]??{}, info=basic.stockTradingInfo??{};
+  // NAVER 양쪽 모두 실패 시 → yfinance fallback (out-of-universe 종목 보호)
+  if (!rt.closePrice && !basic.closePrice) {
+    try {
+      const yfQuote = await yfRun(`
+import yfinance as yf, json
+t = yf.Ticker('${ticker}.KS')
+h = t.history(period='2d')
+fi = t.fast_info
+if len(h) >= 1:
+    price = float(h['Close'].iloc[-1])
+    prev  = float(h['Close'].iloc[-2]) if len(h) >= 2 else price
+    chg   = price - prev
+    pct   = (chg / prev * 100) if prev else 0
+    print(json.dumps({'price': price, 'change': chg, 'changePct': pct,
+                      'open': float(h['Open'].iloc[-1]), 'high': float(h['High'].iloc[-1]),
+                      'low': float(h['Low'].iloc[-1]), 'volume': int(h['Volume'].iloc[-1]),
+                      'name': (t.info.get('longName') or '${ticker}'),
+                      'high52': fi.year_high, 'low52': fi.year_low, 'marketCap': fi.market_cap}))
+else:
+    print(json.dumps({}))
+`);
+      if (yfQuote.price) {
+        rt = { closePrice: String(yfQuote.price), compareToPreviousClosePrice: String(yfQuote.change),
+               fluctuationsRatioRaw: String(yfQuote.changePct), openPrice: String(yfQuote.open),
+               highPrice: String(yfQuote.high), lowPrice: String(yfQuote.low),
+               accumulatedTradingVolumeRaw: String(yfQuote.volume), stockName: yfQuote.name };
+        info.high52WeeksPrice = String(yfQuote.high52 || 0);
+        info.low52WeeksPrice = String(yfQuote.low52 || 0);
+        info.marketValue = String(yfQuote.marketCap || 0);
+        basic.stockName = yfQuote.name;
+      } else throw new Error('NAVER 및 yfinance 모두 실패');
+    } catch (e) { throw new Error('주가 데이터 없음: ' + e.message); }
+  }
 
   // yfinance로 펀더멘탈 보완 (.KS 접미사)
   const yfPy = `
@@ -1199,7 +1230,7 @@ except: pass
 
 print(json.dumps(result, ensure_ascii=False, default=str))
 `;
-  return yfRun(py);
+  return _pyExecLong(py);
 }
 
 app.get('/api/flow', async (req, res) => {
@@ -1207,7 +1238,8 @@ app.get('/api/flow', async (req, res) => {
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   try {
     const data = await cached(`flow:${symbol}`, 1800_000, async () => {
-      try { return await getFlowData(symbol, market === 'kr'); } catch { return {}; }
+      try { return await getFlowData(symbol, market === 'kr'); }
+      catch (e) { console.error('flow 실패:', symbol, e.message?.slice(0, 120)); return {}; }
     });
     res.json(data);
   } catch(e) { res.json({}); }
@@ -2374,7 +2406,7 @@ else:
 app.get('/api/analysis', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'GROQ_API_KEY not set' });
+  const _hasGrok = !!process.env.GROQ_API_KEY;
 
   try {
     const data = await cached(`ai:${symbol}`, 86400_000, async () => {
@@ -2529,21 +2561,44 @@ ${newsText || '관련 뉴스 없음'}
       const breakStr = `기술 ${detBreak.technical>=0?'+':''}${detBreak.technical} / 가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth} / 모멘텀 ${detBreak.momentum>=0?'+':''}${detBreak.momentum} / 수급 ${detBreak.flow>=0?'+':''}${detBreak.flow} / 심리 ${detBreak.sentiment>=0?'+':''}${detBreak.sentiment} / 매크로 ${detBreak.macro>=0?'+':''}${detBreak.macro}`;
       const reasonStr = detReasons.length ? detReasons.slice(0,8).join(', ') : '특이사항 없음';
 
-      const msg = await getGrok().chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        temperature: 0,
-        seed: hashSeed(symbol),
-        max_tokens: 1024,
-        messages: [
-          { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.` },
-          { role: 'user', content: prompt }
-        ],
-      });
+      // 결정론적 데이터는 항상 반환 가능한 fallback (LLM 실패해도 팩터 카드 렌더링 보장)
+      const fallback = {
+        signal: detSignal,
+        confidence: detConf,
+        score: detScore,
+        breakdown: detBreak,
+        reasons: detReasons,
+        price_move: '데이터 분석 중입니다.',
+        summary: `종합 점수 ${detScore}점 기준 ${detSignal} 의견입니다. ${reasonStr}`,
+        technical: `기술적 점수 ${detBreak.technical>=0?'+':''}${detBreak.technical}점입니다.`,
+        fundamental: `가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth}점입니다.`,
+        flow: `수급 점수 ${detBreak.flow>=0?'+':''}${detBreak.flow}점입니다.`,
+        sentiment: `심리 점수 ${detBreak.sentiment>=0?'+':''}${detBreak.sentiment}점입니다.`,
+        risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
+      };
 
-      const raw = msg.choices[0].message.content;
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error('AI response parsing failed');
-      const parsed = JSON.parse(m[0]);
+      let parsed;
+      try {
+        if (!_hasGrok) throw new Error('GROQ_API_KEY not set');
+        const msg = await getGrok().chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          temperature: 0,
+          seed: hashSeed(symbol),
+          max_tokens: 1024,
+          messages: [
+            { role: 'system', content: `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.` },
+            { role: 'user', content: prompt }
+          ],
+        });
+
+        const raw = msg.choices[0].message.content;
+        const m = raw.match(/\{[\s\S]*\}/);
+        if (!m) throw new Error('AI response parsing failed');
+        parsed = JSON.parse(m[0]);
+      } catch (llmErr) {
+        console.error('analysis LLM 실패:', symbol, llmErr.message?.slice(0, 120));
+        parsed = { ...fallback };
+      }
       // AI signal/confidence는 결정론적 결과로 덮어쓰기
       parsed.signal = detSignal;
       parsed.confidence = detConf;
@@ -2561,7 +2616,27 @@ ${newsText || '관련 뉴스 없음'}
     });
 
     res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) {
+    console.error('analysis 실패:', req.query.symbol, e.message?.slice(0, 120));
+    _c.delete(`ai:${req.query.symbol}`);
+    // 최후 fallback: 시그널 스토어에서 직접 결정론적 데이터 반환
+    const sym = req.query.symbol;
+    const stored = _signalStore.get(sym);
+    if (stored) {
+      const { signal, confidence, score, breakdown, reasons } = stored;
+      return res.json({
+        signal, confidence, score, breakdown, reasons,
+        price_move: '데이터 분석 중입니다.',
+        summary: `종합 점수 ${score}점 기준 ${signal} 의견입니다.`,
+        technical: '데이터 수집 중입니다.',
+        fundamental: '데이터 수집 중입니다.',
+        flow: '데이터 수집 중입니다.',
+        sentiment: '데이터 수집 중입니다.',
+        risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
+      });
+    }
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
