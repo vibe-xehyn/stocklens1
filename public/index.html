@@ -911,6 +911,7 @@ function filterStocks() { renderSidebar(); }
 
 // ── 메인 렌더링 ───────────────────────────────────────────────────────────────
 async function loadAndRenderMain(def) {
+  window.__curDef = def;
   // ── 진행도 트래커 ─────────────────────────────────────────────
   // 8개 단계: quote, chart, quick(팩터), full(AI상세), news, flow, earnings, peers
   const stages = [
@@ -986,6 +987,13 @@ async function loadAndRenderMain(def) {
     });
     fullP.then(full => {
       if (!full) return;
+      if (full._failed) {
+        // LLM 실패 — 카드를 교체하지 않고 로딩 배지를 에러 메시지로 교체
+        updateAiProgress(0, '');
+        const badge = document.querySelector('#aiCard .ai-title span');
+        if (badge) badge.outerHTML = `<span style="font-size:10px;color:#f59e0b;margin-left:8px">⚠ AI 분석 일시 불가 (API 한도) — <button onclick="fetchAnalysisStream(window.__curDef).then(r=>r&&!r._failed&&renderAICardFull(window.__curDef,r))" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-size:10px;text-decoration:underline;padding:0">재시도</button></span>`;
+        return;
+      }
       analysisCache[def.ticker] = { data: full, ts: Date.now() };
       renderAICardFull(def, full);
     });

@@ -2912,7 +2912,7 @@ ${newsText || '관련 뉴스 없음'}
       risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
     } : null;
     if (isStream) {
-      sse({ progress: 100, stage: '오류 fallback', done: true, result: fb, error: e.message });
+      sse({ progress: 100, stage: '오류 fallback', done: true, result: fb ? { ...fb, _failed: true } : null, error: e.message });
       try { res.end(); } catch {}
       return;
     }
