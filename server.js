@@ -69,6 +69,29 @@ const _c = new Map();
 const getC = k => { const e=_c.get(k); if(!e||Date.now()>e.exp){_c.delete(k);return null;} return e.d; };
 const setC = (k,d,ms) => { _c.set(k,{d,exp:Date.now()+ms}); return d; };
 const cached = async (k,ms,fn) => getC(k) ?? setC(k, await fn(), ms);
+// stale-while-revalidate: 캐시 있으면 즉시 응답 + 백그라운드 갱신, 없으면 await
+const _swrInflight = new Set();
+async function serveSWR(res, key, ttl, fn) {
+  const stale = getC(key);
+  if (stale != null) {
+    res.json(stale);
+    if (!_swrInflight.has(key)) {
+      _swrInflight.add(key);
+      setImmediate(async () => {
+        try { setC(key, await fn(), ttl); } catch {}
+        finally { _swrInflight.delete(key); }
+      });
+    }
+    return;
+  }
+  try {
+    const fresh = await fn();
+    setC(key, fresh, ttl);
+    res.json(fresh);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
 // 만료 키 주기적 정리 (10분마다)
 setInterval(() => { const now = Date.now(); for (const [k,e] of _c) if (now > e.exp) _c.delete(k); }, 600_000);
 
@@ -1031,45 +1054,42 @@ app.get('/api/init', async (_, res) => {
 });
 
 // Full quote — detail view
+async function fetchQuoteData(symbol, market) {
+  if (market === 'kr') {
+    const [q,fin]=await Promise.all([krQuote(symbol),krFinancials(symbol)]);
+    const merged = {...q,...fin};
+    if (!merged.per && fin._trailingEps && merged.price) {
+      merged.per = parseFloat((merged.price / fin._trailingEps).toFixed(1));
+      merged.eps = fin._trailingEps;
+    }
+    delete merged._trailingEps;
+    return merged;
+  }
+  return usQuote(symbol);
+}
+
 app.get('/api/quote', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  try {
-    const data = await cached(`q:${symbol}`, 60_000, async () => {
-      if (market === 'kr') {
-        const [q,fin]=await Promise.all([krQuote(symbol),krFinancials(symbol)]);
-        const merged = {...q,...fin};
-        // trailing PER 계산: EPS(원) → 현재가로 나눔
-        if (!merged.per && fin._trailingEps && merged.price) {
-          merged.per = parseFloat((merged.price / fin._trailingEps).toFixed(1));
-          merged.eps = fin._trailingEps;
-        }
-        delete merged._trailingEps;
-        return merged;
-      }
-      return usQuote(symbol);
-    });
-    res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  await serveSWR(res, `q:${symbol}`, 60_000, () => fetchQuoteData(symbol, market));
 });
+
+async function fetchChartData(symbol, range, market) {
+  const raw = market==='kr' ? await krChart(symbol,range) : await usChart(symbol,range);
+  const longRange = ['6mo','1y'].includes(range);
+  const fmtOpts = longRange
+    ? { year:'2-digit', month:'short', day:'numeric' }
+    : { month:'short', day:'numeric' };
+  return {
+    labels: raw.map(d=>new Date(d.date).toLocaleDateString('ko', fmtOpts)),
+    data:   raw.map(d=>d.close),
+  };
+}
 
 app.get('/api/chart', async (req, res) => {
   const { symbol, range='1mo', market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  try {
-    const data = await cached(`c:${symbol}:${range}`, 300_000, async () => {
-      const raw = market==='kr' ? await krChart(symbol,range) : await usChart(symbol,range);
-      const longRange = ['6mo','1y'].includes(range);
-      const fmtOpts = longRange
-        ? { year:'2-digit', month:'short', day:'numeric' }
-        : { month:'short', day:'numeric' };
-      return {
-        labels: raw.map(d=>new Date(d.date).toLocaleDateString('ko', fmtOpts)),
-        data:   raw.map(d=>d.close),
-      };
-    });
-    res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  await serveSWR(res, `c:${symbol}:${range}`, 300_000, () => fetchChartData(symbol, range, market));
 });
 
 // US 지수 → NAVER reutersCode 매핑
@@ -1158,10 +1178,7 @@ app.get('/api/rates', async (_, res) => {
 
 app.get('/api/news', async (req, res) => {
   const { symbol, market } = req.query;
-  try {
-    const data = await cached(`n:${symbol}`, 600_000, () => getNews(symbol, market==='kr'));
-    res.json(data);
-  } catch { res.json([]); }
+  return serveSWR(res, `n:${symbol}`, 600_000, () => getNews(symbol, market==='kr'));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1281,13 +1298,10 @@ print(json.dumps(result, ensure_ascii=False, default=str))
 app.get('/api/flow', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  try {
-    const data = await cached(`flow:${symbol}`, 1800_000, async () => {
-      try { return await getFlowData(symbol, market === 'kr'); }
-      catch (e) { console.error('flow 실패:', symbol, e.message?.slice(0, 120)); return {}; }
-    });
-    res.json(data);
-  } catch(e) { res.json({}); }
+  return serveSWR(res, `flow:${symbol}`, 1800_000, async () => {
+    try { return await getFlowData(symbol, market === 'kr'); }
+    catch (e) { console.error('flow 실패:', symbol, e.message?.slice(0, 120)); return {}; }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2765,8 +2779,7 @@ const timeAgo = date => {
 app.get('/api/earnings', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  try {
-    const data = await cached(`earn:${symbol}`, 3600_000, async () => {
+  return serveSWR(res, `earn:${symbol}`, 3600_000, async () => {
       const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
       const py = `
 import yfinance as yf, json, re, math
@@ -2861,9 +2874,7 @@ out = json.dumps(result, ensure_ascii=False, default=str)
 print(re.sub(r'\\bNaN\\b', 'null', out))
 `;
       try { return await _pyExecLong(py); } catch(e) { console.error('earnings 실패:', symbol, e.message?.slice(0,120)); return {}; }
-    });
-    res.json(data);
-  } catch(e) { res.json({}); }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2872,8 +2883,7 @@ print(re.sub(r'\\bNaN\\b', 'null', out))
 app.get('/api/peers', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  try {
-    const data = await cached(`peers:${symbol}`, 3600_000, async () => {
+  return serveSWR(res, `peers:${symbol}`, 3600_000, async () => {
       const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
       const py = `
 import yfinance as yf, json, warnings
@@ -3002,13 +3012,7 @@ print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'pe
       }
       if (!raw.peers?.length) throw new Error('peers empty'); // 빈 결과 캐시 방지
       return raw;
-    });
-    res.json(data);
-  } catch(e) {
-    // 캐시에서 지워서 다음 요청 시 재시도
-    _c.delete(`peers:${symbol}`);
-    res.json({ sector:'', industry:'', peers:[] });
-  }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3708,19 +3712,26 @@ async function precomputeTopAnalysis(N = 100) {
       const uni = await fetchTopByMarketCap(N).catch(() => []);
       targets = uni.slice(0, N);
     }
-    console.log(`  🤖 상위 ${targets.length}개 LLM 분석 사전 계산 시작 (${(targets.length*16/60).toFixed(0)}분 예상)...`);
+    console.log(`  🤖 상위 ${targets.length}개 상세 페이지 사전 계산 시작...`);
     let done = 0, skipped = 0, failed = 0;
+    const endpoints = ['analysis', 'quote', 'flow', 'news', 'earnings', 'peers', 'chart'];
     for (const t of targets) {
-      if (getC(`ai:${t.ticker}`)) { skipped++; done++; continue; }
+      const aiCached = getC(`ai:${t.ticker}`);
+      // 상세 페이지에서 동시 호출되는 모든 엔드포인트를 병렬로 워밍
+      const reqs = endpoints.map(ep => {
+        const qs = ep === 'chart' ? `range=1mo&` : '';
+        const url = `http://localhost:${PORT}/api/${ep}?${qs}symbol=${t.ticker}&market=${t.market}${ep==='analysis'?'':''}`;
+        return fetch(url, { signal: AbortSignal.timeout(60000) }).then(r => r.ok).catch(() => false);
+      });
       try {
-        const url = `http://localhost:${PORT}/api/analysis?symbol=${t.ticker}&market=${t.market}`;
-        const r = await fetch(url, { signal: AbortSignal.timeout(45000) });
-        if (r.ok) done++; else failed++;
+        const results = await Promise.all(reqs);
+        if (results.every(Boolean)) done++; else failed++;
+        if (aiCached) skipped++;
       } catch { failed++; }
-      if (done % 20 === 0 && done > 0) console.log(`  🤖 LLM 사전 계산 진행: ${done}/${targets.length} (skip:${skipped} fail:${failed})`);
-      await new Promise(r => setTimeout(r, 500)); // gentle rate limit
+      if ((done + failed) % 10 === 0 && (done + failed) > 0) console.log(`  🤖 상세 사전 계산 진행: ${done+failed}/${targets.length} (ok:${done} skip:${skipped} fail:${failed})`);
+      await new Promise(r => setTimeout(r, 300)); // gentle rate limit
     }
-    console.log(`  ✓ LLM 사전 계산 완료: ${done}/${targets.length} (skip:${skipped} fail:${failed})`);
+    console.log(`  ✓ 상세 페이지 사전 계산 완료: ${done}/${targets.length} (skip:${skipped} fail:${failed})`);
   } finally {
     _llmPrecomputing = false;
   }
