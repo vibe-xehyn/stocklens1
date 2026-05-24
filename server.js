@@ -355,67 +355,69 @@ function _cleanJson(out) {
   throw new Error('yfinance: invalid JSON: '+out.slice(0,200).replace(/\n/g,' '));
 }
 
-// ── 영구 Python 워커 (yfinance import 1회로 단축) ────────────────────────────
+// ── 영구 Python 워커 풀 (yfinance import 1회로 단축, 병렬성 확보) ──────────
 const PY_WORKER_END = '\n__END__\n';
-let _pyProc = null;
-let _pyBuf = '';
-let _pyReady = false;
-let _pyReadyResolve = null;
-const _pyReadyPromise = new Promise(r => { _pyReadyResolve = r; });
-const _pyPending = new Map();
+const PY_POOL_SIZE = 3;
 let _pyRid = 0;
-function _pySpawn() {
-  if (_pyProc) return;
-  _pyProc = spawn('python3', ['-u', join(__dirname, 'yf_worker.py')], { stdio: ['pipe','pipe','pipe'] });
-  _pyProc.stdout.on('data', chunk => {
-    _pyBuf += chunk.toString('utf8');
-    let idx;
-    while ((idx = _pyBuf.indexOf(PY_WORKER_END)) !== -1) {
-      const msg = _pyBuf.slice(0, idx);
-      _pyBuf = _pyBuf.slice(idx + PY_WORKER_END.length);
-      let obj;
-      try { obj = JSON.parse(msg); } catch { continue; }
-      if (obj.id === '__ready__') {
-        _pyReady = true; _pyReadyResolve();
-        console.log('  ✓ Python 워커 준비 완료');
-        continue;
+class PyWorker {
+  constructor(id) {
+    this.id = id;
+    this.proc = null;
+    this.buf = '';
+    this.ready = false;
+    this.pending = new Map(); // rid → {resolve, reject, timer}
+    this.readyPromise = new Promise(r => { this._readyResolve = r; });
+    this.spawn();
+  }
+  spawn() {
+    this.proc = spawn('python3', ['-u', join(__dirname, 'yf_worker.py')], { stdio: ['pipe','pipe','pipe'] });
+    this.proc.stdout.on('data', chunk => {
+      this.buf += chunk.toString('utf8');
+      let idx;
+      while ((idx = this.buf.indexOf(PY_WORKER_END)) !== -1) {
+        const msg = this.buf.slice(0, idx);
+        this.buf = this.buf.slice(idx + PY_WORKER_END.length);
+        let obj; try { obj = JSON.parse(msg); } catch { continue; }
+        if (obj.id === '__ready__') {
+          this.ready = true; this._readyResolve();
+          console.log(`  ✓ Python 워커 #${this.id} 준비 완료`);
+          continue;
+        }
+        const p = this.pending.get(obj.id);
+        if (!p) continue;
+        this.pending.delete(obj.id);
+        clearTimeout(p.timer);
+        if (obj.ok) { try { p.resolve(_cleanJson(obj.out)); } catch (e) { p.reject(e); } }
+        else p.reject(new Error(obj.error || 'worker error'));
       }
-      const pending = _pyPending.get(obj.id);
-      if (!pending) continue;
-      _pyPending.delete(obj.id);
-      clearTimeout(pending.timer);
-      if (obj.ok) {
-        try { pending.resolve(_cleanJson(obj.out)); }
-        catch (e) { pending.reject(e); }
-      } else {
-        pending.reject(new Error(obj.error || 'worker error'));
-      }
-    }
-  });
-  _pyProc.stderr.on('data', d => process.stderr.write('[pyw] ' + d));
-  _pyProc.on('exit', code => {
-    console.error(`  ⚠ Python 워커 종료 (code=${code}). 5초 후 재시작.`);
-    _pyProc = null; _pyReady = false; _pyBuf = '';
-    // 보류 중 요청들 reject
-    for (const [, p] of _pyPending) { clearTimeout(p.timer); p.reject(new Error('worker died')); }
-    _pyPending.clear();
-    setTimeout(_pySpawn, 5000);
-  });
+    });
+    this.proc.stderr.on('data', d => process.stderr.write(`[pyw#${this.id}] ` + d));
+    this.proc.on('exit', code => {
+      console.error(`  ⚠ Python 워커 #${this.id} 종료 (code=${code}). 5초 후 재시작.`);
+      this.proc = null; this.ready = false; this.buf = '';
+      for (const [, p] of this.pending) { clearTimeout(p.timer); p.reject(new Error('worker died')); }
+      this.pending.clear();
+      this.readyPromise = new Promise(r => { this._readyResolve = r; });
+      setTimeout(() => this.spawn(), 5000);
+    });
+  }
+  load() { return this.pending.size; }
+  async exec(script, timeout) {
+    if (!this.ready) await this.readyPromise;
+    const id = String(++_pyRid);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`python worker timeout (${timeout}ms)`)); }, timeout);
+      this.pending.set(id, { resolve, reject, timer });
+      this.proc.stdin.write(JSON.stringify({ id, script }) + '\n');
+    });
+  }
 }
-_pySpawn();
+const _pyPool = Array.from({ length: PY_POOL_SIZE }, (_, i) => new PyWorker(i + 1));
 
 async function _pyExec(script, timeout = 30000) {
-  if (!_pyReady) await _pyReadyPromise;
-  if (!_pyProc) throw new Error('python worker not running');
-  const id = String(++_pyRid);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      _pyPending.delete(id);
-      reject(new Error(`python worker timeout (${timeout}ms)`));
-    }, timeout);
-    _pyPending.set(id, { resolve, reject, timer });
-    _pyProc.stdin.write(JSON.stringify({ id, script }) + '\n');
-  });
+  // 가장 한가한 워커 선택 (pending 수 기준)
+  const w = _pyPool.reduce((a, b) => (a.load() <= b.load() ? a : b));
+  return w.exec(script, timeout);
 }
 
 function _pyExecLong(script) { return _pyExec(script, 300000); } // 5분 (US 스크리너 등 대용량)
