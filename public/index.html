@@ -2867,6 +2867,7 @@ function requestNotificationPermission() {
 }
 
 async function selectStock(id, fromPopState = false) {
+  if (!id || id === 'undefined' || id === 'null') return;
   isHomePage = false;
   // STOCK_DEFS에 없으면 ticker 기반으로 임시 def 생성 (스크리너/매수신호 종목)
   let def = STOCK_DEF(id);
