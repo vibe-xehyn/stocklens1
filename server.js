@@ -2866,7 +2866,9 @@ ${newsText || '관련 뉴스 없음'}
           parsed = JSON.parse(m[0]);
         } catch (groqErr) {
           console.error('analysis GROQ 실패:', symbol, groqErr.message?.slice(0, 120));
-          parsed = { ...fallback };
+          // LLM 완전 실패 → cached() 안에서 throw해서 결과를 캐시에 저장하지 않음
+          // 외부 catch가 임시 fallback을 반환 (캐시 없이)
+          throw groqErr;
         }
       }
       // AI signal/confidence는 결정론적 결과로 덮어쓰기
@@ -3876,22 +3878,24 @@ async function precomputeTopAnalysis(N = 100) {
     }
     console.log(`  🤖 상위 ${targets.length}개 상세 페이지 사전 계산 시작...`);
     let done = 0, skipped = 0, failed = 0;
-    const endpoints = ['analysis', 'quote', 'flow', 'news', 'earnings', 'peers', 'chart'];
+    // analysis는 LLM 호출이므로 precompute에서 제외 — rate limit 보호
+    // (사용자가 종목 클릭 시 자연스럽게 캐싱됨)
+    const endpoints = ['quote', 'flow', 'news', 'earnings', 'peers', 'chart'];
     for (const t of targets) {
       const aiCached = getC(`ai:${t.ticker}`);
-      // 상세 페이지에서 동시 호출되는 모든 엔드포인트를 병렬로 워밍
+      if (aiCached) { skipped++; continue; } // AI 캐시 있으면 워밍 불필요
+      // 상세 페이지에서 동시 호출되는 엔드포인트를 병렬로 워밍 (analysis 제외)
       const reqs = endpoints.map(ep => {
         const qs = ep === 'chart' ? `range=1mo&` : '';
-        const url = `http://localhost:${PORT}/api/${ep}?${qs}symbol=${t.ticker}&market=${t.market}${ep==='analysis'?'':''}`;
+        const url = `http://localhost:${PORT}/api/${ep}?${qs}symbol=${t.ticker}&market=${t.market}`;
         return fetch(url, { signal: AbortSignal.timeout(60000) }).then(r => r.ok).catch(() => false);
       });
       try {
         const results = await Promise.all(reqs);
         if (results.every(Boolean)) done++; else failed++;
-        if (aiCached) skipped++;
       } catch { failed++; }
       if ((done + failed) % 10 === 0 && (done + failed) > 0) console.log(`  🤖 상세 사전 계산 진행: ${done+failed}/${targets.length} (ok:${done} skip:${skipped} fail:${failed})`);
-      await new Promise(r => setTimeout(r, 300)); // gentle rate limit
+      await new Promise(r => setTimeout(r, 1000)); // 1s 간격 — 다른 API rate limit 보호
     }
     console.log(`  ✓ 상세 페이지 사전 계산 완료: ${done}/${targets.length} (skip:${skipped} fail:${failed})`);
   } finally {
