@@ -4,7 +4,6 @@ import { execFile, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import OpenAI from 'openai';
 
 // Load .env file if present
 try {
@@ -18,85 +17,95 @@ try {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
-const getGrok = () => new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
+// ── 결정론적 분석 텍스트 생성 (LLM 없이 실제 지표값으로 직접 생성) ──────────────
+function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) {
+  const { signal, confidence, score, breakdown: bk, reasons } = sig;
+  const currSym = isKr ? '₩' : '$';
+  const isUp = (q.changePct ?? 0) >= 0;
+  const f1 = v => v != null ? v.toFixed(1) : null;
+  const f2 = v => v != null ? v.toFixed(2) : null;
+  const fp = v => v != null ? `${(v * 100).toFixed(1)}%` : null;
 
-// Gemini fallback (GROQ 429/실패 시 사용)
-// 모델별 무료 티어 (분당/일별):
-//   gemini-2.5-flash-lite: 15/1000  (가장 높은 한도 — 1차 선택)
-//   gemini-2.0-flash-lite: 30/1500
-//   gemini-2.0-flash:      15/200   (낮은 한도 — 빨리 소진됨)
-// Gemini 키 목록 (성공한 키 우선 재사용)
-const _geminiKeys = () => [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
-// 키당 1개 모델만 시도 — 429면 해당 키 즉시 포기하고 다음 키로
-// (같은 키로 다른 모델 시도해도 429 반복 → 한도 낭비)
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+  // ── summary ──
+  const topR = reasons.slice(0, 5).join(', ');
+  const summary = `종합 점수 ${score}점 기준 ${signal} 의견입니다. ${topR}. ` +
+    `기술 ${bk.technical >= 0 ? '+' : ''}${bk.technical} / 가치 ${bk.value >= 0 ? '+' : ''}${bk.value} / ` +
+    `품질 ${bk.quality >= 0 ? '+' : ''}${bk.quality} / 성장 ${bk.growth >= 0 ? '+' : ''}${bk.growth}점입니다.`;
 
-async function geminiGenerate(systemPrompt, userPrompt, { temperature = 0, maxTokens = 1024 } = {}) {
-  const keys = _geminiKeys();
-  if (!keys.length) throw new Error('GEMINI_API_KEY not set');
-  let lastErr;
-  for (let ki = 0; ki < keys.length; ki++) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${keys[ki]}`;
-      const body = {
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
-      };
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (r.status === 429) { lastErr = new Error(`Gemini key${ki+1} 429 한도초과`); continue; } // 다음 키로
-      if (!r.ok) { lastErr = new Error(`Gemini key${ki+1} ${r.status}`); continue; }
-      const j = await r.json();
-      const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) { lastErr = new Error(`Gemini key${ki+1} empty response`); continue; }
-      return text;
-    } catch (e) { lastErr = e; }
+  // ── technical ──
+  const techParts = [];
+  if (t.rsi != null) techParts.push(`RSI(14) ${f1(t.rsi)} — ${t.rsi > 70 ? '과매수 구간' : t.rsi < 30 ? '과매도 구간' : '중립 구간'}`);
+  if (t.macd != null && t.macd_signal != null) techParts.push(t.macd > t.macd_signal ? 'MACD 골든크로스(매수 신호)' : 'MACD 데드크로스(매도 신호)');
+  if (t.ma20 != null && t.ma50 != null && q.price != null) {
+    const a20 = q.price > t.ma20, a50 = q.price > t.ma50;
+    techParts.push(`이동평균 ${a20 && a50 ? '완전 정배열(강세)' : !a20 && !a50 ? '역배열(약세)' : a20 ? 'MA20 위/MA50 아래' : 'MA20 아래/MA50 위'}`);
   }
-  throw lastErr || new Error('Gemini all keys failed');
-}
+  if (t.adx != null) techParts.push(`ADX ${f1(t.adx)} — ${t.adx > 25 ? (t.pdi > t.mdi ? '강한 상승 추세' : '강한 하락 추세') : '추세 약함/횡보'}`);
+  if (t.bb_pct != null) techParts.push(`볼린저밴드 ${t.bb_pct.toFixed(0)}% 위치${t.bb_pct > 80 ? '(상단 근접)' : t.bb_pct < 20 ? '(하단 근접)' : ''}`);
+  if (t.stoch_k != null) techParts.push(`스토캐스틱 K=${t.stoch_k.toFixed(0)} — ${t.stoch_k > 80 ? '과매수' : t.stoch_k < 20 ? '과매도' : '중립'}`);
+  if (t.obv_trend != null) techParts.push(t.obv_trend > 0 ? 'OBV 상승(매집 신호)' : 'OBV 하락(분산 신호)');
+  const technical = (techParts.length ? techParts.join('. ') + '. ' : '') +
+    `기술적 점수 ${bk.technical >= 0 ? '+' : ''}${bk.technical}점입니다.`;
 
-// Gemini SSE 스트리밍: 응답 chunk 도착마다 onChunk(textDelta) 호출, 누적 텍스트 반환
-async function geminiStreamGenerate(systemPrompt, userPrompt, { temperature = 0, maxTokens = 1024 } = {}, onChunk) {
-  const keys = _geminiKeys();
-  if (!keys.length) throw new Error('GEMINI_API_KEY not set');
-  let lastErr;
-  for (let ki = 0; ki < keys.length; ki++) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${keys[ki]}`;
-      const body = {
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
-      };
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (r.status === 429) { lastErr = new Error(`GeminiStream key${ki+1} 429 한도초과`); continue; } // 다음 키로
-      if (!r.ok) { lastErr = new Error(`GeminiStream key${ki+1} ${r.status}`); continue; }
-      const reader = r.body.getReader();
-      const dec = new TextDecoder();
-      let full = '';
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6).trim();
-          if (!payload || payload === '[DONE]') continue;
-          try {
-            const j = JSON.parse(payload);
-            const t = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (t) { full += t; try { onChunk?.(t); } catch {} }
-          } catch {}
-        }
-      }
-      if (!full) { lastErr = new Error(`GeminiStream key${ki+1} empty`); continue; }
-      return full;
-    } catch (e) { lastErr = e; }
+  // ── fundamental ──
+  const funParts = [];
+  if (q.per != null) funParts.push(`PER ${f1(q.per)}배`);
+  if (q.forwardPer != null) funParts.push(`예상PER ${f1(q.forwardPer)}배`);
+  if (q.pbr != null) funParts.push(`PBR ${f2(q.pbr)}배`);
+  if (q.roe != null) funParts.push(`ROE ${fp(q.roe)}`);
+  if (q.operatingMargin != null) funParts.push(`영업이익률 ${fp(q.operatingMargin)}`);
+  if (q.earningsGrowth != null) funParts.push(`이익성장률 ${fp(q.earningsGrowth)}`);
+  if (q.revenueGrowth != null) funParts.push(`매출성장률 ${fp(q.revenueGrowth)}`);
+  if (q.debtToEquity != null) funParts.push(`부채비율 ${q.debtToEquity.toFixed(0)}%`);
+  if (q.freeCashflow != null) funParts.push(`FCF ${q.freeCashflow > 0 ? '양수(건전)' : '음수'}`);
+  if (q.recommendation) funParts.push(`애널리스트 ${q.recommendation}${q.targetPrice ? ` / 목표가 ${currSym}${q.targetPrice.toLocaleString()}` : ''}`);
+  const fundamental = (funParts.length ? funParts.join(', ') + '. ' : '') +
+    `가치 ${bk.value >= 0 ? '+' : ''}${bk.value} / 품질 ${bk.quality >= 0 ? '+' : ''}${bk.quality} / 성장 ${bk.growth >= 0 ? '+' : ''}${bk.growth}점입니다.`;
+
+  // ── flow ──
+  const flowParts = [];
+  if (flow.institutionPct != null) flowParts.push(`기관 지분율 ${flow.institutionPct}%`);
+  if (flow.insiderPct != null) flowParts.push(`내부자 지분율 ${flow.insiderPct}%`);
+  if (flow.shortPct != null) flowParts.push(`공매도 ${flow.shortPct}%`);
+  if (flow.topHolders?.length) flowParts.push(`주요 기관: ${flow.topHolders.slice(0, 2).map(h => `${h.name}(${h.pct}%)`).join(', ')}`);
+  if (flow.insiderTx?.length) {
+    const tx = flow.insiderTx[0];
+    flowParts.push(`최근 내부자 ${tx.type}: ${tx.name} ${tx.shares?.toLocaleString()}주 (${tx.date})`);
   }
-  throw lastErr || new Error('GeminiStream all keys failed');
+  if (flow.options) flowParts.push(`풋콜비율 ${flow.options.putCallRatio} / 내재변동성 ${flow.options.impliedVol}%`);
+  const flowStr = (flowParts.length ? flowParts.join('. ') + '. ' : '') +
+    `수급 점수 ${bk.flow >= 0 ? '+' : ''}${bk.flow}점입니다.`;
+
+  // ── sentiment ──
+  const sentParts = [];
+  if (news.length > 0) sentParts.push(`최근 뉴스: ${news.slice(0, 3).map(n => n.title.slice(0, 50)).join(' / ')}`);
+  if (macro.vix) sentParts.push(`VIX ${macro.vix.value}${macro.vix.value > 25 ? '(공포 구간)' : macro.vix.value < 15 ? '(안정 구간)' : ''}`);
+  if (macro.usdkrw && isKr) sentParts.push(`환율 ${macro.usdkrw.value}원(${macro.usdkrw.chg > 0 ? '+' : ''}${macro.usdkrw.chg}%)`);
+  const sentiment = (sentParts.length ? sentParts.join('. ') + '. ' : '') +
+    `심리 점수 ${bk.sentiment >= 0 ? '+' : ''}${bk.sentiment}점입니다.`;
+
+  // ── risk ──
+  const riskItems = [];
+  if (t.rsi > 75) riskItems.push('RSI 극과매수 — 단기 조정 가능성');
+  else if (t.rsi < 25) riskItems.push('RSI 극과매도 — 추가 하락 주의');
+  if (bk.value < -15) riskItems.push('고평가 밸류에이션 리스크');
+  if (q.debtToEquity > 200) riskItems.push(`부채비율 ${q.debtToEquity.toFixed(0)}% — 재무 리스크`);
+  if (macro.vix?.value > 25) riskItems.push(`VIX ${macro.vix.value} — 시장 변동성 확대`);
+  if (macro.us10y?.value > 4.5) riskItems.push(`미국 10년물 ${macro.us10y.value}% — 고금리 환경`);
+  if (!riskItems.length) riskItems.push('시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다');
+  const risk = riskItems.join('. ') + '.';
+
+  // ── price_move ──
+  let price_move = '';
+  if (q.changePct != null && Math.abs(q.changePct) > 0.05) {
+    const topNw = news.length > 0 ? ` — ${news[0].title.slice(0, 60)}` : '';
+    const techTrig = !topNw && t.macd != null && t.macd_signal != null
+      ? ` — ${t.macd > t.macd_signal ? 'MACD 골든크로스' : 'MACD 데드크로스'}`
+      : '';
+    price_move = `${isUp ? '+' : ''}${q.changePct.toFixed(2)}%${topNw || techTrig}`;
+  }
+
+  return { signal, confidence, score, breakdown: bk, reasons, summary, technical, fundamental, flow: flowStr, sentiment, risk, price_move };
 }
 
 app.use(compression({ level: 6 })); // gzip 압축
@@ -2061,11 +2070,6 @@ function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
   };
 }
 
-function hashSeed(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 기술적 지표 — JS 폴백 (yfinance 실패 시 NAVER 차트로 계산)
@@ -2565,359 +2569,93 @@ else:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI 분석
+// 분석 (결정론적 — LLM 없음)
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/analysis', async (req, res) => {
-  const { symbol, market, quick } = req.query;
+  const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  const _hasGrok = !!process.env.GROQ_API_KEY;
   const isKr = market === 'kr';
-  const isStream = req.query.stream === '1';
-  let _streamProgress = 0;
-  let _sseSetup = false;
-  const setupSSE = () => {
-    if (_sseSetup) return;
-    _sseSetup = true;
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
-  };
-  const sse = (obj) => {
-    if (!isStream) return;
-    setupSSE();
-    if (typeof obj.progress === 'number') _streamProgress = Math.max(_streamProgress, obj.progress);
-    try { res.write(`data: ${JSON.stringify({ ...obj, progress: _streamProgress })}\n\n`); } catch {}
-  };
-  const progressCb = isStream ? sse : null;
-
-  // ── quick=1: 결정론적 데이터만 즉시 반환 (LLM 호출 생략, ~50ms) ──
-  // 프런트는 quick으로 팩터 카드 먼저 렌더링 후, 전체 분석은 백그라운드로 별도 요청
-  if (quick === '1') {
-    try {
-      let sig = _signalStore.get(symbol);
-      if (!sig) {
-        // 캐시된 ai:${symbol}이 있으면 거기서 가져오기 (이전에 LLM까지 호출된 적 있는 경우)
-        const aiCached = getC(`ai:${symbol}`);
-        if (aiCached) return res.json(aiCached);
-        // store에 없고 캐시도 없음 → 최소 데이터로 즉시 계산
-        const [techR, quoteR, flowR] = await Promise.allSettled([
-          getTechnicals(symbol, isKr),
-          (async () => {
-            const cq = getC(`q:${symbol}`);
-            if (cq) return cq;
-            if (isKr) { const [q,fin]=await Promise.all([krQuote(symbol),krFinancials(symbol)]); return {...q,...fin}; }
-            return usQuote(symbol);
-          })(),
-          getFlowData(symbol, isKr),
-        ]);
-        const t = techR.status==='fulfilled'?techR.value:{};
-        const q = quoteR.status==='fulfilled'?quoteR.value:{};
-        const flow = flowR.status==='fulfilled'?flowR.value:{};
-        sig = computeSignal(t, q, flow, {});
-        sig.symbol = symbol; sig.market = isKr?'kr':'us';
-        _signalStore.set(symbol, sig);
-      }
-      const reasonStr = sig.reasons?.length ? sig.reasons.slice(0,8).join(', ') : '특이사항 없음';
-      return res.json({
-        signal: sig.signal, confidence: sig.confidence, score: sig.score,
-        breakdown: sig.breakdown, reasons: sig.reasons,
-        price_move: '', // quick 모드: 비워둠 (전체 호출에서 채워짐)
-        summary: `종합 점수 ${sig.score}점 기준 ${sig.signal} 의견입니다. ${reasonStr}`,
-        technical: '', fundamental: '', flow: '', sentiment: '', risk: '',
-        _quick: true,
-      });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
-  // 스트리밍 모드: 캐시 히트면 즉시 100% 전송
-  if (isStream) {
-    const hit = getC(`ai:${symbol}`);
-    if (hit) {
-      sse({ progress: 100, stage: '캐시 적중', done: true, result: hit });
-      try { res.end(); } catch {}
-      return;
-    }
-    sse({ progress: 3, stage: '데이터 수집 시작' });
-  }
 
   try {
     const data = await cached(`ai:${symbol}`, 86400_000, async () => {
-      const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
-      const isKr = market === 'kr';
-
-      // Fetch technicals, quote, news, flow, macro concurrently
       const [techR, quoteR, newsR, flowR, macroR] = await Promise.allSettled([
         getTechnicals(symbol, isKr),
         (async () => {
-          const cached_q = getC(`q:${symbol}`);
-          if (cached_q) return cached_q;
-          if (isKr) { const [q,fin]=await Promise.all([krQuote(symbol),krFinancials(symbol)]); return {...q,...fin}; }
+          const cq = getC(`q:${symbol}`);
+          if (cq) return cq;
+          if (isKr) { const [q, fin] = await Promise.all([krQuote(symbol), krFinancials(symbol)]); return { ...q, ...fin }; }
           return usQuote(symbol);
         })(),
         getNews(symbol, isKr),
         getFlowData(symbol, isKr),
-        // 매크로는 모든 종목에 공통이므로 30분 캐시 (실패해도 이전 값 유지)
         cached('macroAll', 1800_000, () => yfRun(`
 import yfinance as yf, json
 result = {}
-# 환율
 for sym, key in [('USDKRW=X','usdkrw'),('DX-Y.NYB','dxy'),('USDJPY=X','usdjpy')]:
     try:
         h = yf.Ticker(sym).history(period='2d')
         if len(h) >= 1:
-            p = float(h['Close'].iloc[-1])
-            prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
+            p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
             result[key] = {'value': round(p,2), 'chg': round((p-prev)/prev*100,2)}
     except: pass
-# 미국 금리 (10Y treasury, fed funds)
 for sym, key in [('^TNX','us10y'),('^IRX','us3m')]:
     try:
         h = yf.Ticker(sym).history(period='2d')
         if len(h) >= 1:
-            p = float(h['Close'].iloc[-1])
-            prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
+            p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
             result[key] = {'value': round(p,2), 'chg': round(p-prev,3)}
     except: pass
-# VIX (공포지수)
 try:
     h = yf.Ticker('^VIX').history(period='2d')
     if len(h) >= 1:
-        p = float(h['Close'].iloc[-1])
-        prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
+        p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
         result['vix'] = {'value': round(p,2), 'chg': round(p-prev,2)}
 except: pass
-# 원자재
-for sym, key in [('GC=F','gold'),('CL=F','oil'),('SI=F','silver')]:
+for sym, key in [('GC=F','gold'),('CL=F','oil')]:
     try:
         h = yf.Ticker(sym).history(period='2d')
         if len(h) >= 1:
-            p = float(h['Close'].iloc[-1])
-            prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
+            p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
             result[key] = {'value': round(p,2), 'chg': round((p-prev)/prev*100,2)}
     except: pass
 print(json.dumps(result))
 `)),
       ]);
 
-      progressCb?.({ progress: 22, stage: '데이터 수집 완료' });
-      const t = techR.status === 'fulfilled' ? techR.value : {};
-      const q = quoteR.status === 'fulfilled' ? quoteR.value : {};
-      const news = newsR.status === 'fulfilled' ? newsR.value : [];
-      const flow = flowR.status === 'fulfilled' ? flowR.value : {};
-      const macro = macroR.status === 'fulfilled' ? macroR.value : {};
+      const t    = techR.status  === 'fulfilled' ? techR.value  : {};
+      const q    = quoteR.status === 'fulfilled' ? quoteR.value : {};
+      const news = newsR.status  === 'fulfilled' ? newsR.value  : [];
+      const flow = flowR.status  === 'fulfilled' ? flowR.value  : {};
+      const macro= macroR.status === 'fulfilled' ? macroR.value : {};
 
-      const sym = isKr ? '₩' : '$';
-      const newsText = news.slice(0, 5).map((n,i) => `${i+1}. [${n.source}] ${n.title} (${n.time})`).join('\n');
-
-      const n = v => v != null ? v : 'N/A';
-      const pct = v => v != null ? v.toFixed(1)+'%' : 'N/A';
-      const x = v => v != null ? v.toFixed(2)+'x' : 'N/A';
-
-      const prompt = `당신은 한국어만 사용하는 주식 투자 전문 분석가입니다. 반드시 순수한 한국어로만 응답하세요. 한자·영어·중국어·일본어·베트남어·러시아어 등 다른 언어나 문자를 절대 혼용하지 마세요.
-
-아래의 모든 지표를 빠짐없이 종합 분석하여 ${q.name || symbol} (${symbol}) 종목에 대한 투자 의견을 제시하세요.
-
-## 시세
-- 현재가: ${sym}${q.price?.toLocaleString() ?? 'N/A'} / 등락: ${q.changePct?.toFixed(2) ?? 'N/A'}% (${q.change >= 0 ? '+' : ''}${q.change?.toFixed(2) ?? ''})
-- 시가: ${sym}${q.open?.toLocaleString() ?? '-'} / 고가: ${sym}${q.high?.toLocaleString() ?? '-'} / 저가: ${sym}${q.low?.toLocaleString() ?? '-'}
-- 52주 고가: ${sym}${q.high52?.toLocaleString() ?? '-'} / 52주 저가: ${sym}${q.low52?.toLocaleString() ?? '-'}
-- 거래량: ${q.volume?.toLocaleString() ?? '-'} / 시가총액: ${q.marketCap?.toLocaleString() ?? '-'}
-
-## 기술적 지표 (6개월 데이터 기반)
-- RSI(14): ${n(t.rsi)} → ${t.rsi > 70 ? '과매수 구간' : t.rsi < 30 ? '과매도 구간' : '중립 구간'}
-- 볼린저밴드(20,2): 상단 ${n(t.bb_upper)} / 중간(MA20) ${n(t.bb_mid)} / 하단 ${n(t.bb_lower)} → 현재 위치 ${n(t.bb_pct)}%
-- 스토캐스틱(14,3): K=${n(t.stoch_k)} D=${n(t.stoch_d)} → ${t.stoch_k > 80 ? '과매수' : t.stoch_k < 20 ? '과매도' : '중립'}
-- DMI/ADX(14): ADX=${n(t.adx)} / +DI=${n(t.pdi)} / -DI=${n(t.mdi)} → ${t.adx > 25 ? (t.pdi > t.mdi ? '강한 상승 추세' : '강한 하락 추세') : '약한 추세/횡보'}
-- MACD(12,26,9): MACD=${n(t.macd)} / Signal=${n(t.macd_signal)} → ${t.macd > t.macd_signal ? '골든크로스(매수 신호)' : '데드크로스(매도 신호)'}
-- 이동평균: MA20=${n(t.ma20)} / MA50=${n(t.ma50)} → 현재가가 MA20 ${q.price > t.ma20 ? '위(강세)' : '아래(약세)'} / MA50 ${q.price > t.ma50 ? '위(강세)' : '아래(약세)'}
-
-## 가치 지표
-- PER(trailing): ${n(q.per)}x / PER(forward): ${n(q.forwardPer)}x / PEG: ${n(q.pegRatio)}
-- PBR: ${n(q.pbr)}x / ROE: ${pct(q.roe)} / EPS: ${q.eps ?? 'N/A'} / BPS: ${q.bps ?? 'N/A'}
-- 배당수익률: ${q.div > 0 ? q.div.toFixed(2)+'%' : '무배당'}
-
-## 수익성 지표
-- 영업이익률: ${pct(q.operatingMargin)} / 순이익률: ${pct(q.profitMargin)} / 매출총이익률: ${pct(q.grossMargin)}
-- 매출 성장률: ${pct(q.revenueGrowth)} / 이익 성장률: ${pct(q.earningsGrowth)}
-- EBITDA: ${q.ebitda?.toLocaleString() ?? 'N/A'} / 잉여현금흐름: ${q.freeCashflow?.toLocaleString() ?? 'N/A'}
-
-## 안전성 지표
-- 부채비율(D/E): ${n(q.debtToEquity)} / 유동비율: ${n(q.currentRatio)}x / 당좌비율: ${n(q.quickRatio)}x
-${q.shortRatio ? `- 공매도 비율: ${q.shortRatio.toFixed(1)}일치` : ''}
-${q.recommendation ? `- 애널리스트 컨센서스: ${q.recommendation} / 목표가: ${sym}${q.targetPrice ?? '-'} / 분석가 수: ${q.numberOfAnalysts ?? '-'}명` : ''}
-
-## 거시경제 지표 (매크로)
-- USD/KRW 환율: ${macro.usdkrw ? `${macro.usdkrw.value}원 (${macro.usdkrw.chg > 0 ? '+' : ''}${macro.usdkrw.chg}%)` : 'N/A'}
-- 달러인덱스(DXY): ${macro.dxy ? `${macro.dxy.value} (${macro.dxy.chg > 0 ? '+' : ''}${macro.dxy.chg}%)` : 'N/A'}
-- 미국 10년물 금리: ${macro.us10y ? `${macro.us10y.value}% (전일대비 ${macro.us10y.chg > 0 ? '+' : ''}${macro.us10y.chg}%p)` : 'N/A'}
-- 미국 3개월 금리: ${macro.us3m ? `${macro.us3m.value}%` : 'N/A'}
-- VIX 공포지수: ${macro.vix ? `${macro.vix.value} (전일대비 ${macro.vix.chg > 0 ? '+' : ''}${macro.vix.chg})` : 'N/A'}
-- 금 현물: ${macro.gold ? `$${macro.gold.value} (${macro.gold.chg > 0 ? '+' : ''}${macro.gold.chg}%)` : 'N/A'}
-- WTI 원유: ${macro.oil ? `$${macro.oil.value} (${macro.oil.chg > 0 ? '+' : ''}${macro.oil.chg}%)` : 'N/A'}
-
-## 수급 및 주주 현황
-- 내부자 지분율: ${flow.insiderPct != null ? flow.insiderPct+'%' : 'N/A'} / 기관 지분율: ${flow.institutionPct != null ? flow.institutionPct+'%' : 'N/A'} / 기관 수: ${flow.institutionsCount ?? 'N/A'}개
-${flow.topHolders?.length ? `- 주요 기관투자자: ${flow.topHolders.slice(0,3).map(h=>`${h.name}(${h.pct}%, 증감${h.chg>0?'+':''}${h.chg}%)`).join(', ')}` : ''}
-${flow.insiderTx?.length ? `- 최근 내부자 거래: ${flow.insiderTx.slice(0,3).map(tx=>`${tx.name}(${tx.title}) ${tx.type} ${tx.shares?.toLocaleString()}주 (${tx.date})`).join(' | ')}` : ''}
-${flow.options ? `- 옵션: 콜OI ${flow.options.callOI?.toLocaleString()} / 풋OI ${flow.options.putOI?.toLocaleString()} / 풋콜비율 ${flow.options.putCallRatio} / 내재변동성 ${flow.options.impliedVol}%\n- 최대 콜 행사가: $${flow.options.maxCallStrike} (OI ${flow.options.maxCallOI?.toLocaleString()}) / 최대 풋 행사가: $${flow.options.maxPutStrike} (OI ${flow.options.maxPutOI?.toLocaleString()})` : ''}
-${flow.shortPct != null ? `- 공매도: 유동주식 대비 ${flow.shortPct}% / 공매도 비율일수 ${flow.shortRatio ?? 'N/A'}일` : ''}
-
-## 최근 뉴스 (등락 원인 분석에 활용)
-${newsText || '관련 뉴스 없음'}
-
-## 응답 형식
-위 모든 데이터를 종합하여 아래 JSON으로만 응답하세요 (다른 텍스트 없이, 반드시 순수 한국어만):
-{
-  "signal": "강력매수" | "매수" | "약매수" | "중립" | "약매도" | "매도" | "강력매도",
-  "confidence": 숫자(0-100),
-  "price_move": "오늘 등락 원인 분석 - 뉴스·수급·기술적 요인 기반으로 구체적으로 설명",
-  "summary": "3문장 핵심 투자 의견 요약",
-  "technical": "RSI·MACD·볼린저밴드·스토캐스틱·DMI·이동평균 분석 종합",
-  "fundamental": "PER·PBR·ROE·성장률·수익성·안전성 지표 종합 평가",
-  "flow": "기관/내부자 지분율·주요 보유기관 동향·내부자 매매·공매도·옵션 수급 분석",
-  "sentiment": "뉴스 내용 분석 및 시장 심리 판단",
-  "risk": "구체적인 리스크 요인 및 주의사항"
-}`;
-
-      // ── 결정론적 시그널 (항상 _signalStore 기준 — 전 영역 동일 보장) ──
-      const _stored = _signalStore.get(symbol);
-      let _sig;
-      if (_stored) {
-        _sig = _stored;
-      } else {
-        // store에 없는 종목: 계산 후 저장해 이후 일관성 보장
-        _sig = computeSignal(t, q, flow, macro);
-        _sig.symbol = symbol; _sig.market = isKr ? 'kr' : 'us';
-        _signalStore.set(symbol, _sig);
+      // 시그널 계산 (store에 있으면 재사용, 없으면 계산 후 저장)
+      let sig = _signalStore.get(symbol);
+      if (!sig) {
+        sig = computeSignal(t, q, flow, macro);
+        sig.symbol = symbol; sig.market = isKr ? 'kr' : 'us';
+        _signalStore.set(symbol, sig);
       }
-      const { signal: detSignal, confidence: detConf, score: detScore, breakdown: detBreak, reasons: detReasons } = _sig;
-      const breakStr = `기술 ${detBreak.technical>=0?'+':''}${detBreak.technical} / 가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth} / 모멘텀 ${detBreak.momentum>=0?'+':''}${detBreak.momentum} / 수급 ${detBreak.flow>=0?'+':''}${detBreak.flow} / 심리 ${detBreak.sentiment>=0?'+':''}${detBreak.sentiment} / 매크로 ${detBreak.macro>=0?'+':''}${detBreak.macro}`;
-      const reasonStr = detReasons.length ? detReasons.slice(0,8).join(', ') : '특이사항 없음';
 
-      // 결정론적 데이터는 항상 반환 가능한 fallback (LLM 실패해도 팩터 카드 렌더링 보장)
-      const fallback = {
-        signal: detSignal,
-        confidence: detConf,
-        score: detScore,
-        breakdown: detBreak,
-        reasons: detReasons,
-        price_move: '',
-        summary: `종합 점수 ${detScore}점 기준 ${detSignal} 의견입니다. ${reasonStr}`,
-        technical: `기술적 점수 ${detBreak.technical>=0?'+':''}${detBreak.technical}점입니다.`,
-        fundamental: `가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth}점입니다.`,
-        flow: `수급 점수 ${detBreak.flow>=0?'+':''}${detBreak.flow}점입니다.`,
-        sentiment: `심리 점수 ${detBreak.sentiment>=0?'+':''}${detBreak.sentiment}점입니다.`,
-        risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
-      };
-
-      const sysPrompt = `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.`;
-
-      progressCb?.({ progress: 28, stage: 'AI 분석 시작' });
-      let parsed;
-      // 1차: Gemini (키1 → 키2, 각 키별 3개 모델 자동 시도 — 무료 한도 가장 큼)
-      try {
-        // 스트리밍 모드: chunk 도착마다 실제 진행도 갱신 (예상 ~1800자 기준 28→90%)
-        const onChunk = progressCb
-          ? (() => { let total = 0; return (delta) => {
-              total += delta.length;
-              const pct = Math.min(90, 28 + Math.round(total / 1800 * 62));
-              progressCb({ progress: pct, stage: 'AI 분석 응답 수신' });
-            }; })()
-          : null;
-        const raw = progressCb
-          ? await geminiStreamGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 }, onChunk)
-          : await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 });
-        progressCb?.({ progress: 92, stage: '응답 파싱' });
-        // responseMimeType=application/json이면 raw 자체가 JSON
-        let jsonStr = raw.trim();
-        if (!jsonStr.startsWith('{')) {
-          const m = jsonStr.match(/\{[\s\S]*\}/);
-          if (!m) throw new Error(`Gemini text not JSON: ${raw.slice(0, 100)}`);
-          jsonStr = m[0];
-        }
-        // 잘린 JSON 복구 시도: 마지막 } 까지만 사용
-        try { parsed = JSON.parse(jsonStr); }
-        catch {
-          const lastBrace = jsonStr.lastIndexOf('}');
-          if (lastBrace > 0) parsed = JSON.parse(jsonStr.slice(0, lastBrace + 1));
-          else throw new Error('Gemini JSON parse failed');
-        }
-      } catch (gemErr) {
-        console.error('analysis Gemini 실패:', symbol, gemErr.message?.slice(0, 120));
-        // 2차: GROQ (Llama 3.3 70B) — Gemini 전체 한도 초과 시 마지막 LLM 시도
-        try {
-          if (!_hasGrok) throw new Error('GROQ_API_KEY not set');
-          const msg = await getGrok().chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            temperature: 0,
-            seed: hashSeed(symbol),
-            max_tokens: 1024,
-            messages: [
-              { role: 'system', content: sysPrompt },
-              { role: 'user', content: prompt }
-            ],
-          });
-          const raw = msg.choices[0].message.content;
-          const m = raw.match(/\{[\s\S]*\}/);
-          if (!m) throw new Error('GROQ response parsing failed');
-          parsed = JSON.parse(m[0]);
-        } catch (groqErr) {
-          console.error('analysis GROQ 실패:', symbol, groqErr.message?.slice(0, 120));
-          // LLM 완전 실패 → cached() 안에서 throw해서 결과를 캐시에 저장하지 않음
-          // 외부 catch가 임시 fallback을 반환 (캐시 없이)
-          throw groqErr;
-        }
-      }
-      // AI signal/confidence는 결정론적 결과로 덮어쓰기
-      parsed.signal = detSignal;
-      parsed.confidence = detConf;
-      parsed.score = detScore;
-      parsed.breakdown = detBreak;
-      parsed.reasons = detReasons;
-      // 비한국어 문자 제거 (한글, 영문, 숫자, 기본 특수문자만 허용)
-      const sanitize = v => typeof v === 'string'
-        ? v.replace(/[a-z]+(?=[\uAC00-\uD7A3])/g, '')   // 한글 앞 소문자 제거 (베트남어 등 혼용 방지)
-           .replace(/(?<=[\uAC00-\uD7A3])[a-z]+/g, '')   // 한글 뒤 소문자 제거
-           .replace(/[^\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F a-zA-Z0-9%.,·()\-+~:/?!\n""''【】]/g, '')
-           .replace(/\s+/g, ' ').trim()
-        : v;
-      progressCb?.({ progress: 97, stage: '결과 정제' });
-      return Object.fromEntries(Object.entries(parsed).map(([k,v]) => [k, sanitize(v)]));
+      return buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig);
     });
-
-    if (isStream) {
-      sse({ progress: 100, stage: '완료', done: true, result: data });
-      try { res.end(); } catch {}
-    } else {
-      res.json(data);
+    res.json(data);
+  } catch (e) {
+    console.error('analysis 실패:', symbol, e.message?.slice(0, 120));
+    _c.delete(`ai:${symbol}`);
+    const stored = _signalStore.get(symbol);
+    if (stored) {
+      const { signal, confidence, score, breakdown: bk, reasons } = stored;
+      return res.json({
+        signal, confidence, score, breakdown: bk, reasons,
+        summary: `종합 점수 ${score}점 기준 ${signal} 의견입니다. ${reasons.slice(0,5).join(', ')}`,
+        technical: `기술적 점수 ${bk.technical >= 0 ? '+' : ''}${bk.technical}점입니다.`,
+        fundamental: `가치 ${bk.value >= 0 ? '+' : ''}${bk.value} / 품질 ${bk.quality >= 0 ? '+' : ''}${bk.quality} / 성장 ${bk.growth >= 0 ? '+' : ''}${bk.growth}점입니다.`,
+        flow: `수급 점수 ${bk.flow >= 0 ? '+' : ''}${bk.flow}점입니다.`,
+        sentiment: `심리 점수 ${bk.sentiment >= 0 ? '+' : ''}${bk.sentiment}점입니다.`,
+        risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
+        price_move: '',
+      });
     }
-  } catch(e) {
-    console.error('analysis 실패:', req.query.symbol, e.message?.slice(0, 120));
-    _c.delete(`ai:${req.query.symbol}`);
-    // 최후 fallback: 시그널 스토어에서 직접 결정론적 데이터 반환
-    const sym = req.query.symbol;
-    const stored = _signalStore.get(sym);
-    const fb = stored ? {
-      signal: stored.signal, confidence: stored.confidence, score: stored.score,
-      breakdown: stored.breakdown, reasons: stored.reasons,
-      price_move: '',
-      summary: `종합 점수 ${stored.score}점 기준 ${stored.signal} 의견입니다.`,
-      technical: '데이터 수집 중입니다.',
-      fundamental: '데이터 수집 중입니다.',
-      flow: '데이터 수집 중입니다.',
-      sentiment: '데이터 수집 중입니다.',
-      risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
-    } : null;
-    if (isStream) {
-      sse({ progress: 100, stage: '오류 fallback', done: true, result: fb ? { ...fb, _failed: true } : null, error: e.message });
-      try { res.end(); } catch {}
-      return;
-    }
-    if (fb) return res.json(fb);
     res.status(500).json({ error: e.message });
   }
 });

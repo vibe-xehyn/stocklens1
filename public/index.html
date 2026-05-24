@@ -911,18 +911,16 @@ function filterStocks() { renderSidebar(); }
 
 // ── 메인 렌더링 ───────────────────────────────────────────────────────────────
 async function loadAndRenderMain(def) {
-  window.__curDef = def;
   // ── 진행도 트래커 ─────────────────────────────────────────────
   // 8개 단계: quote, chart, quick(팩터), full(AI상세), news, flow, earnings, peers
   const stages = [
-    { key: 'quote', label: '시세' },
-    { key: 'chart', label: '차트' },
-    { key: 'quick', label: '팩터/신호' },
-    { key: 'full',  label: 'AI 상세' },
-    { key: 'flow',  label: '수급' },
-    { key: 'earn',  label: '실적' },
-    { key: 'peer',  label: '경쟁사' },
-    { key: 'news',  label: '뉴스' },
+    { key: 'quote',    label: '시세' },
+    { key: 'chart',    label: '차트' },
+    { key: 'analysis', label: '분석' },
+    { key: 'flow',     label: '수급' },
+    { key: 'earn',     label: '실적' },
+    { key: 'peer',     label: '경쟁사' },
+    { key: 'news',     label: '뉴스' },
   ];
   const done = new Set();
   const paint = () => {
@@ -948,8 +946,7 @@ async function loadAndRenderMain(def) {
   paint();
   try {
     // 모든 API를 즉시 병렬 시작 — quote/chart 응답을 기다리지 않음
-    const quickP = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}&quick=1`).then(d => { tick('quick'); return d; }).catch(() => { tick('quick'); return null; });
-    const fullP  = fetchAnalysisStream(def).then(d => { tick('full'); return d; });
+    const analysisP = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('analysis'); return d; }).catch(() => { tick('analysis'); return null; });
     const newsP  = api(`/api/news?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('news'); return d; }).catch(() => { tick('news'); return []; });
     const flowP  = api(`/api/flow?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('flow'); return d; }).catch(() => { tick('flow'); return null; });
     const earnP  = api(`/api/earnings?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('earn'); return d; }).catch(() => { tick('earn'); return null; });
@@ -975,7 +972,7 @@ async function loadAndRenderMain(def) {
     });
 
     // 미리 시작한 promise들을 도착하는 대로 그 자리에 채움
-    quickP.then(d => {
+    analysisP.then(d => {
       if (!d) {
         const fe = document.getElementById('factorContainer');
         if (fe) fe.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">팩터 데이터 없음</div>';
@@ -983,19 +980,8 @@ async function loadAndRenderMain(def) {
       }
       const fe = document.getElementById('factorContainer');
       if (fe) fe.innerHTML = renderFactorHTML(d.breakdown, d.score, d.signal, d.reasons);
-      renderAICardQuick(def, d);
-    });
-    fullP.then(full => {
-      if (!full) return;
-      if (full._failed) {
-        // LLM 실패 — 카드를 교체하지 않고 로딩 배지를 에러 메시지로 교체
-        updateAiProgress(0, '');
-        const badge = document.querySelector('#aiCard .ai-title span');
-        if (badge) badge.outerHTML = `<span style="font-size:10px;color:#f59e0b;margin-left:8px">⚠ AI 분석 일시 불가 (API 한도) — <button onclick="fetchAnalysisStream(window.__curDef).then(r=>r&&!r._failed&&renderAICardFull(window.__curDef,r))" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-size:10px;text-decoration:underline;padding:0">재시도</button></span>`;
-        return;
-      }
-      analysisCache[def.ticker] = { data: full, ts: Date.now() };
-      renderAICardFull(def, full);
+      analysisCache[def.ticker] = { data: d, ts: Date.now() };
+      renderAICard(def, d);
     });
     flowP.then(d => {
       const el = document.getElementById('flowContainer');
@@ -1559,9 +1545,8 @@ function renderFlowHTML(d, isUs) {
   return html;
 }
 
-// ── AI 분석 ───────────────────────────────────────────────────────────────────
-// AI 카드 렌더링 (quick과 full 공용 — full은 narrative 채워서 추가 표시)
-function renderAICard(def, data, { loadingNarrative = false } = {}) {
+// ── 분석 카드 렌더링 ──────────────────────────────────────────────────────────
+function renderAICard(def, data) {
   const el = document.getElementById('aiCard');
   if (!el || !data) return;
   const q = quoteCache[def.id] || {};
@@ -1571,34 +1556,17 @@ function renderAICard(def, data, { loadingNarrative = false } = {}) {
     '중립': 'signal-neutral',
     '약매도': 'signal-weak-sell', '매도': 'signal-sell', '강력매도': 'signal-strong-sell'
   }[data.signal] || 'signal-neutral';
-  const sigIcon = {
-    '강력매수': '▲▲', '매수': '▲', '약매수': '△', '중립': '◆',
-    '약매도': '▽', '매도': '▼', '강력매도': '▼▼'
-  }[data.signal] || '◆';
+  const sigIcon = { '강력매수': '▲▲', '매수': '▲', '약매수': '△', '중립': '◆', '약매도': '▽', '매도': '▼', '강력매도': '▼▼' }[data.signal] || '◆';
   const sigSub = {
-    '강력매수': '강한 매수 신호 — 적극 매수 고려',
-    '매수': '매수 우위 — 분할 매수 고려',
-    '약매수': '소폭 매수 우위 — 소량 진입 고려',
-    '중립': '관망 — 추가 신호 확인 후 진입',
-    '약매도': '소폭 매도 우위 — 신규 진입 자제',
-    '매도': '매도 우위 — 비중 축소 고려',
+    '강력매수': '강한 매수 신호 — 적극 매수 고려', '매수': '매수 우위 — 분할 매수 고려',
+    '약매수': '소폭 매수 우위 — 소량 진입 고려', '중립': '관망 — 추가 신호 확인 후 진입',
+    '약매도': '소폭 매도 우위 — 신규 진입 자제', '매도': '매도 우위 — 비중 축소 고려',
     '강력매도': '강한 매도 신호 — 손절/매도 고려'
   }[data.signal] || '관망';
   const confColor = data.confidence >= 70 ? '#22c55e' : data.confidence >= 50 ? '#f59e0b' : '#ef4444';
-  const loadingBadge = loadingNarrative
-    ? `<span style="font-size:10px;color:var(--muted);margin-left:8px"><span class="spinner" style="display:inline-block;width:10px;height:10px;vertical-align:middle"></span> 상세 분석 생성 중...</span>` : '';
-  const loadingBar = loadingNarrative
-    ? `<div style="margin:8px 0 14px">
-         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px">
-           <span>AI 상세 분석 진행도</span><span id="aiProgressLabel">0%</span>
-         </div>
-         <div style="width:100%;height:5px;background:rgba(148,163,184,0.18);border-radius:3px;overflow:hidden">
-           <div id="aiProgressFill" style="width:0%;height:100%;background:linear-gradient(90deg,#3b82f6,#22c55e);transition:width 0.3s ease"></div>
-         </div>
-       </div>` : '';
   el.innerHTML = `
     <div class="ai-header">
-      <div class="ai-title">AI 투자 의견${loadingBadge}</div>
+      <div class="ai-title">투자 의견</div>
       <div class="ai-signal">
         <div>
           <span class="signal-pill ${sigClass}">${sigIcon} ${data.signal}</span>
@@ -1610,13 +1578,11 @@ function renderAICard(def, data, { loadingNarrative = false } = {}) {
         </div>
       </div>
     </div>
-    ${loadingBar}
     ${data.price_move ? `
     <div style="padding:10px 14px;border-radius:8px;margin-bottom:12px;line-height:1.65;
       background:${up?'rgba(34,197,94,0.07)':'rgba(239,68,68,0.07)'};font-size:14px;
       border-left:3px solid ${up?'var(--green)':'var(--red)'};color:var(--text)">
-      <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'▲ 상승':'▼ 하락'} 원인</span>&nbsp;
-      ${data.price_move}
+      <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'▲ 상승':'▼ 하락'} 원인</span>&nbsp;${data.price_move}
     </div>` : ''}
     <div class="ai-summary">${data.summary || ''}</div>
     <div class="ai-breakdown">
@@ -1627,33 +1593,6 @@ function renderAICard(def, data, { loadingNarrative = false } = {}) {
       ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
     </div>`;
 }
-// 서버 SSE에서 실제 진행도가 도착할 때마다 호출 — DOM이 있으면 즉시 반영
-function updateAiProgress(pct, stage) {
-  const fill = document.getElementById('aiProgressFill');
-  const label = document.getElementById('aiProgressLabel');
-  if (fill) fill.style.width = pct + '%';
-  if (label) label.textContent = stage ? `${pct}% · ${stage}` : `${pct}%`;
-}
-// /api/analysis?stream=1 SSE 구독 → Promise<analysisResult>
-function fetchAnalysisStream(def) {
-  return new Promise((resolve) => {
-    const url = `/api/analysis?symbol=${def.ticker}&market=${def.market}&stream=1`;
-    let es;
-    try { es = new EventSource(url); }
-    catch { resolve(null); return; }
-    let resolved = false;
-    const finish = (v) => { if (resolved) return; resolved = true; try { es.close(); } catch {} resolve(v); };
-    es.onmessage = (ev) => {
-      let j; try { j = JSON.parse(ev.data); } catch { return; }
-      if (typeof j.progress === 'number') updateAiProgress(j.progress, j.stage);
-      if (j.done) finish(j.result || null);
-    };
-    es.onerror = () => finish(null);
-    setTimeout(() => finish(null), 90_000); // 안전 타임아웃
-  });
-}
-function renderAICardQuick(def, data) { renderAICard(def, data, { loadingNarrative: true }); }
-function renderAICardFull(def, data)  { renderAICard(def, data, { loadingNarrative: false }); }
 
 function newsHTML(news) {
   if (!news.length) return '<div style="color:var(--muted);font-size:13px;padding:16px 0">뉴스를 불러올 수 없습니다.</div>';
