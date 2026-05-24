@@ -912,11 +912,10 @@ function filterStocks() { renderSidebar(); }
 // ── 메인 렌더링 ───────────────────────────────────────────────────────────────
 async function loadAndRenderMain(def) {
   // ── 진행도 트래커 ─────────────────────────────────────────────
-  // 8개 단계: quote, chart, quick(팩터), full(AI상세), news, flow, earnings, peers
   const stages = [
     { key: 'quote',    label: '시세' },
     { key: 'chart',    label: '차트' },
-    { key: 'analysis', label: '분석' },
+    { key: 'analysis', label: '신호' },
     { key: 'flow',     label: '수급' },
     { key: 'earn',     label: '실적' },
     { key: 'peer',     label: '경쟁사' },
@@ -945,8 +944,10 @@ async function loadAndRenderMain(def) {
      </div>`;
   paint();
   try {
-    // 모든 API를 즉시 병렬 시작 — quote/chart 응답을 기다리지 않음
-    const analysisP = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('analysis'); return d; }).catch(() => { tick('analysis'); return null; });
+    // 모든 API를 즉시 병렬 시작
+    // Phase 1: 결정론적 신호 (빠름)
+    const analysisP = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`)
+      .then(d => { tick('analysis'); return d; }).catch(() => { tick('analysis'); return null; });
     const newsP  = api(`/api/news?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('news'); return d; }).catch(() => { tick('news'); return []; });
     const flowP  = api(`/api/flow?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('flow'); return d; }).catch(() => { tick('flow'); return null; });
     const earnP  = api(`/api/earnings?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('earn'); return d; }).catch(() => { tick('earn'); return null; });
@@ -971,17 +972,24 @@ async function loadAndRenderMain(def) {
         .then(d => { chartCache[ck] = d; }).catch(() => {});
     });
 
-    // 미리 시작한 promise들을 도착하는 대로 그 자리에 채움
-    analysisP.then(d => {
-      if (!d) {
+    // Phase 1 완료: 팩터 카드 + AI 카드 헤더 즉시 렌더, AI 텍스트는 로딩바
+    analysisP.then(detData => {
+      if (!detData) {
         const fe = document.getElementById('factorContainer');
         if (fe) fe.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">팩터 데이터 없음</div>';
         return;
       }
       const fe = document.getElementById('factorContainer');
-      if (fe) fe.innerHTML = renderFactorHTML(d.breakdown, d.score, d.signal, d.reasons);
-      analysisCache[def.ticker] = { data: d, ts: Date.now() };
-      renderAICard(def, d);
+      if (fe) fe.innerHTML = renderFactorHTML(detData.breakdown, detData.score, detData.signal, detData.reasons);
+      analysisCache[def.ticker] = { data: detData, ts: Date.now() };
+
+      // AI 카드 헤더(신호/점수/확신도/price_move) 즉시 표시 + AI 텍스트 로딩바
+      renderAICardHeader(def, detData);
+
+      // Phase 2: AI 텍스트 (Groq LLM)
+      api(`/api/analysis/ai?symbol=${def.ticker}&market=${def.market}`)
+        .then(aiData => { renderAICardText(def, aiData || detData); })
+        .catch(() => { renderAICardText(def, detData); });
     });
     flowP.then(d => {
       const el = document.getElementById('flowContainer');
@@ -1546,11 +1554,7 @@ function renderFlowHTML(d, isUs) {
 }
 
 // ── 분석 카드 렌더링 ──────────────────────────────────────────────────────────
-function renderAICard(def, data) {
-  const el = document.getElementById('aiCard');
-  if (!el || !data) return;
-  const q = quoteCache[def.id] || {};
-  const up = (q.changePct ?? 0) >= 0;
+function _aiCardSignalHTML(data, up) {
   const sigClass = {
     '강력매수': 'signal-strong-buy', '매수': 'signal-buy', '약매수': 'signal-weak-buy',
     '중립': 'signal-neutral',
@@ -1564,9 +1568,9 @@ function renderAICard(def, data) {
     '강력매도': '강한 매도 신호 — 손절/매도 고려'
   }[data.signal] || '관망';
   const confColor = data.confidence >= 70 ? '#22c55e' : data.confidence >= 50 ? '#f59e0b' : '#ef4444';
-  el.innerHTML = `
+  return `
     <div class="ai-header">
-      <div class="ai-title">투자 의견</div>
+      <div class="ai-title">투자 의견 <span class="ai-badge">AI 분석</span></div>
       <div class="ai-signal">
         <div>
           <span class="signal-pill ${sigClass}">${sigIcon} ${data.signal}</span>
@@ -1583,15 +1587,65 @@ function renderAICard(def, data) {
       background:${up?'rgba(34,197,94,0.07)':'rgba(239,68,68,0.07)'};font-size:14px;
       border-left:3px solid ${up?'var(--green)':'var(--red)'};color:var(--text)">
       <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'▲ 상승':'▼ 하락'} 원인</span>&nbsp;${data.price_move}
-    </div>` : ''}
-    <div class="ai-summary">${data.summary || ''}</div>
-    <div class="ai-breakdown">
+    </div>` : ''}`;
+}
+
+function _aiCardTextHTML(data) {
+  return `
+    <div class="ai-summary" id="aiSummary">${data.summary || ''}</div>
+    <div class="ai-breakdown" id="aiBreakdown">
       ${data.technical ? `<div class="ai-reason"><div class="ai-reason-title">기술적 분석</div><div class="ai-reason-text">${data.technical}</div></div>` : ''}
       ${data.fundamental ? `<div class="ai-reason"><div class="ai-reason-title">펀더멘탈</div><div class="ai-reason-text">${data.fundamental}</div></div>` : ''}
       ${data.flow ? `<div class="ai-reason"><div class="ai-reason-title">수급/주주</div><div class="ai-reason-text">${data.flow}</div></div>` : ''}
       ${data.sentiment ? `<div class="ai-reason"><div class="ai-reason-title">뉴스/심리</div><div class="ai-reason-text">${data.sentiment}</div></div>` : ''}
       ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
     </div>`;
+}
+
+// Phase 1: 신호/점수 즉시 렌더 + AI 텍스트 로딩바
+function renderAICardHeader(def, data) {
+  const el = document.getElementById('aiCard');
+  if (!el || !data) return;
+  const q = quoteCache[def.id] || {};
+  const up = (q.changePct ?? 0) >= 0;
+  el.innerHTML = _aiCardSignalHTML(data, up) +
+    `<div id="aiTextArea">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 0 8px">
+        <div class="spinner" style="width:16px;height:16px;border-width:2px"></div>
+        <div style="font-size:13px;color:var(--muted)">AI 분석 생성 중...</div>
+        <div style="flex:1;height:4px;background:rgba(148,163,184,0.18);border-radius:2px;overflow:hidden">
+          <div id="aiTextBar" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#a855f7);border-radius:2px;transition:width 0.4s ease"></div>
+        </div>
+      </div>
+    </div>`;
+  // 로딩바 애니메이션 (가짜 진행 — 실제 완료 시 100%)
+  let prog = 0;
+  const barEl = () => document.getElementById('aiTextBar');
+  const iv = setInterval(() => {
+    prog = Math.min(prog + (Math.random() * 8 + 3), 88);
+    const b = barEl(); if (b) b.style.width = prog + '%';
+  }, 600);
+  el._aiBarIv = iv;
+}
+
+// Phase 2: AI 텍스트 채워넣기
+function renderAICardText(def, data) {
+  const el = document.getElementById('aiCard');
+  if (!el || !data) return;
+  // 로딩바 완료
+  if (el._aiBarIv) { clearInterval(el._aiBarIv); el._aiBarIv = null; }
+  const b = document.getElementById('aiTextBar');
+  if (b) { b.style.width = '100%'; b.style.transition = 'width 0.2s ease'; }
+  setTimeout(() => {
+    const area = document.getElementById('aiTextArea');
+    if (area) area.innerHTML = _aiCardTextHTML(data);
+  }, 220);
+}
+
+// 하위 호환 (분석캐시에서 직접 렌더할 때)
+function renderAICard(def, data) {
+  renderAICardHeader(def, data);
+  renderAICardText(def, data);
 }
 
 function newsHTML(news) {
