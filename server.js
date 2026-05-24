@@ -270,6 +270,65 @@ async function naverFutures(code) {
   } catch { return null; }
 }
 
+// ── Yahoo crumb 인증 (24시간 캐시) — v7/quote 및 v10/quoteSummary 사용에 필요
+let _yCrumb = { value: null, cookie: '', exp: 0 };
+async function yahooCrumb(force = false) {
+  if (!force && _yCrumb.value && Date.now() < _yCrumb.exp) return _yCrumb;
+  // 1) 쿠키 발급 (A1/A3)
+  let cookie = '';
+  try {
+    const fc = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': UA }, redirect: 'manual', signal: AbortSignal.timeout(8000) });
+    const sc = fc.headers.get('set-cookie') || '';
+    cookie = sc.split(/,(?=[^;]+=)/).map(s => s.split(';')[0].trim()).filter(Boolean).join('; ');
+  } catch {}
+  // 2) crumb 발급
+  const cr = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+    headers: { 'User-Agent': UA, 'Cookie': cookie, 'Accept': 'text/plain' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!cr.ok) throw new Error(`Yahoo crumb ${cr.status}`);
+  const crumb = (await cr.text()).trim();
+  if (!crumb || crumb.length > 50) throw new Error('Yahoo crumb invalid');
+  _yCrumb = { value: crumb, cookie, exp: Date.now() + 12 * 3600_000 };
+  return _yCrumb;
+}
+
+async function yahooQuoteSummary(symbol, modules) {
+  const fetchOnce = async (force) => {
+    const { value, cookie } = await yahooCrumb(force);
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules.join(',')}&crumb=${encodeURIComponent(value)}`;
+    const r = await fetch(url, {
+      headers: { 'User-Agent': UA, 'Cookie': cookie, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    return r;
+  };
+  let r = await fetchOnce(false);
+  if (r.status === 401 || r.status === 403) r = await fetchOnce(true); // crumb 만료시 1회 재시도
+  if (!r.ok) throw new Error(`Yahoo qs ${r.status}`);
+  const j = await r.json();
+  if (j?.quoteSummary?.error) throw new Error(`Yahoo qs: ${j.quoteSummary.error.description || 'err'}`);
+  return j?.quoteSummary?.result?.[0] || {};
+}
+
+// 여러 종목 동시에 — v7/finance/quote (요약 정보 배치)
+async function yahooQuoteBatch(symbols) {
+  if (!symbols.length) return [];
+  const fetchOnce = async (force) => {
+    const { value, cookie } = await yahooCrumb(force);
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.map(encodeURIComponent).join(',')}&crumb=${encodeURIComponent(value)}`;
+    return fetch(url, {
+      headers: { 'User-Agent': UA, 'Cookie': cookie, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+  };
+  let r = await fetchOnce(false);
+  if (r.status === 401 || r.status === 403) r = await fetchOnce(true);
+  if (!r.ok) throw new Error(`Yahoo quote ${r.status}`);
+  const j = await r.json();
+  return j?.quoteResponse?.result || [];
+}
+
 // ── Yahoo Finance v8 chart API (best-effort fallback, Railway에서 자주 차단됨) ─
 async function yahooChart(symbol, range = '1mo', interval = '1d') {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
@@ -2880,140 +2939,106 @@ print(re.sub(r'\\bNaN\\b', 'null', out))
 // ─────────────────────────────────────────────────────────────────────────────
 // 동종업계 비교 (Peers)
 // ─────────────────────────────────────────────────────────────────────────────
+const PEER_MAP = {
+  'Semiconductors': ['NVDA','AMD','INTC','AVGO','QCOM','TSM','MU','000660.KS','005930.KS'],
+  'Semiconductor Equipment & Materials': ['AMAT','KLAC','LRCX','ASML','TER'],
+  'Software—Application': ['MSFT','CRM','ADBE','NOW','WDAY','INTU','ORCL'],
+  'Software—Infrastructure': ['MSFT','ORCL','PANW','CRWD','ZS'],
+  'Software': ['MSFT','ORCL','CRM','ADBE','SAP','NOW','WDAY','INTU'],
+  'Internet Content & Information': ['GOOGL','META','NFLX','035420.KS','035720.KS','BIDU'],
+  'Internet': ['GOOGL','META','AMZN','NFLX','035420.KS','035720.KS'],
+  'Consumer Electronics': ['AAPL','SONY','005930.KS','000660.KS','066570.KS'],
+  'Electronic Components': ['AVGO','TXN','MCHP','066570.KS','005930.KS'],
+  'Auto Manufacturers': ['TSLA','TM','F','GM','005380.KS','000270.KS','HMC'],
+  'Automotive': ['TSLA','TM','F','GM','005380.KS','000270.KS'],
+  'Specialty Chemicals': ['373220.KS','006400.KS','051910.KS','LTHM','ALB'],
+  'Electrical Equipment & Parts': ['373220.KS','006400.KS','012450.KS','ENPH','FSLR'],
+  'Banks—Diversified': ['JPM','BAC','WFC','GS','105560.KS','055550.KS','086790.KS'],
+  'Banks—Regional': ['105560.KS','055550.KS','086790.KS','JPM','BAC'],
+  'Financial Services': ['JPM','GS','MS','V','MA','105560.KS'],
+  'Finance': ['JPM','BAC','WFC','GS','MS','C'],
+  'Biotechnology': ['AMGN','GILD','REGN','VRTX','068270.KS','207940.KS'],
+  'Drug Manufacturers—General': ['LLY','JNJ','PFE','ABBV','MRK','BMY'],
+  'Pharma': ['LLY','JNJ','PFE','ABBV','MRK','BMY','GILD'],
+  'Oil & Gas Integrated': ['XOM','CVX','COP','BP','SHEL'],
+  'Energy': ['XOM','CVX','COP','BP','SHEL'],
+  'Internet Retail': ['AMZN','BABA','JD','SHOP','WMT','EBAY'],
+  'E-commerce': ['AMZN','BABA','JD','EBAY','SHOP','WMT'],
+  'Telecom Services': ['T','VZ','TMUS','S'],
+  'Communication Services': ['GOOGL','META','NFLX','T','VZ'],
+  'Steel': ['005490.KS','NUE','X','STLD'],
+};
+
+// Yahoo v10 quoteSummary 결과를 peer 카드 객체로 변환
+function _qsToPeer(qs, ticker) {
+  const v = x => (x == null ? null : (typeof x === 'object' ? (x.raw ?? null) : x));
+  const sd = qs.summaryDetail || {};
+  const ks = qs.defaultKeyStatistics || {};
+  const fd = qs.financialData || {};
+  const p  = qs.price || {};
+  const pct = x => { const n = v(x); return n == null ? null : Math.round(n * 10000) / 100; }; // 0.0234 → 2.34
+  return {
+    ticker: ticker.replace('.KS',''),
+    name: p.shortName || p.longName || ticker,
+    price: v(p.regularMarketPrice),
+    changePct: v(p.regularMarketChangePercent),  // percent 그대로 (e.g. 2.34)
+    per: v(sd.trailingPE),
+    forwardPer: v(sd.forwardPE) ?? v(ks.forwardPE),
+    pbr: v(ks.priceToBook),
+    roe: pct(fd.returnOnEquity),
+    revenueGrowth: pct(fd.revenueGrowth),
+    profitMargin: pct(fd.profitMargins),
+    div: pct(sd.dividendYield),
+    marketCap: v(p.marketCap) ?? v(sd.marketCap),
+  };
+}
+
+async function yahooPeersDirect(symbol, isKr) {
+  const yfticker = isKr ? `${symbol}.KS` : symbol;
+  const modules = ['assetProfile','summaryDetail','defaultKeyStatistics','financialData','price'];
+  // 1) 메인 종목 fundamentals
+  const mainQs = await yahooQuoteSummary(yfticker, modules);
+  const sector = mainQs.assetProfile?.sector || '';
+  const industry = mainQs.assetProfile?.industry || '';
+  const mainData = _qsToPeer(mainQs, yfticker);
+  // 2) 피어 후보 결정
+  const mainId = symbol.replace('.KS','');
+  const peerList = (PEER_MAP[industry] || PEER_MAP[sector] || [])
+    .filter(p => p.replace('.KS','') !== mainId)
+    .slice(0, 6);
+  // 3) 피어들 fundamentals 병렬 (Promise.all)
+  const peers = (await Promise.all(peerList.map(async (peer) => {
+    try {
+      const qs = await yahooQuoteSummary(peer, ['summaryDetail','defaultKeyStatistics','financialData','price']);
+      return _qsToPeer(qs, peer);
+    } catch (e) { return null; }
+  }))).filter(Boolean);
+  return { sector, industry, main: mainData, peers };
+}
+
 app.get('/api/peers', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   return serveSWR(res, `peers:${symbol}`, 3600_000, async () => {
-      const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
-      const py = `
-import yfinance as yf, json, warnings
-warnings.filterwarnings('ignore')
-
-t = yf.Ticker('${yfticker}')
-info = t.info
-fi = t.fast_info
-sector = info.get('sector','')
-industry = info.get('industry','')
-
-peer_map = {
-    'Semiconductors': ['NVDA','AMD','INTC','AVGO','QCOM','TSM','MU','000660.KS','005930.KS'],
-    'Semiconductor Equipment & Materials': ['AMAT','KLAC','LRCX','ASML','TER'],
-    'Software—Application': ['MSFT','CRM','ADBE','NOW','WDAY','INTU','ORCL'],
-    'Software—Infrastructure': ['MSFT','ORCL','PANW','CRWD','ZS'],
-    'Software': ['MSFT','ORCL','CRM','ADBE','SAP','NOW','WDAY','INTU'],
-    'Internet Content & Information': ['GOOGL','META','NFLX','035420.KS','035720.KS','BIDU'],
-    'Internet': ['GOOGL','META','AMZN','NFLX','035420.KS','035720.KS'],
-    'Consumer Electronics': ['AAPL','SONY','005930.KS','000660.KS','066570.KS'],
-    'Electronic Components': ['AVGO','TXN','MCHP','066570.KS','005930.KS'],
-    'Auto Manufacturers': ['TSLA','TM','F','GM','005380.KS','000270.KS','HMC'],
-    'Automotive': ['TSLA','TM','F','GM','005380.KS','000270.KS'],
-    'Specialty Chemicals': ['373220.KS','006400.KS','051910.KS','LTHM','ALB'],
-    'Electrical Equipment & Parts': ['373220.KS','006400.KS','012450.KS','ENPH','FSLR'],
-    'Banks—Diversified': ['JPM','BAC','WFC','GS','105560.KS','055550.KS','086790.KS'],
-    'Banks—Regional': ['105560.KS','055550.KS','086790.KS','JPM','BAC'],
-    'Financial Services': ['JPM','GS','MS','V','MA','105560.KS'],
-    'Finance': ['JPM','BAC','WFC','GS','MS','C'],
-    'Biotechnology': ['AMGN','GILD','REGN','VRTX','068270.KS','207940.KS'],
-    'Drug Manufacturers—General': ['LLY','JNJ','PFE','ABBV','MRK','BMY'],
-    'Pharma': ['LLY','JNJ','PFE','ABBV','MRK','BMY','GILD'],
-    'Oil & Gas Integrated': ['XOM','CVX','COP','BP','SHEL'],
-    'Energy': ['XOM','CVX','COP','BP','SHEL'],
-    'Internet Retail': ['AMZN','BABA','JD','SHOP','WMT','EBAY'],
-    'E-commerce': ['AMZN','BABA','JD','EBAY','SHOP','WMT'],
-    'Telecom Services': ['T','VZ','TMUS','S'],
-    'Communication Services': ['GOOGL','META','NFLX','T','VZ'],
-    'Steel': ['005490.KS','NUE','X','STLD'],
-    'default': []
-}
-
-peers_list = peer_map.get(industry, peer_map.get(sector, []))
-main_id = '${yfticker}'.replace('.KS','')
-peers_list = [p for p in peers_list if p.replace('.KS','') != main_id][:6]
-
-# 배치 가격 조회 (한 번에 모두)
-all_tickers = peers_list + ['${yfticker}']
-try:
-    dl = yf.download(all_tickers, period='2d', auto_adjust=True, progress=False, group_by='ticker')
-except:
-    dl = None
-
-def get_price_chg(ticker):
-    try:
-        if dl is not None and len(all_tickers) > 1:
-            col = dl[ticker]['Close'] if ticker in dl else None
-        elif dl is not None:
-            col = dl['Close']
-        else:
-            col = None
-        if col is not None and len(col) >= 1:
-            p = float(col.iloc[-1])
-            pv = float(col.iloc[-2]) if len(col) >= 2 else p
-            return round(p,2), round((p-pv)/pv*100 if pv else 0, 2)
-    except: pass
-    try:
-        fi2 = yf.Ticker(ticker).fast_info
-        p = fi2.last_price or 0
-        pv = fi2.regular_market_previous_close or p
-        return round(p,2), round((p-pv)/pv*100 if pv else 0, 2)
-    except: pass
-    return 0, 0
-
-result = []
-for peer in peers_list:
-    try:
-        pt = yf.Ticker(peer)
-        pi = pt.info
-        pfi = pt.fast_info
-        price, chg = get_price_chg(peer)
-        result.append({
-            'ticker': peer,
-            'name': pi.get('shortName') or pi.get('longName') or peer,
-            'price': price, 'changePct': chg,
-            'per': pi.get('trailingPE'),
-            'forwardPer': pi.get('forwardPE'),
-            'pbr': pi.get('priceToBook'),
-            'roe': round((pi.get('returnOnEquity') or 0)*100, 1) or None,
-            'marketCap': pfi.market_cap,
-            'revenueGrowth': round((pi.get('revenueGrowth') or 0)*100, 1) or None,
-            'profitMargin': round((pi.get('profitMargins') or 0)*100, 1) or None,
-            'div': round((pi.get('dividendYield') or 0)*100, 2) or None,
-        })
-    except: pass
-
-p0, chg0 = get_price_chg('${yfticker}')
-main_data = {
-    'ticker': main_id,
-    'name': info.get('shortName') or info.get('longName') or '',
-    'price': p0, 'changePct': chg0,
-    'per': info.get('trailingPE'), 'pbr': info.get('priceToBook'),
-    'roe': round((info.get('returnOnEquity') or 0)*100,1) or None,
-    'revenueGrowth': round((info.get('revenueGrowth') or 0)*100,1) or None,
-    'profitMargin': round((info.get('profitMargins') or 0)*100,1) or None,
-    'marketCap': info.get('marketCap'),
-}
-print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'peers': result}, ensure_ascii=False, default=str))
-`;
-      const raw = await _pyExecLong(py).catch(e => { console.error('peers 실패:', symbol, e.message?.slice(0,100)); return { sector:'', industry:'', peers:[] }; });
-      // KR 종목: 스크리너 캐시로 PER/PBR 보완 (NAVER 데이터가 더 정확)
-      if (market === 'kr') {
-        const sc = getC('screener') || {};
-        const fill = (item) => {
-          const code = (item.ticker||'').replace('.KS','');
-          const cached = sc[code];
-          if (cached) {
-            if (item.per == null && cached.per) item.per = cached.per;
-            if (item.pbr == null && cached.pbr) item.pbr = cached.pbr;
-            if (item.roe == null && cached.roe) item.roe = cached.roe;
-          }
-          return item;
-        };
-        if (raw.main) fill(raw.main);
-        if (raw.peers) raw.peers = raw.peers.map(fill);
-      }
-      // yfinance 자체 실패(sector/industry 둘 다 못 가져옴)일 때만 throw → 캐시 회피 + 재시도
-      // industry는 있으나 peer_map에 없는 경우는 정상이므로 빈 peers를 그대로 캐시
-      if (!raw.sector && !raw.industry) throw new Error('peers: yfinance info empty');
-      return raw;
+    const raw = await yahooPeersDirect(symbol, market === 'kr');
+    // KR 종목: 스크리너 캐시로 PER/PBR/ROE 보완 (NAVER 데이터가 더 정확)
+    if (market === 'kr') {
+      const sc = getC('screener') || {};
+      const fill = (item) => {
+        const code = (item.ticker||'').replace('.KS','');
+        const c = sc[code];
+        if (c) {
+          if (item.per == null && c.per) item.per = c.per;
+          if (item.pbr == null && c.pbr) item.pbr = c.pbr;
+          if (item.roe == null && c.roe) item.roe = c.roe;
+        }
+        return item;
+      };
+      if (raw.main) fill(raw.main);
+      if (raw.peers) raw.peers = raw.peers.map(fill);
+    }
+    if (!raw.sector && !raw.industry) throw new Error('peers: yahoo info empty');
+    return raw;
   });
 });
 
