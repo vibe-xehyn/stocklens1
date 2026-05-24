@@ -52,6 +52,52 @@ async function geminiGenerate(systemPrompt, userPrompt, { temperature = 0, maxTo
   throw lastErr || new Error('Gemini all keys/models failed');
 }
 
+// Gemini SSE 스트리밍: 응답이 도착하는 만큼 onChunk(textDelta) 호출, 누적 텍스트 반환
+async function geminiStreamGenerate(systemPrompt, userPrompt, { temperature = 0, maxTokens = 1024 } = {}, onChunk) {
+  const keys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
+  if (!keys.length) throw new Error('GEMINI_API_KEY not set');
+  const models = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+  let lastErr;
+  for (let ki = 0; ki < keys.length; ki++) {
+    for (const model of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${keys[ki]}`;
+        const body = {
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+        };
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) { lastErr = new Error(`GeminiStream key${ki+1} ${model} ${r.status}`); continue; }
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let full = '';
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const payload = line.slice(6).trim();
+            if (!payload || payload === '[DONE]') continue;
+            try {
+              const j = JSON.parse(payload);
+              const t = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (t) { full += t; try { onChunk?.(t); } catch {} }
+            } catch {}
+          }
+        }
+        if (!full) { lastErr = new Error(`GeminiStream key${ki+1} ${model} empty`); continue; }
+        return full;
+      } catch (e) { lastErr = e; }
+    }
+  }
+  throw lastErr || new Error('GeminiStream all keys/models failed');
+}
+
 app.use(compression({ level: 6 })); // gzip 압축
 app.use(express.static(join(__dirname, 'public'), {
   maxAge: '1d',          // JS/CSS/이미지 24시간 브라우저 캐시
@@ -2525,6 +2571,25 @@ app.get('/api/analysis', async (req, res) => {
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   const _hasGrok = !!process.env.GROQ_API_KEY;
   const isKr = market === 'kr';
+  const isStream = req.query.stream === '1';
+  let _streamProgress = 0;
+  let _sseSetup = false;
+  const setupSSE = () => {
+    if (_sseSetup) return;
+    _sseSetup = true;
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+  };
+  const sse = (obj) => {
+    if (!isStream) return;
+    setupSSE();
+    if (typeof obj.progress === 'number') _streamProgress = Math.max(_streamProgress, obj.progress);
+    try { res.write(`data: ${JSON.stringify({ ...obj, progress: _streamProgress })}\n\n`); } catch {}
+  };
+  const progressCb = isStream ? sse : null;
 
   // ── quick=1: 결정론적 데이터만 즉시 반환 (LLM 호출 생략, ~50ms) ──
   // 프런트는 quick으로 팩터 카드 먼저 렌더링 후, 전체 분석은 백그라운드로 별도 요청
@@ -2565,6 +2630,17 @@ app.get('/api/analysis', async (req, res) => {
     } catch (e) {
       return res.status(500).json({ error: e.message });
     }
+  }
+
+  // 스트리밍 모드: 캐시 히트면 즉시 100% 전송
+  if (isStream) {
+    const hit = getC(`ai:${symbol}`);
+    if (hit) {
+      sse({ progress: 100, stage: '캐시 적중', done: true, result: hit });
+      try { res.end(); } catch {}
+      return;
+    }
+    sse({ progress: 3, stage: '데이터 수집 시작' });
   }
 
   try {
@@ -2626,6 +2702,7 @@ print(json.dumps(result))
 `)),
       ]);
 
+      progressCb?.({ progress: 22, stage: '데이터 수집 완료' });
       const t = techR.status === 'fulfilled' ? techR.value : {};
       const q = quoteR.status === 'fulfilled' ? quoteR.value : {};
       const news = newsR.status === 'fulfilled' ? newsR.value : [];
@@ -2738,10 +2815,22 @@ ${newsText || '관련 뉴스 없음'}
 
       const sysPrompt = `당신은 한국어 전문 주식 분석가입니다. 반드시 순수한 한국어로만 답변하세요. 모든 문장은 반드시 "~입니다", "~합니다", "~됩니다" 등 격식체(존댓말)로 작성하세요. 반말이나 "~이다", "~한다" 체는 절대 사용하지 마세요. 한자, 중국어, 일본어, 영어, 베트남어 등 다른 언어나 문자를 절대 사용하지 마세요. 모든 단어를 한글로 표기하세요.\n\n시스템이 5대 투자전략(Piotroski F-Score, Magic Formula, Multi-Factor, Jegadeesh-Titman Momentum, CAN SLIM)을 종합하여 결정한 투자 의견: ${detSignal} (신뢰도 ${detConf}, 종합점수 ${detScore})\n섹터별 점수: ${breakStr}\n핵심 근거: ${reasonStr}\n\n당신의 역할은 이 결정의 근거를 자세히 설명하는 것입니다. signal 필드는 반드시 "${detSignal}"으로 출력하고, summary와 각 섹션 분석에 위 근거를 반영하세요.`;
 
+      progressCb?.({ progress: 28, stage: 'AI 분석 시작' });
       let parsed;
       // 1차: Gemini (키1 → 키2, 각 키별 3개 모델 자동 시도 — 무료 한도 가장 큼)
       try {
-        const raw = await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 });
+        // 스트리밍 모드: chunk 도착마다 실제 진행도 갱신 (예상 ~1800자 기준 28→90%)
+        const onChunk = progressCb
+          ? (() => { let total = 0; return (delta) => {
+              total += delta.length;
+              const pct = Math.min(90, 28 + Math.round(total / 1800 * 62));
+              progressCb({ progress: pct, stage: 'AI 분석 응답 수신' });
+            }; })()
+          : null;
+        const raw = progressCb
+          ? await geminiStreamGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 }, onChunk)
+          : await geminiGenerate(sysPrompt, prompt, { temperature: 0, maxTokens: 2048 });
+        progressCb?.({ progress: 92, stage: '응답 파싱' });
         // responseMimeType=application/json이면 raw 자체가 JSON
         let jsonStr = raw.trim();
         if (!jsonStr.startsWith('{')) {
@@ -2793,29 +2882,39 @@ ${newsText || '관련 뉴스 없음'}
            .replace(/[^\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F a-zA-Z0-9%.,·()\-+~:/?!\n""''【】]/g, '')
            .replace(/\s+/g, ' ').trim()
         : v;
+      progressCb?.({ progress: 97, stage: '결과 정제' });
       return Object.fromEntries(Object.entries(parsed).map(([k,v]) => [k, sanitize(v)]));
     });
 
-    res.json(data);
+    if (isStream) {
+      sse({ progress: 100, stage: '완료', done: true, result: data });
+      try { res.end(); } catch {}
+    } else {
+      res.json(data);
+    }
   } catch(e) {
     console.error('analysis 실패:', req.query.symbol, e.message?.slice(0, 120));
     _c.delete(`ai:${req.query.symbol}`);
     // 최후 fallback: 시그널 스토어에서 직접 결정론적 데이터 반환
     const sym = req.query.symbol;
     const stored = _signalStore.get(sym);
-    if (stored) {
-      const { signal, confidence, score, breakdown, reasons } = stored;
-      return res.json({
-        signal, confidence, score, breakdown, reasons,
-        price_move: '',
-        summary: `종합 점수 ${score}점 기준 ${signal} 의견입니다.`,
-        technical: '데이터 수집 중입니다.',
-        fundamental: '데이터 수집 중입니다.',
-        flow: '데이터 수집 중입니다.',
-        sentiment: '데이터 수집 중입니다.',
-        risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
-      });
+    const fb = stored ? {
+      signal: stored.signal, confidence: stored.confidence, score: stored.score,
+      breakdown: stored.breakdown, reasons: stored.reasons,
+      price_move: '',
+      summary: `종합 점수 ${stored.score}점 기준 ${stored.signal} 의견입니다.`,
+      technical: '데이터 수집 중입니다.',
+      fundamental: '데이터 수집 중입니다.',
+      flow: '데이터 수집 중입니다.',
+      sentiment: '데이터 수집 중입니다.',
+      risk: '시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다.',
+    } : null;
+    if (isStream) {
+      sse({ progress: 100, stage: '오류 fallback', done: true, result: fb, error: e.message });
+      try { res.end(); } catch {}
+      return;
     }
+    if (fb) return res.json(fb);
     res.status(500).json({ error: e.message });
   }
 });

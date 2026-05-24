@@ -948,7 +948,7 @@ async function loadAndRenderMain(def) {
   try {
     // 모든 API를 즉시 병렬 시작 — quote/chart 응답을 기다리지 않음
     const quickP = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}&quick=1`).then(d => { tick('quick'); return d; }).catch(() => { tick('quick'); return null; });
-    const fullP  = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('full'); return d; }).catch(() => { tick('full'); return null; });
+    const fullP  = fetchAnalysisStream(def).then(d => { tick('full'); return d; });
     const newsP  = api(`/api/news?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('news'); return d; }).catch(() => { tick('news'); return []; });
     const flowP  = api(`/api/flow?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('flow'); return d; }).catch(() => { tick('flow'); return null; });
     const earnP  = api(`/api/earnings?symbol=${def.ticker}&market=${def.market}`).then(d => { tick('earn'); return d; }).catch(() => { tick('earn'); return null; });
@@ -1619,26 +1619,33 @@ function renderAICard(def, data, { loadingNarrative = false } = {}) {
       ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
     </div>`;
 }
-let _aiProgressTimer = null;
-function startAiProgress() {
-  if (_aiProgressTimer) clearInterval(_aiProgressTimer);
-  const start = Date.now();
-  // 점근적 곡선: t=4s → 50%, t=8s → 75%, t=16s → ~94%, 절대 99% 넘지 않음
-  const curve = t => Math.min(99, Math.round(99 * (1 - Math.exp(-t / 6))));
-  _aiProgressTimer = setInterval(() => {
-    const fill = document.getElementById('aiProgressFill');
-    const label = document.getElementById('aiProgressLabel');
-    if (!fill || !label) { clearInterval(_aiProgressTimer); _aiProgressTimer = null; return; }
-    const pct = curve((Date.now() - start) / 1000);
-    fill.style.width = pct + '%';
-    label.textContent = pct + '%';
-  }, 200);
+// 서버 SSE에서 실제 진행도가 도착할 때마다 호출 — DOM이 있으면 즉시 반영
+function updateAiProgress(pct, stage) {
+  const fill = document.getElementById('aiProgressFill');
+  const label = document.getElementById('aiProgressLabel');
+  if (fill) fill.style.width = pct + '%';
+  if (label) label.textContent = stage ? `${pct}% · ${stage}` : `${pct}%`;
 }
-function stopAiProgress() {
-  if (_aiProgressTimer) { clearInterval(_aiProgressTimer); _aiProgressTimer = null; }
+// /api/analysis?stream=1 SSE 구독 → Promise<analysisResult>
+function fetchAnalysisStream(def) {
+  return new Promise((resolve) => {
+    const url = `/api/analysis?symbol=${def.ticker}&market=${def.market}&stream=1`;
+    let es;
+    try { es = new EventSource(url); }
+    catch { resolve(null); return; }
+    let resolved = false;
+    const finish = (v) => { if (resolved) return; resolved = true; try { es.close(); } catch {} resolve(v); };
+    es.onmessage = (ev) => {
+      let j; try { j = JSON.parse(ev.data); } catch { return; }
+      if (typeof j.progress === 'number') updateAiProgress(j.progress, j.stage);
+      if (j.done) finish(j.result || null);
+    };
+    es.onerror = () => finish(null);
+    setTimeout(() => finish(null), 90_000); // 안전 타임아웃
+  });
 }
-function renderAICardQuick(def, data) { renderAICard(def, data, { loadingNarrative: true }); startAiProgress(); }
-function renderAICardFull(def, data)  { stopAiProgress(); renderAICard(def, data, { loadingNarrative: false }); }
+function renderAICardQuick(def, data) { renderAICard(def, data, { loadingNarrative: true }); }
+function renderAICardFull(def, data)  { renderAICard(def, data, { loadingNarrative: false }); }
 
 function newsHTML(news) {
   if (!news.length) return '<div style="color:var(--muted);font-size:13px;padding:16px 0">뉴스를 불러올 수 없습니다.</div>';
