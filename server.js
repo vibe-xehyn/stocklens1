@@ -3016,14 +3016,14 @@ def get_price_chg(ticker):
     except: pass
     return 0, 0
 
-result = []
-for peer in peers_list:
+from concurrent.futures import ThreadPoolExecutor
+def fetch_peer(peer):
     try:
         pt = yf.Ticker(peer)
         pi = pt.info
         pfi = pt.fast_info
         price, chg = get_price_chg(peer)
-        result.append({
+        return {
             'ticker': peer,
             'name': pi.get('shortName') or pi.get('longName') or peer,
             'price': price, 'changePct': chg,
@@ -3035,8 +3035,11 @@ for peer in peers_list:
             'revenueGrowth': round((pi.get('revenueGrowth') or 0)*100, 1) or None,
             'profitMargin': round((pi.get('profitMargins') or 0)*100, 1) or None,
             'div': round((pi.get('dividendYield') or 0)*100, 2) or None,
-        })
-    except: pass
+        }
+    except: return None
+
+with ThreadPoolExecutor(max_workers=min(6, len(peers_list) or 1)) as ex:
+    result = [r for r in ex.map(fetch_peer, peers_list) if r]
 
 p0, chg0 = get_price_chg('${yfticker}')
 main_data = {
