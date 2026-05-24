@@ -2727,7 +2727,7 @@ ${newsText || '관련 뉴스 없음'}
         score: detScore,
         breakdown: detBreak,
         reasons: detReasons,
-        price_move: '데이터 분석 중입니다.',
+        price_move: '',
         summary: `종합 점수 ${detScore}점 기준 ${detSignal} 의견입니다. ${reasonStr}`,
         technical: `기술적 점수 ${detBreak.technical>=0?'+':''}${detBreak.technical}점입니다.`,
         fundamental: `가치 ${detBreak.value>=0?'+':''}${detBreak.value} / 품질 ${detBreak.quality>=0?'+':''}${detBreak.quality} / 성장 ${detBreak.growth>=0?'+':''}${detBreak.growth}점입니다.`,
@@ -2807,7 +2807,7 @@ ${newsText || '관련 뉴스 없음'}
       const { signal, confidence, score, breakdown, reasons } = stored;
       return res.json({
         signal, confidence, score, breakdown, reasons,
-        price_move: '데이터 분석 중입니다.',
+        price_move: '',
         summary: `종합 점수 ${score}점 기준 ${signal} 의견입니다.`,
         technical: '데이터 수집 중입니다.',
         fundamental: '데이터 수집 중입니다.',
