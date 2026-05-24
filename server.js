@@ -3010,7 +3010,9 @@ print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'pe
         if (raw.main) fill(raw.main);
         if (raw.peers) raw.peers = raw.peers.map(fill);
       }
-      if (!raw.peers?.length) throw new Error('peers empty'); // 빈 결과 캐시 방지
+      // yfinance 자체 실패(sector/industry 둘 다 못 가져옴)일 때만 throw → 캐시 회피 + 재시도
+      // industry는 있으나 peer_map에 없는 경우는 정상이므로 빈 peers를 그대로 캐시
+      if (!raw.sector && !raw.industry) throw new Error('peers: yfinance info empty');
       return raw;
   });
 });
