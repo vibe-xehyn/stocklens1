@@ -2613,27 +2613,44 @@ else:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Groq LLM
+// LLM: Gemini first, Groq fallback
 // ─────────────────────────────────────────────────────────────────────────────
-function getGroq() {
-  const key = process.env.GROQ_API_KEY;
-  if (!key) return null;
-  return { apiKey: key };
+const _GEMINI_KEYS = (process.env.GEMINI_API_KEY || '').split(',').map(s => s.trim()).filter(Boolean);
+const _GEMINI_MODEL = 'gemini-2.0-flash';
+
+async function geminiChat(prompt, { maxTokens = 1200 } = {}) {
+  if (!_GEMINI_KEYS.length) throw new Error('GEMINI_API_KEY 없음');
+  for (const key of _GEMINI_KEYS) {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${_GEMINI_MODEL}:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3, responseMimeType: 'application/json' },
+        }),
+        signal: AbortSignal.timeout(40_000),
+      }
+    );
+    if (resp.status === 429) continue; // 다음 키 시도
+    if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+    const j = await resp.json();
+    return j.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  }
+  throw new Error('Gemini 모든 키 한도 초과');
 }
 
-async function groqChat(messages, { maxTokens = 1800 } = {}) {
-  const groq = getGroq();
-  if (!groq) throw new Error('GROQ_API_KEY 없음');
+async function groqChat(messages, { maxTokens = 1200 } = {}) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error('GROQ_API_KEY 없음');
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${groq.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, max_tokens: maxTokens, temperature: 0.35 }),
+    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, max_tokens: maxTokens, temperature: 0.3 }),
     signal: AbortSignal.timeout(45_000),
   });
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => '');
-    throw Object.assign(new Error(`Groq ${resp.status}`), { status: resp.status, body: txt });
-  }
+  if (!resp.ok) throw new Error(`Groq ${resp.status}`);
   const j = await resp.json();
   return j.choices[0].message.content;
 }
@@ -2641,109 +2658,67 @@ async function groqChat(messages, { maxTokens = 1800 } = {}) {
 function buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig) {
   const { signal, confidence, score, breakdown: bk, reasons } = sig;
   const cur = isKr ? '₩' : '$';
-  const n = (v, d=1) => v != null ? (+v).toFixed(d) : 'N/A';
-  const pct = v => v != null ? `${(+v*100).toFixed(1)}%` : 'N/A';
+  const n = (v, d=1) => v != null ? (+v).toFixed(d) : null;
+  const pct = v => v != null ? `${(+v*100).toFixed(1)}%` : null;
+  const x = v => v != null ? v : undefined; // null 제거용
 
-  // 기술 지표 정리
+  // 핵심 지표만 선별 (토큰 최소화)
   const tech = [
-    `RSI(14): ${n(t.rsi)}${t.rsi>70?' (과매수)':t.rsi<30?' (과매도)':''}`,
-    t.macd!=null&&t.macd_signal!=null ? `MACD: ${n(t.macd,4)} vs Signal ${n(t.macd_signal,4)} (${t.macd>t.macd_signal?'골든크로스':'데드크로스'})` : null,
-    t.adx!=null ? `ADX: ${n(t.adx)} (${t.adx>25?(t.pdi>t.mdi?'강한 상승추세':'강한 하락추세'):'횡보/약추세'})` : null,
-    t.bb_pct!=null ? `볼린저밴드: ${n(t.bb_pct)}% 위치${t.bb_pct>80?' (상단 근접)':t.bb_pct<20?' (하단 근접)':''}` : null,
-    t.stoch_k!=null ? `스토캐스틱 K: ${n(t.stoch_k)}${t.stoch_k>80?' (과매수)':t.stoch_k<20?' (과매도)':''}` : null,
-    t.will_r!=null ? `Williams%R: ${n(t.will_r)}` : null,
-    t.obv_trend!=null ? `OBV 추세: ${t.obv_trend>0?'상승(매집)':'하락(분산)'}` : null,
-    t.cmf!=null ? `CMF: ${n(t.cmf,2)}` : null,
-    t.mfi!=null ? `MFI: ${n(t.mfi)}` : null,
-    t.roc20!=null ? `ROC(20): ${n(t.roc20)}%` : null,
-    t.ich_signal ? `이치모쿠: ${t.ich_signal}` : null,
-    t.sar_signal ? `Parabolic SAR: ${t.sar_signal}` : null,
-    t.price_vs_52h!=null ? `52주 고가 대비: ${n(t.price_vs_52h)}%` : null,
-    t.price_vs_52l!=null ? `52주 저가 대비: +${n(t.price_vs_52l)}%` : null,
-    t.vpt_trend ? `VPT: ${t.vpt_trend}` : null,
-    t.candles?.length ? `캔들 패턴: ${t.candles.join(', ')}` : null,
-  ].filter(Boolean).join('\n- ');
+    t.rsi!=null && `RSI:${n(t.rsi)}${t.rsi>70?'(과매수)':t.rsi<30?'(과매도)':''}`,
+    t.macd!=null&&t.macd_signal!=null && `MACD:${t.macd>t.macd_signal?'골든크로스':'데드크로스'}`,
+    t.adx!=null && `ADX:${n(t.adx)}${t.adx>25?(t.pdi>t.mdi?'↑강세':'↓약세'):'횡보'}`,
+    t.bb_pct!=null && `BB:${n(t.bb_pct,0)}%${t.bb_pct>80?'(상단)':t.bb_pct<20?'(하단)':''}`,
+    t.obv_trend!=null && `OBV:${t.obv_trend>0?'↑매집':'↓분산'}`,
+    t.cmf!=null && `CMF:${n(t.cmf,2)}`,
+    t.ich_signal && `이치모쿠:${t.ich_signal}`,
+    t.will_r!=null && `W%R:${n(t.will_r,0)}`,
+    t.roc20!=null && `ROC20:${n(t.roc20,0)}%`,
+    t.price_vs_52h!=null && `52wH:${n(t.price_vs_52h,0)}%`,
+    t.candles?.length && `캔들:${t.candles.join(',')}`,
+    t.sar_signal && `SAR:${t.sar_signal}`,
+  ].filter(Boolean).join(' | ');
 
-  // 펀더멘탈
   const fund = [
-    q.per!=null ? `PER: ${n(q.per)}배` : null,
-    q.forwardPer!=null ? `예상PER: ${n(q.forwardPer)}배` : null,
-    q.pbr!=null ? `PBR: ${n(q.pbr,2)}배` : null,
-    q.roe!=null ? `ROE: ${pct(q.roe)}` : null,
-    q.operatingMargin!=null ? `영업이익률: ${pct(q.operatingMargin)}` : null,
-    q.earningsGrowth!=null ? `이익성장률(YoY): ${pct(q.earningsGrowth)}` : null,
-    q.revenueGrowth!=null ? `매출성장률(YoY): ${pct(q.revenueGrowth)}` : null,
-    q.debtToEquity!=null ? `부채비율: ${n(q.debtToEquity,0)}%` : null,
-    q.freeCashflow!=null ? `FCF: ${q.freeCashflow>0?'양수(건전)':'음수(주의)'}` : null,
-    q.pegRatio!=null ? `PEG: ${n(q.pegRatio,2)}` : null,
-    q.recommendation ? `애널리스트 컨센서스: ${q.recommendation}${q.targetPrice?` / 목표주가 ${cur}${(+q.targetPrice).toLocaleString()}`:''}` : null,
-  ].filter(Boolean).join('\n- ');
+    q.per!=null && `PER:${n(q.per)}배`,
+    q.forwardPer!=null && `fPER:${n(q.forwardPer)}배`,
+    q.pbr!=null && `PBR:${n(q.pbr,2)}`,
+    q.roe!=null && `ROE:${pct(q.roe)}`,
+    q.operatingMargin!=null && `OPM:${pct(q.operatingMargin)}`,
+    q.earningsGrowth!=null && `EG:${pct(q.earningsGrowth)}`,
+    q.revenueGrowth!=null && `RG:${pct(q.revenueGrowth)}`,
+    q.debtToEquity!=null && `D/E:${n(q.debtToEquity,0)}%`,
+    q.freeCashflow!=null && `FCF:${q.freeCashflow>0?'+':'−'}`,
+    q.recommendation && `컨센서스:${q.recommendation}${q.targetPrice?` TP:${cur}${(+q.targetPrice).toLocaleString()}`:''}`,
+  ].filter(Boolean).join(' | ');
 
-  // 수급
   const flowStr = [
-    flow.institutionPct!=null ? `기관 지분율: ${flow.institutionPct}%` : null,
-    flow.insiderPct!=null ? `내부자 지분율: ${flow.insiderPct}%` : null,
-    flow.shortPct!=null ? `공매도 비율: ${flow.shortPct}%` : null,
-    flow.topHolders?.length ? `주요 기관주주: ${flow.topHolders.slice(0,3).map(h=>`${h.name}(${h.pct}%)`).join(', ')}` : null,
-    flow.insiderTx?.length ? `최근 내부자 거래: ${flow.insiderTx[0].type} — ${flow.insiderTx[0].name} ${flow.insiderTx[0].shares?.toLocaleString()}주 (${flow.insiderTx[0].date})` : null,
-    flow.options ? `풋콜비율: ${flow.options.putCallRatio} / 내재변동성: ${flow.options.impliedVol}%` : null,
-  ].filter(Boolean).join('\n- ');
+    flow.institutionPct!=null && `기관:${flow.institutionPct}%`,
+    flow.shortPct!=null && `공매도:${flow.shortPct}%`,
+    flow.insiderTx?.length && `내부자:${flow.insiderTx[0].type}(${flow.insiderTx[0].shares?.toLocaleString()}주)`,
+    flow.options && `PC:${flow.options.putCallRatio} IV:${flow.options.impliedVol}%`,
+    flow.topHolders?.length && `대주주:${flow.topHolders.slice(0,2).map(h=>`${h.name}${h.pct}%`).join(',')}`,
+  ].filter(Boolean).join(' | ');
 
-  // 매크로
   const macroStr = [
-    macro.vix ? `VIX: ${macro.vix.value}${macro.vix.value>25?' (공포구간)':macro.vix.value<15?' (안정)':''}` : null,
-    macro.us10y ? `미국 10년물 금리: ${macro.us10y.value}%` : null,
-    macro.usdkrw && isKr ? `USD/KRW: ${macro.usdkrw.value}원` : null,
-    macro.gold ? `금: $${macro.gold.value} (${macro.gold.chg>0?'+':''}${macro.gold.chg}%)` : null,
-    macro.oil ? `WTI 원유: $${macro.oil.value} (${macro.oil.chg>0?'+':''}${macro.oil.chg}%)` : null,
-  ].filter(Boolean).join('\n- ');
+    macro.vix && `VIX:${macro.vix.value}`,
+    macro.us10y && `10Y:${macro.us10y.value}%`,
+    macro.usdkrw && isKr && `USDKRW:${macro.usdkrw.value}`,
+  ].filter(Boolean).join(' | ');
 
-  const newsStr = news.slice(0,5).map((n,i)=>`${i+1}. ${n.title}`).join('\n');
+  const newsStr = news.slice(0,3).map(n=>n.title.slice(0,60)).join(' / ');
 
-  const systemPrompt = `당신은 CFA(공인재무분석사) 자격을 보유한 전문 주식 애널리스트입니다.
-실제 지표 데이터를 바탕으로 종목 투자 의견을 작성합니다.
-작성 원칙:
-- 실제 수치를 구체적으로 인용하여 근거를 명확히 제시하세요
-- 전문 용어를 사용하되, 일반 투자자도 이해할 수 있도록 친절하게 설명하세요
-- 긍정/부정 요인을 균형 있게 다루세요
-- 각 섹션은 충분히 상세하게 작성하세요 (생략하지 마세요)
-- 반드시 JSON만 출력하고 다른 텍스트는 일절 포함하지 마세요`;
+  // 시스템 + 유저 합쳐서 단일 프롬프트로 (Gemini는 system role 없음)
+  return `전문 주식 애널리스트로서 아래 데이터를 바탕으로 ${symbol}(${isKr?'KR':'US'}) 투자 분석을 JSON으로만 출력하라. 수치를 직접 인용하고 친절하고 상세하게 서술하라.
 
-  const userPrompt = `## 종목: ${symbol} (${isKr?'한국':'미국'} 시장)
-## 투자 신호 산출 결과
-- 종합 신호: **${signal}** (점수: ${score}점, 확신도: ${confidence}%)
-- 팩터 점수: 기술 ${bk.technical>=0?'+':''}${bk.technical} / 가치 ${bk.value>=0?'+':''}${bk.value} / 품질 ${bk.quality>=0?'+':''}${bk.quality} / 성장 ${bk.growth>=0?'+':''}${bk.growth} / 수급 ${bk.flow>=0?'+':''}${bk.flow} / 심리 ${bk.sentiment>=0?'+':''}${bk.sentiment}
-- 주요 시그널: ${reasons.join(', ')}
+신호:${signal} 점수:${score} 확신도:${confidence}% | 기술:${bk.technical>=0?'+':''}${bk.technical} 가치:${bk.value>=0?'+':''}${bk.value} 품질:${bk.quality>=0?'+':''}${bk.quality} 성장:${bk.growth>=0?'+':''}${bk.growth} 수급:${bk.flow>=0?'+':''}${bk.flow} 심리:${bk.sentiment>=0?'+':''}${bk.sentiment}
+주요시그널:${reasons.join(',')}
+기술:${tech||'N/A'}
+펀더멘탈:${fund||'N/A'}
+수급:${flowStr||'N/A'}
+매크로:${macroStr||'N/A'}
+뉴스:${newsStr||'없음'}
 
-## 기술적 지표
-- ${tech||'데이터 없음'}
-
-## 펀더멘탈
-- ${fund||'데이터 없음'}
-
-## 수급/주주 현황
-- ${flowStr||'데이터 없음'}
-
-## 매크로/시장환경
-- ${macroStr||'데이터 없음'}
-
-## 최근 뉴스
-${newsStr||'뉴스 없음'}
-
-위 데이터를 바탕으로 다음 JSON 형식으로만 응답하세요:
-{
-  "summary": "종합 투자 요약 — 핵심 투자 포인트 3~4문장. 점수와 주요 근거 언급",
-  "technical": "기술적 분석 상세 — 각 지표의 수치와 의미를 구체적으로 설명. RSI·MACD·ADX·볼린저밴드·OBV 등 실제 수치 인용. 3~4문장",
-  "fundamental": "펀더멘탈 분석 상세 — PER·PBR·ROE·이익성장률 등 수치를 언급하며 기업의 재무 건전성과 성장성 평가. 3~4문장",
-  "flow": "수급/주주 현황 분석 — 기관 지분율, 공매도, 내부자 거래, 풋콜비율 등을 바탕으로 매수/매도 압력 평가. 2~3문장",
-  "sentiment": "뉴스/심리/매크로 분석 — 최근 뉴스 핵심 내용, VIX, 금리 환경이 종목에 미치는 영향. 2~3문장",
-  "risk": "주요 리스크 — 투자 시 주의해야 할 요인 3가지를 구체적 수치와 함께 서술. 2~3문장"
-}`;
-
-  return [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userPrompt },
-  ];
+{"summary":"3~4문장 종합요약(점수·주요근거·투자포인트 포함)","technical":"기술지표 상세(RSI·MACD·ADX·BB·OBV 수치 인용, 3~4문장)","fundamental":"펀더멘탈 상세(PER·ROE·성장률 수치 인용, 3~4문장)","flow":"수급 분석(기관·공매도·내부자·PC비율 수치 인용, 2~3문장)","sentiment":"뉴스·심리·매크로 영향(2~3문장)","risk":"리스크 3가지(수치 근거 포함, 2~3문장)"}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2867,8 +2842,17 @@ app.get('/api/analysis/ai', async (req, res) => {
   const { t, q, news, flow, macro, sig } = raw;
 
   try {
-    const messages = buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig);
-    const content = await groqChat(messages, { maxTokens: 2000 });
+    const prompt = buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig);
+
+    // Gemini 우선, 실패 시 Groq 폴백
+    let content;
+    try {
+      content = await geminiChat(prompt, { maxTokens: 1200 });
+    } catch (geminiErr) {
+      console.warn('Gemini 실패, Groq 시도:', geminiErr.message?.slice(0, 60));
+      const messages = [{ role: 'user', content: prompt }];
+      content = await groqChat(messages, { maxTokens: 1200 });
+    }
 
     // JSON 파싱
     const jsonMatch = content.match(/\{[\s\S]*\}/);
