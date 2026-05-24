@@ -2712,18 +2712,39 @@ function buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig) {
 
   const newsStr = news.slice(0,3).map(n=>n.title.slice(0,60)).join(' / ');
 
-  // 시스템 + 유저 합쳐서 단일 프롬프트로 (Gemini는 system role 없음)
-  return `전문 주식 애널리스트로서 아래 데이터를 바탕으로 ${symbol}(${isKr?'KR':'US'}) 투자 분석을 JSON으로만 출력하라. 수치를 직접 인용하고 친절하고 상세하게 서술하라.
+  const changePct = q.changePct != null ? `${q.changePct>=0?'+':''}${q.changePct.toFixed(2)}%` : null;
 
-신호:${signal} 점수:${score} 확신도:${confidence}% | 기술:${bk.technical>=0?'+':''}${bk.technical} 가치:${bk.value>=0?'+':''}${bk.value} 품질:${bk.quality>=0?'+':''}${bk.quality} 성장:${bk.growth>=0?'+':''}${bk.growth} 수급:${bk.flow>=0?'+':''}${bk.flow} 심리:${bk.sentiment>=0?'+':''}${bk.sentiment}
-주요시그널:${reasons.join(',')}
-기술:${tech||'N/A'}
+  // 시스템 + 유저 합쳐서 단일 프롬프트 (Gemini는 system role 없음)
+  return `당신은 냉철하고 전문적인 주식 애널리스트입니다. 아래 실제 데이터를 분석해 ${symbol}(${isKr?'한국':'미국'}) 종목 투자 의견을 작성하세요.
+
+[작성 원칙]
+- 수치를 단순 나열하지 말고, 수치가 의미하는 바와 그 원인·배경을 줄글로 풀어 설명하세요
+- 각 지표가 왜 중요한지, 현재 수치가 무엇을 시사하는지 해석하세요
+- 낙관론과 비관론을 균형 있게 다루며, 근거 없는 낙관은 배제하세요
+- 일반 투자자도 이해할 수 있도록 친절하되, 전문성을 잃지 마세요
+- 단기·중기 관점에서 어떤 전개가 예상되는지 예측을 포함하세요
+- JSON만 출력하고 다른 텍스트 없이 응답하세요
+
+[데이터]
+신호:${signal} 점수:${score}/200 확신도:${confidence}% | 기술:${bk.technical>=0?'+':''}${bk.technical} 가치:${bk.value>=0?'+':''}${bk.value} 품질:${bk.quality>=0?'+':''}${bk.quality} 성장:${bk.growth>=0?'+':''}${bk.growth} 수급:${bk.flow>=0?'+':''}${bk.flow} 심리:${bk.sentiment>=0?'+':''}${bk.sentiment}
+주요시그널:${reasons.join(', ')}
+기술지표:${tech||'N/A'}
 펀더멘탈:${fund||'N/A'}
 수급:${flowStr||'N/A'}
 매크로:${macroStr||'N/A'}
+오늘등락:${changePct||'N/A'}
 뉴스:${newsStr||'없음'}
 
-{"summary":"3~4문장 종합요약(점수·주요근거·투자포인트 포함)","technical":"기술지표 상세(RSI·MACD·ADX·BB·OBV 수치 인용, 3~4문장)","fundamental":"펀더멘탈 상세(PER·ROE·성장률 수치 인용, 3~4문장)","flow":"수급 분석(기관·공매도·내부자·PC비율 수치 인용, 2~3문장)","sentiment":"뉴스·심리·매크로 영향(2~3문장)","risk":"리스크 3가지(수치 근거 포함, 2~3문장)"}`;
+[출력 형식 — JSON]
+{
+  "price_move": "${changePct ? `오늘 ${changePct} 변동의 핵심 원인을 1~2문장으로 분석 (뉴스·기술적 요인·수급 등 근거 명시, 없으면 빈 문자열)` : ''}",
+  "summary": "종합점수와 신호의 의미를 설명하고, 현재 이 종목에 투자해야 하는(또는 하지 말아야 하는) 핵심 이유 2~3가지를 줄글로 서술. 3~4문장.",
+  "technical": "RSI·MACD·ADX·볼린저밴드·OBV 등 주요 지표 수치를 인용하되, 각 수치가 현재 주가 흐름에서 무엇을 의미하는지 해석하고, 단기적으로 어떤 움직임이 예상되는지 서술. 3~4문장.",
+  "fundamental": "PER·PBR·ROE·이익성장률 등 수치를 언급하며 기업의 이익 창출력과 성장성이 현재 주가 수준에 적절히 반영되어 있는지 평가. 단순 수치 나열이 아닌 가치평가 관점에서 서술. 3~4문장.",
+  "flow": "기관 지분율·공매도·내부자거래·풋콜비율 등을 바탕으로 현재 시장 참여자들의 심리와 포지션을 해석하고, 이것이 주가에 어떤 영향을 줄 수 있는지 서술. 2~3문장.",
+  "sentiment": "최근 뉴스의 핵심 내용이 주가에 미치는 영향과 VIX·금리·환율 등 거시환경이 이 종목에 유리/불리한지 판단하여 서술. 2~3문장.",
+  "risk": "현재 데이터에서 도출되는 구체적 리스크 요인 2~3가지를 수치 근거와 함께 서술. 막연한 경고가 아닌 지금 이 종목 특유의 리스크여야 함. 2~3문장."
+}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2864,10 +2885,10 @@ app.get('/api/analysis/ai', async (req, res) => {
     if (!jsonMatch) throw new Error('JSON 없음');
     const parsed = JSON.parse(jsonMatch[0]);
 
-    // price_move 결정론적으로 추가
+    // price_move: AI가 생성한 값 사용, 없으면 결정론적 폴백
     const isUp = (q.changePct ?? 0) >= 0;
-    let price_move = '';
-    if (q.changePct != null && Math.abs(q.changePct) > 0.05) {
+    let price_move = parsed.price_move || '';
+    if (!price_move && q.changePct != null && Math.abs(q.changePct) > 0.05) {
       const topNw = news.length > 0 ? ` — ${news[0].title.slice(0, 60)}` : '';
       const topR = !topNw && sig.reasons.length > 0 ? ` — ${sig.reasons[0]}` : '';
       price_move = `${isUp ? '+' : ''}${q.changePct.toFixed(2)}%${topNw || topR}`;
