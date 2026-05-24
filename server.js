@@ -25,77 +25,78 @@ const getGrok = () => new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'h
 //   gemini-2.5-flash-lite: 15/1000  (가장 높은 한도 — 1차 선택)
 //   gemini-2.0-flash-lite: 30/1500
 //   gemini-2.0-flash:      15/200   (낮은 한도 — 빨리 소진됨)
+// Gemini 키 목록 (성공한 키 우선 재사용)
+const _geminiKeys = () => [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
+// 키당 1개 모델만 시도 — 429면 해당 키 즉시 포기하고 다음 키로
+// (같은 키로 다른 모델 시도해도 429 반복 → 한도 낭비)
+const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+
 async function geminiGenerate(systemPrompt, userPrompt, { temperature = 0, maxTokens = 1024 } = {}) {
-  const keys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
+  const keys = _geminiKeys();
   if (!keys.length) throw new Error('GEMINI_API_KEY not set');
-  const models = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
   let lastErr;
-  // 키별 × 모델별 조합 시도 (키1-모델1 → 키1-모델2 → ... → 키2-모델1 → ...)
   for (let ki = 0; ki < keys.length; ki++) {
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keys[ki]}`;
-        const body = {
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
-        };
-        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (!r.ok) { lastErr = new Error(`Gemini key${ki+1} ${model} ${r.status}: ${(await r.text()).slice(0, 120)}`); continue; }
-        const j = await r.json();
-        const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) { lastErr = new Error(`Gemini key${ki+1} ${model} empty response`); continue; }
-        return text;
-      } catch (e) { lastErr = e; }
-    }
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${keys[ki]}`;
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+      };
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.status === 429) { lastErr = new Error(`Gemini key${ki+1} 429 한도초과`); continue; } // 다음 키로
+      if (!r.ok) { lastErr = new Error(`Gemini key${ki+1} ${r.status}`); continue; }
+      const j = await r.json();
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) { lastErr = new Error(`Gemini key${ki+1} empty response`); continue; }
+      return text;
+    } catch (e) { lastErr = e; }
   }
-  throw lastErr || new Error('Gemini all keys/models failed');
+  throw lastErr || new Error('Gemini all keys failed');
 }
 
-// Gemini SSE 스트리밍: 응답이 도착하는 만큼 onChunk(textDelta) 호출, 누적 텍스트 반환
+// Gemini SSE 스트리밍: 응답 chunk 도착마다 onChunk(textDelta) 호출, 누적 텍스트 반환
 async function geminiStreamGenerate(systemPrompt, userPrompt, { temperature = 0, maxTokens = 1024 } = {}, onChunk) {
-  const keys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
+  const keys = _geminiKeys();
   if (!keys.length) throw new Error('GEMINI_API_KEY not set');
-  const models = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
   let lastErr;
   for (let ki = 0; ki < keys.length; ki++) {
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${keys[ki]}`;
-        const body = {
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
-        };
-        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (!r.ok) { lastErr = new Error(`GeminiStream key${ki+1} ${model} ${r.status}`); continue; }
-        const reader = r.body.getReader();
-        const dec = new TextDecoder();
-        let full = '';
-        let buf = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop() || '';
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const payload = line.slice(6).trim();
-            if (!payload || payload === '[DONE]') continue;
-            try {
-              const j = JSON.parse(payload);
-              const t = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              if (t) { full += t; try { onChunk?.(t); } catch {} }
-            } catch {}
-          }
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${keys[ki]}`;
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+      };
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.status === 429) { lastErr = new Error(`GeminiStream key${ki+1} 429 한도초과`); continue; } // 다음 키로
+      if (!r.ok) { lastErr = new Error(`GeminiStream key${ki+1} ${r.status}`); continue; }
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let full = '';
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (!payload || payload === '[DONE]') continue;
+          try {
+            const j = JSON.parse(payload);
+            const t = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (t) { full += t; try { onChunk?.(t); } catch {} }
+          } catch {}
         }
-        if (!full) { lastErr = new Error(`GeminiStream key${ki+1} ${model} empty`); continue; }
-        return full;
-      } catch (e) { lastErr = e; }
-    }
+      }
+      if (!full) { lastErr = new Error(`GeminiStream key${ki+1} empty`); continue; }
+      return full;
+    } catch (e) { lastErr = e; }
   }
-  throw lastErr || new Error('GeminiStream all keys/models failed');
+  throw lastErr || new Error('GeminiStream all keys failed');
 }
 
 app.use(compression({ level: 6 })); // gzip 압축
