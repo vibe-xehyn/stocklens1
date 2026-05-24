@@ -911,7 +911,15 @@ async function loadAndRenderMain(def) {
   document.getElementById('mainContent').innerHTML =
     `<div class="loading-overlay"><div class="spinner"></div> ${def.name} 데이터 로딩 중...</div>`;
   try {
-    // Quote and chart load in parallel; news after (also uses Yahoo queue)
+    // 모든 API를 즉시 병렬 시작 — quote/chart 응답을 기다리지 않음
+    const quickP = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}&quick=1`).catch(() => null);
+    const fullP  = api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).catch(() => null);
+    const newsP  = api(`/api/news?symbol=${def.ticker}&market=${def.market}`).catch(() => []);
+    const flowP  = api(`/api/flow?symbol=${def.ticker}&market=${def.market}`).catch(() => null);
+    const earnP  = api(`/api/earnings?symbol=${def.ticker}&market=${def.market}`).catch(() => null);
+    const peerP  = api(`/api/peers?symbol=${def.ticker}&market=${def.market}`).catch(() => ({ _err: true }));
+
+    // quote + chart 먼저 도착해야 페이지 렌더 가능
     const [q, chart] = await Promise.all([
       quoteCache[def.id]
         ? Promise.resolve(quoteCache[def.id])
@@ -920,54 +928,51 @@ async function loadAndRenderMain(def) {
     ]);
     quoteCache[def.id] = { ...def, ...q };
     chartCache[`${def.ticker}:${currentRange}`] = chart;
-    // Render immediately with quote+chart, then load AI analysis and news async
     renderMain(def, q, chart, []);
+
     // 나머지 범위 백그라운드 프리페치
     ['1wk','1mo','3mo','6mo','1y'].filter(r => r !== currentRange).forEach(r => {
       const ck = `${def.ticker}:${r}`;
       if (!chartCache[ck]) api(`/api/chart?symbol=${def.ticker}&range=${r}&market=${def.market}`)
         .then(d => { chartCache[ck] = d; }).catch(() => {});
     });
-    // Load all async data in parallel
-    const [news] = await Promise.all([
-      api(`/api/news?symbol=${def.ticker}&market=${def.market}`).catch(() => []),
-      api(`/api/flow?symbol=${def.ticker}&market=${def.market}`).then(d => {
-        const el = document.getElementById('flowContainer');
-        if (el) el.innerHTML = renderFlowHTML(d, def.market === 'us');
-      }).catch(() => {
-        const el = document.getElementById('flowContainer');
-        if (el) el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">수급 데이터 없음</div>';
-      }),
-      api(`/api/earnings?symbol=${def.ticker}&market=${def.market}`).then(d => {
-        const el = document.getElementById('earningsContainer');
-        if (el) el.innerHTML = renderEarningsHTML(d, def.market === 'kr', def.market === 'kr' ? '₩' : '$');
-      }).catch(() => {
-        const el = document.getElementById('earningsContainer');
-        if (el) el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">실적 데이터 없음</div>';
-      }),
-      api(`/api/peers?symbol=${def.ticker}&market=${def.market}`).then(d => {
-        const el = document.getElementById('peersContainer');
-        if (el) el.innerHTML = renderPeersHTML(d, def.market === 'kr' ? '₩' : '$');
-      }).catch(e => {
-        const el = document.getElementById('peersContainer');
-        if (el) el.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:8px">비교 데이터 없음 (${e?.message||'unknown'})</div>`;
-      }),
-      // 1단계: quick=1로 결정론적 팩터 데이터 즉시 가져오기 (~50ms)
-      api(`/api/analysis?symbol=${def.ticker}&market=${def.market}&quick=1`).then(d => {
-        const el = document.getElementById('factorContainer');
-        if (el) el.innerHTML = renderFactorHTML(d.breakdown, d.score, d.signal, d.reasons);
-        // AI 카드도 quick 결과로 즉시 표시
-        renderAICardQuick(def, d);
-        // 2단계: 백그라운드로 전체 LLM 분석 호출 → 도착 시 AI 카드 narrative 업데이트
-        api(`/api/analysis?symbol=${def.ticker}&market=${def.market}`).then(full => {
-          analysisCache[def.ticker] = { data: full, ts: Date.now() };
-          renderAICardFull(def, full);
-        }).catch(() => {});
-      }).catch(() => {
-        const el = document.getElementById('factorContainer');
-        if (el) el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">팩터 데이터 없음</div>';
-      }),
-    ]);
+
+    // 미리 시작한 promise들을 도착하는 대로 그 자리에 채움
+    quickP.then(d => {
+      if (!d) {
+        const fe = document.getElementById('factorContainer');
+        if (fe) fe.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">팩터 데이터 없음</div>';
+        return;
+      }
+      const fe = document.getElementById('factorContainer');
+      if (fe) fe.innerHTML = renderFactorHTML(d.breakdown, d.score, d.signal, d.reasons);
+      renderAICardQuick(def, d);
+    });
+    fullP.then(full => {
+      if (!full) return;
+      analysisCache[def.ticker] = { data: full, ts: Date.now() };
+      renderAICardFull(def, full);
+    });
+    flowP.then(d => {
+      const el = document.getElementById('flowContainer');
+      if (!el) return;
+      el.innerHTML = d ? renderFlowHTML(d, def.market === 'us')
+        : '<div style="color:var(--muted);font-size:13px;padding:8px">수급 데이터 없음</div>';
+    });
+    earnP.then(d => {
+      const el = document.getElementById('earningsContainer');
+      if (!el) return;
+      el.innerHTML = d ? renderEarningsHTML(d, def.market === 'kr', def.market === 'kr' ? '₩' : '$')
+        : '<div style="color:var(--muted);font-size:13px;padding:8px">실적 데이터 없음</div>';
+    });
+    peerP.then(d => {
+      const el = document.getElementById('peersContainer');
+      if (!el) return;
+      el.innerHTML = d?._err
+        ? '<div style="color:var(--muted);font-size:13px;padding:8px">비교 데이터 없음</div>'
+        : renderPeersHTML(d, def.market === 'kr' ? '₩' : '$');
+    });
+    const news = await newsP;
     const newsEl = document.getElementById('newsContainer');
     if (newsEl) newsEl.innerHTML = newsHTML(news);
   } catch(e) {
