@@ -2662,20 +2662,23 @@ function buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig) {
   const pct = v => v != null ? `${(+v*100).toFixed(1)}%` : null;
   const x = v => v != null ? v : undefined; // null 제거용
 
-  // 핵심 지표만 선별 (토큰 최소화)
+  // 전 지표 포함 (압축 표현으로 토큰 최소화)
   const tech = [
     t.rsi!=null && `RSI:${n(t.rsi)}${t.rsi>70?'(과매수)':t.rsi<30?'(과매도)':''}`,
-    t.macd!=null&&t.macd_signal!=null && `MACD:${t.macd>t.macd_signal?'골든크로스':'데드크로스'}`,
+    t.macd!=null&&t.macd_signal!=null && `MACD:${n(t.macd,3)}vs${n(t.macd_signal,3)}(${t.macd>t.macd_signal?'골든크로스':'데드크로스'})`,
     t.adx!=null && `ADX:${n(t.adx)}${t.adx>25?(t.pdi>t.mdi?'↑강세':'↓약세'):'횡보'}`,
     t.bb_pct!=null && `BB:${n(t.bb_pct,0)}%${t.bb_pct>80?'(상단)':t.bb_pct<20?'(하단)':''}`,
+    t.stoch_k!=null && `Stoch:${n(t.stoch_k,0)}${t.stoch_k>80?'(과매수)':t.stoch_k<20?'(과매도)':''}`,
     t.obv_trend!=null && `OBV:${t.obv_trend>0?'↑매집':'↓분산'}`,
     t.cmf!=null && `CMF:${n(t.cmf,2)}`,
+    t.mfi!=null && `MFI:${n(t.mfi,0)}`,
     t.ich_signal && `이치모쿠:${t.ich_signal}`,
     t.will_r!=null && `W%R:${n(t.will_r,0)}`,
     t.roc20!=null && `ROC20:${n(t.roc20,0)}%`,
     t.price_vs_52h!=null && `52wH:${n(t.price_vs_52h,0)}%`,
-    t.candles?.length && `캔들:${t.candles.join(',')}`,
+    t.price_vs_52l!=null && `52wL:+${n(t.price_vs_52l,0)}%`,
     t.sar_signal && `SAR:${t.sar_signal}`,
+    t.candles?.length && `캔들:${t.candles.join(',')}`,
   ].filter(Boolean).join(' | ');
 
   const fund = [
@@ -2700,9 +2703,11 @@ function buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig) {
   ].filter(Boolean).join(' | ');
 
   const macroStr = [
-    macro.vix && `VIX:${macro.vix.value}`,
+    macro.vix && `VIX:${macro.vix.value}${macro.vix.value>25?'(공포)':macro.vix.value<15?'(안정)':''}`,
     macro.us10y && `10Y:${macro.us10y.value}%`,
-    macro.usdkrw && isKr && `USDKRW:${macro.usdkrw.value}`,
+    macro.usdkrw && `USDKRW:${macro.usdkrw.value}`,
+    macro.gold && `금:$${macro.gold.value}(${macro.gold.chg>0?'+':''}${macro.gold.chg}%)`,
+    macro.oil && `WTI:$${macro.oil.value}(${macro.oil.chg>0?'+':''}${macro.oil.chg}%)`,
   ].filter(Boolean).join(' | ');
 
   const newsStr = news.slice(0,3).map(n=>n.title.slice(0,60)).join(' / ');
