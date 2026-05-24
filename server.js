@@ -270,27 +270,30 @@ async function naverFutures(code) {
   } catch { return null; }
 }
 
-// ── Yahoo crumb 인증 (24시간 캐시) — v7/quote 및 v10/quoteSummary 사용에 필요
+// ── Yahoo crumb 인증 (12시간 캐시 + singleton 발급) — v10 quoteSummary용
 let _yCrumb = { value: null, cookie: '', exp: 0 };
+let _yCrumbInflight = null;
 async function yahooCrumb(force = false) {
   if (!force && _yCrumb.value && Date.now() < _yCrumb.exp) return _yCrumb;
-  // 1) 쿠키 발급 (A1/A3)
-  let cookie = '';
-  try {
-    const fc = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': UA }, redirect: 'manual', signal: AbortSignal.timeout(8000) });
-    const sc = fc.headers.get('set-cookie') || '';
-    cookie = sc.split(/,(?=[^;]+=)/).map(s => s.split(';')[0].trim()).filter(Boolean).join('; ');
-  } catch {}
-  // 2) crumb 발급
-  const cr = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-    headers: { 'User-Agent': UA, 'Cookie': cookie, 'Accept': 'text/plain' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!cr.ok) throw new Error(`Yahoo crumb ${cr.status}`);
-  const crumb = (await cr.text()).trim();
-  if (!crumb || crumb.length > 50) throw new Error('Yahoo crumb invalid');
-  _yCrumb = { value: crumb, cookie, exp: Date.now() + 12 * 3600_000 };
-  return _yCrumb;
+  if (_yCrumbInflight) return _yCrumbInflight; // 동시 발급 요청 dedupe
+  _yCrumbInflight = (async () => {
+    let cookie = '';
+    try {
+      const fc = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': UA }, redirect: 'manual', signal: AbortSignal.timeout(8000) });
+      const sc = fc.headers.get('set-cookie') || '';
+      cookie = sc.split(/,(?=[^;]+=)/).map(s => s.split(';')[0].trim()).filter(Boolean).join('; ');
+    } catch {}
+    const cr = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': UA, 'Cookie': cookie, 'Accept': 'text/plain' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!cr.ok) throw new Error(`Yahoo crumb ${cr.status}`);
+    const crumb = (await cr.text()).trim();
+    if (!crumb || crumb.length > 50) throw new Error('Yahoo crumb invalid');
+    _yCrumb = { value: crumb, cookie, exp: Date.now() + 12 * 3600_000 };
+    return _yCrumb;
+  })().finally(() => { _yCrumbInflight = null; });
+  return _yCrumbInflight;
 }
 
 async function yahooQuoteSummary(symbol, modules) {
