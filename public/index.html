@@ -1580,7 +1580,14 @@ function renderAICard(def, data, { loadingNarrative = false } = {}) {
   const loadingBadge = loadingNarrative
     ? `<span style="font-size:10px;color:var(--muted);margin-left:8px"><span class="spinner" style="display:inline-block;width:10px;height:10px;vertical-align:middle"></span> 상세 분석 생성 중...</span>` : '';
   const loadingBar = loadingNarrative
-    ? `<div style="margin:6px 0 12px"><div class="progress-indet"><span></span></div></div>` : '';
+    ? `<div style="margin:8px 0 14px">
+         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px">
+           <span>AI 상세 분석 진행도</span><span id="aiProgressLabel">0%</span>
+         </div>
+         <div style="width:100%;height:5px;background:rgba(148,163,184,0.18);border-radius:3px;overflow:hidden">
+           <div id="aiProgressFill" style="width:0%;height:100%;background:linear-gradient(90deg,#3b82f6,#22c55e);transition:width 0.3s ease"></div>
+         </div>
+       </div>` : '';
   el.innerHTML = `
     <div class="ai-header">
       <div class="ai-title">AI 투자 의견${loadingBadge}</div>
@@ -1612,8 +1619,26 @@ function renderAICard(def, data, { loadingNarrative = false } = {}) {
       ${data.risk ? `<div class="ai-reason"><div class="ai-reason-title">리스크</div><div class="ai-reason-text">${data.risk}</div></div>` : ''}
     </div>`;
 }
-function renderAICardQuick(def, data) { renderAICard(def, data, { loadingNarrative: true }); }
-function renderAICardFull(def, data)  { renderAICard(def, data, { loadingNarrative: false }); }
+let _aiProgressTimer = null;
+function startAiProgress() {
+  if (_aiProgressTimer) clearInterval(_aiProgressTimer);
+  const start = Date.now();
+  // 점근적 곡선: t=4s → 50%, t=8s → 75%, t=16s → ~94%, 절대 99% 넘지 않음
+  const curve = t => Math.min(99, Math.round(99 * (1 - Math.exp(-t / 6))));
+  _aiProgressTimer = setInterval(() => {
+    const fill = document.getElementById('aiProgressFill');
+    const label = document.getElementById('aiProgressLabel');
+    if (!fill || !label) { clearInterval(_aiProgressTimer); _aiProgressTimer = null; return; }
+    const pct = curve((Date.now() - start) / 1000);
+    fill.style.width = pct + '%';
+    label.textContent = pct + '%';
+  }, 200);
+}
+function stopAiProgress() {
+  if (_aiProgressTimer) { clearInterval(_aiProgressTimer); _aiProgressTimer = null; }
+}
+function renderAICardQuick(def, data) { renderAICard(def, data, { loadingNarrative: true }); startAiProgress(); }
+function renderAICardFull(def, data)  { stopAiProgress(); renderAICard(def, data, { loadingNarrative: false }); }
 
 function newsHTML(news) {
   if (!news.length) return '<div style="color:var(--muted);font-size:13px;padding:16px 0">뉴스를 불러올 수 없습니다.</div>';
