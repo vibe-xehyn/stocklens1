@@ -3028,138 +3028,292 @@ app.get('/api/peers', async (req, res) => {
   const { symbol, market } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
   return serveSWR(res, `peers:${symbol}`, 3600_000, async () => {
-      const yfticker = market === 'kr' ? symbol + '.KS' : symbol;
+      const isKr = market === 'kr';
+      const yfticker = isKr ? symbol + '.KS' : symbol;
+
+      // ── KR 종목: 스크리너 캐시에서 섹터 추정 ──────────────────────────────
+      // (yfinance .KS info는 sector/industry가 자주 비어있어 하드코딩 맵 우선)
+      const KR_PEER_MAP = {
+        '005930': { sector:'반도체', peers:['000660','005930','NVDA','TSM','INTC','AVGO'] },
+        '000660': { sector:'반도체', peers:['005930','NVDA','MU','INTC','AVGO','AMD'] },
+        '373220': { sector:'배터리', peers:['006400','051910','000270','LTHM','ALB','LAC'] },
+        '006400': { sector:'배터리', peers:['373220','051910','005380','LTHM','ALB','SQM'] },
+        '207940': { sector:'바이오', peers:['068270','000661','AMGN','GILD','REGN','VRTX'] },
+        '068270': { sector:'바이오', peers:['207940','000661','JNJ','LLY','PFE','ABBV'] },
+        '005380': { sector:'자동차', peers:['000270','012330','TSLA','TM','F','GM'] },
+        '000270': { sector:'자동차', peers:['005380','012330','TSLA','TM','F','GM'] },
+        '035420': { sector:'인터넷', peers:['035720','251270','GOOGL','META','NFLX','BIDU'] },
+        '035720': { sector:'인터넷', peers:['035420','251270','GOOGL','META','KAKAO','BIDU'] },
+        '066570': { sector:'가전', peers:['005930','000660','AAPL','SONY','HPQ','SNE'] },
+        '005490': { sector:'철강', peers:['047050','NUE','X','STLD','MT','PKX'] },
+        '105560': { sector:'금융', peers:['055550','086790','JPM','BAC','WFC','GS'] },
+        '055550': { sector:'금융', peers:['105560','086790','JPM','BAC','C','WFC'] },
+        '086790': { sector:'금융', peers:['105560','055550','JPM','BAC','WFC','MS'] },
+        '012450': { sector:'방산', peers:['047810','LMT','RTX','NOC','GD','BA'] },
+        '247540': { sector:'반도체장비', peers:['000660','AMAT','KLAC','LRCX','ASML','TER'] },
+        '051910': { sector:'화학', peers:['011170','006400','DOW','LYB','BASFY','CE'] },
+        '033780': { sector:'식음료', peers:['097950','000080','KO','PEP','MDLZ','GIS'] },
+        '096770': { sector:'에너지', peers:['010950','034020','XOM','CVX','COP','BP'] },
+        '015760': { sector:'유틸리티', peers:['034020','096770','NEE','DUK','SO','D'] },
+        '259960': { sector:'게임', peers:['036570','251270','TTWO','EA','ATVI','RBLX'] },
+        '034020': { sector:'에너지', peers:['015760','096770','XOM','CVX','BP','SHEL'] },
+        '323410': { sector:'카드/결제', peers:['105560','055550','V','MA','AXP','PYPL'] },
+        '003670': { sector:'방산', peers:['012450','047810','LMT','RTX','NOC','GD'] },
+        '018260': { sector:'IT서비스', peers:['035420','035720','ORCL','SAP','IBM','CTSH'] },
+      };
+
       const py = `
-import yfinance as yf, json, warnings
+import yfinance as yf, json, warnings, math
+from concurrent.futures import ThreadPoolExecutor
 warnings.filterwarnings('ignore')
 
-t = yf.Ticker('${yfticker}')
-info = t.info
-fi = t.fast_info
-sector = info.get('sector','')
-industry = info.get('industry','')
+TICKER = '${yfticker}'
+IS_KR = ${isKr ? 'True' : 'False'}
 
-peer_map = {
-    'Semiconductors': ['NVDA','AMD','INTC','AVGO','QCOM','TSM','MU','000660.KS','005930.KS'],
-    'Semiconductor Equipment & Materials': ['AMAT','KLAC','LRCX','ASML','TER'],
-    'Software—Application': ['MSFT','CRM','ADBE','NOW','WDAY','INTU','ORCL'],
-    'Software—Infrastructure': ['MSFT','ORCL','PANW','CRWD','ZS'],
-    'Software': ['MSFT','ORCL','CRM','ADBE','SAP','NOW','WDAY','INTU'],
-    'Internet Content & Information': ['GOOGL','META','NFLX','035420.KS','035720.KS','BIDU'],
-    'Internet': ['GOOGL','META','AMZN','NFLX','035420.KS','035720.KS'],
-    'Consumer Electronics': ['AAPL','SONY','005930.KS','000660.KS','066570.KS'],
-    'Electronic Components': ['AVGO','TXN','MCHP','066570.KS','005930.KS'],
-    'Auto Manufacturers': ['TSLA','TM','F','GM','005380.KS','000270.KS','HMC'],
-    'Automotive': ['TSLA','TM','F','GM','005380.KS','000270.KS'],
-    'Specialty Chemicals': ['373220.KS','006400.KS','051910.KS','LTHM','ALB'],
-    'Electrical Equipment & Parts': ['373220.KS','006400.KS','012450.KS','ENPH','FSLR'],
-    'Banks—Diversified': ['JPM','BAC','WFC','GS','105560.KS','055550.KS','086790.KS'],
-    'Banks—Regional': ['105560.KS','055550.KS','086790.KS','JPM','BAC'],
-    'Financial Services': ['JPM','GS','MS','V','MA','105560.KS'],
-    'Finance': ['JPM','BAC','WFC','GS','MS','C'],
-    'Biotechnology': ['AMGN','GILD','REGN','VRTX','068270.KS','207940.KS'],
-    'Drug Manufacturers—General': ['LLY','JNJ','PFE','ABBV','MRK','BMY'],
-    'Pharma': ['LLY','JNJ','PFE','ABBV','MRK','BMY','GILD'],
-    'Oil & Gas Integrated': ['XOM','CVX','COP','BP','SHEL'],
-    'Energy': ['XOM','CVX','COP','BP','SHEL'],
-    'Internet Retail': ['AMZN','BABA','JD','SHOP','WMT','EBAY'],
-    'E-commerce': ['AMZN','BABA','JD','EBAY','SHOP','WMT'],
-    'Telecom Services': ['T','VZ','TMUS','S'],
-    'Communication Services': ['GOOGL','META','NFLX','T','VZ'],
-    'Steel': ['005490.KS','NUE','X','STLD'],
-    'default': []
+# ── 업종별 동종업계 맵 (yfinance industry/sector 문자열 기준) ──────────────
+PEER_MAP = {
+    # 반도체
+    'Semiconductors': ['NVDA','AMD','INTC','AVGO','QCOM','MU','TSM','000660.KS','005930.KS'],
+    'Semiconductor Equipment & Materials': ['AMAT','KLAC','LRCX','ASML','TER','ONTO','247540.KS'],
+    # 소프트웨어
+    'Software—Application': ['MSFT','CRM','ADBE','NOW','WDAY','INTU','ORCL','SAP'],
+    'Software—Infrastructure': ['MSFT','ORCL','PANW','CRWD','ZS','FTNT'],
+    'Software': ['MSFT','ORCL','CRM','ADBE','NOW','WDAY','INTU','SAP'],
+    # 인터넷
+    'Internet Content & Information': ['GOOGL','META','NFLX','PINS','SNAP','035420.KS','035720.KS'],
+    'Internet Retail': ['AMZN','BABA','JD','SHOP','WMT','EBAY','MELI'],
+    'Electronic Gaming & Multimedia': ['TTWO','EA','RBLX','259960.KS','036570.KS','NTES'],
+    # 하드웨어/전자
+    'Consumer Electronics': ['AAPL','SONY','066570.KS','005930.KS','000660.KS','HPQ'],
+    'Electronic Components': ['AVGO','TXN','MCHP','ADI','LSCC','MPWR'],
+    'Computer Hardware': ['AAPL','DELL','HPQ','NTAP','WDC','STX'],
+    'Communication Equipment': ['CSCO','NOK','ERIC','JNPR','VIAV','CIEN'],
+    # 자동차
+    'Auto Manufacturers': ['TSLA','TM','F','GM','HMC','STLA','005380.KS','000270.KS'],
+    'Auto Parts': ['MGA','BWA','LEA','ALV','012330.KS','APTV'],
+    # 금융
+    'Banks—Diversified': ['JPM','BAC','WFC','GS','MS','C','105560.KS','055550.KS'],
+    'Banks—Regional': ['USB','PNC','TFC','FITB','HBAN','105560.KS','055550.KS'],
+    'Financial Services': ['V','MA','AXP','PYPL','SQ','GS','MS'],
+    'Insurance—Diversified': ['BRK-B','MET','PRU','AFL','ALL','TRV'],
+    'Asset Management': ['BLK','SCHW','AMP','IVZ','WDR','TROW'],
+    'Credit Services': ['V','MA','AXP','PYPL','COF','DFS','SYF'],
+    # 바이오/제약
+    'Biotechnology': ['AMGN','GILD','REGN','VRTX','BIIB','MRNA','068270.KS','207940.KS'],
+    'Drug Manufacturers—General': ['LLY','JNJ','PFE','ABBV','MRK','BMY','NVO','AZN'],
+    'Drug Manufacturers—Specialty & Generic': ['TEVA','MYL','PRGO','ENDP','HZN'],
+    'Medical Devices': ['MDT','ABT','SYK','BSX','EW','ISRG','DXCM'],
+    'Healthcare Plans': ['UNH','CVS','CI','HUM','ANTM','MOH'],
+    # 에너지
+    'Oil & Gas Integrated': ['XOM','CVX','SHEL','BP','TTE','096770.KS','034020.KS'],
+    'Oil & Gas E&P': ['COP','EOG','PXD','DVN','FANG','MRO'],
+    'Oil & Gas Refining & Marketing': ['VLO','MPC','PSX','DINO','PBF'],
+    'Utilities—Regulated Electric': ['NEE','DUK','SO','D','AEP','EXC','015760.KS'],
+    'Utilities—Renewable': ['NEE','ENPH','FSLR','RUN','SEDG','BEP'],
+    # 소비재
+    'Beverages—Non-Alcoholic': ['KO','PEP','MNST','CELH','COKE','033780.KS'],
+    'Beverages—Alcoholic': ['BUD','TAP','STZ','SAM','HEINY'],
+    'Packaged Foods': ['MDLZ','GIS','K','CPB','SJM','HRL'],
+    'Household & Personal Products': ['PG','CL','CHD','EL','KMB','HENKY'],
+    'Apparel—Retail': ['NKE','LULU','VFC','PVH','RL','UAA','HBI'],
+    'Specialty Retail': ['HD','LOW','TGT','COST','TJX','ROST'],
+    'Department Stores': ['TGT','WMT','COST','M','JWN','KSS'],
+    'Discount Stores': ['WMT','COST','TGT','DLTR','DG','BJ'],
+    # 통신
+    'Telecom Services': ['T','VZ','TMUS','LUMN','DISH'],
+    'Communication Services': ['GOOGL','META','NFLX','DIS','CMCSA','T','VZ'],
+    # 산업재
+    'Aerospace & Defense': ['LMT','RTX','NOC','GD','BA','HII','012450.KS','047810.KS'],
+    'Industrial Machinery': ['CAT','DE','EMR','PH','ROK','XYL'],
+    'Engineering & Construction': ['PWR','ACM','MTZ','FLR','STRL','KBR'],
+    'Specialty Chemicals': ['LIN','APD','ECL','SHW','PPG','006400.KS','051910.KS','373220.KS'],
+    'Steel': ['NUE','X','STLD','CLF','RS','005490.KS'],
+    'Aluminum': ['AA','ARNC','KALU','CENX'],
+    # 부동산/기타
+    'REIT—Retail': ['SPG','O','KIM','REG','BRX'],
+    'REIT—Industrial': ['PLD','EGP','REXR','FR','STAG'],
+    'REIT—Office': ['BXP','VNO','CUZ','HIW','EQC'],
 }
 
-peers_list = peer_map.get(industry, peer_map.get(sector, []))
-main_id = '${yfticker}'.replace('.KS','')
+def safe_float(v):
+    try:
+        f = float(v)
+        if math.isnan(f) or math.isinf(f): return None
+        return f
+    except: return None
+
+# ── 메인 종목 정보 조회 ──────────────────────────────────────────────────────
+info = {}
+sector = ''
+industry = ''
+try:
+    t = yf.Ticker(TICKER)
+    info = t.info or {}
+    sector = info.get('sector') or ''
+    industry = info.get('industry') or ''
+except: pass
+
+# sector/industry 못 가져왔을 때 fast_info로 보완
+if not sector and not industry:
+    try:
+        fi = yf.Ticker(TICKER).fast_info
+        # fast_info에는 sector 없음, 그냥 빈 상태 유지
+    except: pass
+
+# ── 피어 목록 결정 ────────────────────────────────────────────────────────────
+# 1순위: industry 정확 매치
+# 2순위: sector 부분 매치 (키에 sector 문자열 포함)
+# 3순위: 빈 리스트 (결과 없음보단 낫게, fallback 발동)
+peers_list = PEER_MAP.get(industry, [])
+if not peers_list:
+    for k, v in PEER_MAP.items():
+        if sector and sector.lower() in k.lower():
+            peers_list = v
+            break
+if not peers_list and sector:
+    # sector 키워드로 2차 시도
+    sec_low = sector.lower()
+    for k, v in PEER_MAP.items():
+        if any(w in k.lower() for w in sec_low.split()):
+            peers_list = v
+            break
+
+main_id = TICKER.replace('.KS','')
 peers_list = [p for p in peers_list if p.replace('.KS','') != main_id][:6]
 
-# 배치 가격 조회 (한 번에 모두)
-all_tickers = peers_list + ['${yfticker}']
+# ── 가격/등락률 배치 조회 ─────────────────────────────────────────────────────
+all_tickers = peers_list + [TICKER]
+price_cache = {}
 try:
-    dl = yf.download(all_tickers, period='2d', auto_adjust=True, progress=False, group_by='ticker')
-except:
-    dl = None
+    if len(all_tickers) == 1:
+        dl = yf.download(all_tickers[0], period='3d', auto_adjust=True, progress=False)
+        if len(dl) >= 1:
+            p = float(dl['Close'].iloc[-1])
+            pv = float(dl['Close'].iloc[-2]) if len(dl) >= 2 else p
+            price_cache[all_tickers[0]] = (round(p,2), round((p-pv)/pv*100 if pv else 0, 2))
+    else:
+        dl = yf.download(all_tickers, period='3d', auto_adjust=True, progress=False, group_by='ticker')
+        for tk in all_tickers:
+            try:
+                if tk in dl.columns.get_level_values(0):
+                    col = dl[tk]['Close'].dropna()
+                else:
+                    col = dl['Close'].dropna() if 'Close' in dl else None
+                if col is not None and len(col) >= 1:
+                    p = float(col.iloc[-1])
+                    pv = float(col.iloc[-2]) if len(col) >= 2 else p
+                    price_cache[tk] = (round(p,2), round((p-pv)/pv*100 if pv else 0, 2))
+            except: pass
+except: pass
 
 def get_price_chg(ticker):
-    try:
-        if dl is not None and len(all_tickers) > 1:
-            col = dl[ticker]['Close'] if ticker in dl else None
-        elif dl is not None:
-            col = dl['Close']
-        else:
-            col = None
-        if col is not None and len(col) >= 1:
-            p = float(col.iloc[-1])
-            pv = float(col.iloc[-2]) if len(col) >= 2 else p
-            return round(p,2), round((p-pv)/pv*100 if pv else 0, 2)
-    except: pass
+    if ticker in price_cache:
+        return price_cache[ticker]
     try:
         fi2 = yf.Ticker(ticker).fast_info
-        p = fi2.last_price or 0
-        pv = fi2.regular_market_previous_close or p
+        p = safe_float(fi2.last_price) or 0
+        pv = safe_float(fi2.regular_market_previous_close) or p
         return round(p,2), round((p-pv)/pv*100 if pv else 0, 2)
     except: pass
-    return 0, 0
+    return None, None
 
-from concurrent.futures import ThreadPoolExecutor
+# ── 피어 상세 조회 ────────────────────────────────────────────────────────────
 def fetch_peer(peer):
     try:
         pt = yf.Ticker(peer)
-        pi = pt.info
+        pi = pt.info or {}
         pfi = pt.fast_info
         price, chg = get_price_chg(peer)
+        if price is None: return None  # 가격 없으면 제외
+        mc = safe_float(getattr(pfi, 'market_cap', None)) or safe_float(pi.get('marketCap'))
         return {
-            'ticker': peer,
-            'name': pi.get('shortName') or pi.get('longName') or peer,
+            'ticker': peer.replace('.KS',''),
+            'name': pi.get('shortName') or pi.get('longName') or peer.replace('.KS',''),
             'price': price, 'changePct': chg,
-            'per': pi.get('trailingPE'),
-            'forwardPer': pi.get('forwardPE'),
-            'pbr': pi.get('priceToBook'),
-            'roe': round((pi.get('returnOnEquity') or 0)*100, 1) or None,
-            'marketCap': pfi.market_cap,
-            'revenueGrowth': round((pi.get('revenueGrowth') or 0)*100, 1) or None,
-            'profitMargin': round((pi.get('profitMargins') or 0)*100, 1) or None,
-            'div': round((pi.get('dividendYield') or 0)*100, 2) or None,
+            'per': safe_float(pi.get('trailingPE')),
+            'forwardPer': safe_float(pi.get('forwardPE')),
+            'pbr': safe_float(pi.get('priceToBook')),
+            'roe': round(safe_float(pi.get('returnOnEquity') or 0)*100, 1) if pi.get('returnOnEquity') else None,
+            'marketCap': mc,
+            'revenueGrowth': round(safe_float(pi.get('revenueGrowth') or 0)*100, 1) if pi.get('revenueGrowth') else None,
+            'profitMargin': round(safe_float(pi.get('profitMargins') or 0)*100, 1) if pi.get('profitMargins') else None,
+            'div': round(safe_float(pi.get('dividendYield') or 0)*100, 2) if pi.get('dividendYield') else None,
         }
     except: return None
 
-with ThreadPoolExecutor(max_workers=min(6, len(peers_list) or 1)) as ex:
-    result = [r for r in ex.map(fetch_peer, peers_list) if r]
+if peers_list:
+    with ThreadPoolExecutor(max_workers=min(6, len(peers_list))) as ex:
+        result = [r for r in ex.map(fetch_peer, peers_list) if r]
+else:
+    result = []
 
-p0, chg0 = get_price_chg('${yfticker}')
+p0, chg0 = get_price_chg(TICKER)
+mc0 = safe_float(info.get('marketCap'))
 main_data = {
     'ticker': main_id,
-    'name': info.get('shortName') or info.get('longName') or '',
+    'name': info.get('shortName') or info.get('longName') or main_id,
     'price': p0, 'changePct': chg0,
-    'per': info.get('trailingPE'), 'pbr': info.get('priceToBook'),
-    'roe': round((info.get('returnOnEquity') or 0)*100,1) or None,
-    'revenueGrowth': round((info.get('revenueGrowth') or 0)*100,1) or None,
-    'profitMargin': round((info.get('profitMargins') or 0)*100,1) or None,
-    'marketCap': info.get('marketCap'),
+    'per': safe_float(info.get('trailingPE')),
+    'forwardPer': safe_float(info.get('forwardPE')),
+    'pbr': safe_float(info.get('priceToBook')),
+    'roe': round(safe_float(info.get('returnOnEquity') or 0)*100,1) if info.get('returnOnEquity') else None,
+    'revenueGrowth': round(safe_float(info.get('revenueGrowth') or 0)*100,1) if info.get('revenueGrowth') else None,
+    'profitMargin': round(safe_float(info.get('profitMargins') or 0)*100,1) if info.get('profitMargins') else None,
+    'marketCap': mc0,
 }
 print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'peers': result}, ensure_ascii=False, default=str))
 `;
-      const raw = await _pyExecLong(py).catch(e => { console.error('peers 실패:', symbol, e.message?.slice(0,100)); return { sector:'', industry:'', peers:[] }; });
-      // KR 종목: 스크리너 캐시로 PER/PBR 보완 (NAVER 데이터가 더 정확)
-      if (market === 'kr') {
+      const raw = await _pyExecLong(py).catch(e => { console.error('peers 실패:', symbol, e.message?.slice(0,100)); return null; });
+      if (!raw) throw new Error('peers python 실패');
+
+      // ── KR 종목: 하드코딩 피어맵 + 스크리너 캐시로 보완 ──────────────────
+      if (isKr) {
         const sc = getC('screener') || {};
         const fill = (item) => {
+          if (!item) return item;
           const code = (item.ticker||'').replace('.KS','');
           const cached = sc[code];
           if (cached) {
             if (item.per == null && cached.per) item.per = cached.per;
             if (item.pbr == null && cached.pbr) item.pbr = cached.pbr;
             if (item.roe == null && cached.roe) item.roe = cached.roe;
+            if (!item.name || item.name === code) item.name = cached.name || item.name;
           }
           return item;
         };
         if (raw.main) fill(raw.main);
         if (raw.peers) raw.peers = raw.peers.map(fill);
+
+        // 피어가 아직 없으면 KR_PEER_MAP으로 재시도 (Python info가 실패한 경우)
+        if (!raw.peers?.length) {
+          const krEntry = KR_PEER_MAP[symbol];
+          if (krEntry) {
+            raw.sector = raw.sector || krEntry.sector;
+            raw.industry = raw.industry || krEntry.sector;
+            // 스크리너 캐시에서 기본 피어 데이터 생성
+            raw.peers = krEntry.peers
+              .filter(p => p.replace('.KS','') !== symbol)
+              .slice(0, 6)
+              .map(p => {
+                const code = p.replace('.KS','');
+                const cached = sc[code];
+                if (cached && cached.price) {
+                  return { ticker: code, name: cached.name || code, price: cached.price,
+                    changePct: cached.changePct ?? null, per: cached.per ?? null,
+                    pbr: cached.pbr ?? null, roe: cached.roe ?? null,
+                    marketCap: cached.marketCap ?? null, revenueGrowth: null, profitMargin: null };
+                }
+                return null;
+              })
+              .filter(Boolean);
+          }
+        }
       }
-      // yfinance 자체 실패(sector/industry 둘 다 못 가져옴)일 때만 throw → 캐시 회피 + 재시도
-      // industry는 있으나 peer_map에 없는 경우는 정상이므로 빈 peers를 그대로 캐시
-      if (!raw.sector && !raw.industry) throw new Error('peers: yfinance info empty');
+
+      // sector/industry 둘 다 없고 peers도 없으면 캐시하지 않고 재시도 유도
+      if (!raw.sector && !raw.industry && !raw.peers?.length) {
+        throw new Error('peers: 데이터 없음');
+      }
       return raw;
   });
 });
