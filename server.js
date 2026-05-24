@@ -1,6 +1,6 @@
 import express from 'express';
 import compression from 'compression';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -338,31 +338,87 @@ function _yfDrain() {
   }
 }
 
-function _pyExec(script, timeout=30000) {
-  return new Promise((res,rej)=>{
-    execFile('python3',['-c',script],{maxBuffer:10e6,timeout},(err,out,serr)=>{
-      if(err) return rej(new Error(serr.split('\n').filter(Boolean).pop()||err.message));
-      // Python json.dumps with default=str + NaN/Inf produces invalid JSON.
-      // Sanitize: NaN/Infinity/-Infinity/nan/NaT (uppercase + lowercase + pandas types) → null
-      let clean = out
-        .replace(/(-?\bInfinity\b)/g,'null')
-        .replace(/\bNaN\b/g,'null')
-        .replace(/\bnan\b/g,'null')
-        .replace(/\bNaT\b/g,'null')
-        .replace(/"NaT"/g,'null')
-        .replace(/\bundefined\b/g,'null');
-      try { return res(JSON.parse(clean)); } catch {}
-      // 한 번 더 시도: JSON 객체 부분만 추출 (시작 { 또는 [부터)
-      try {
-        const m = clean.match(/[\{\[][\s\S]*[\}\]]/);
-        if (m) return res(JSON.parse(m[0]));
-      } catch {}
-      rej(new Error('yfinance: invalid JSON: '+out.slice(0,200).replace(/\n/g,' ')));
-    });
+// JSON 문자열 정화 (NaN/Infinity/nan/NaT/undefined → null)
+function _cleanJson(out) {
+  let clean = out
+    .replace(/(-?\bInfinity\b)/g,'null')
+    .replace(/\bNaN\b/g,'null')
+    .replace(/\bnan\b/g,'null')
+    .replace(/\bNaT\b/g,'null')
+    .replace(/"NaT"/g,'null')
+    .replace(/\bundefined\b/g,'null');
+  try { return JSON.parse(clean); } catch {}
+  try {
+    const m = clean.match(/[\{\[][\s\S]*[\}\]]/);
+    if (m) return JSON.parse(m[0]);
+  } catch {}
+  throw new Error('yfinance: invalid JSON: '+out.slice(0,200).replace(/\n/g,' '));
+}
+
+// ── 영구 Python 워커 (yfinance import 1회로 단축) ────────────────────────────
+const PY_WORKER_END = '\n__END__\n';
+let _pyProc = null;
+let _pyBuf = '';
+let _pyReady = false;
+let _pyReadyResolve = null;
+const _pyReadyPromise = new Promise(r => { _pyReadyResolve = r; });
+const _pyPending = new Map();
+let _pyRid = 0;
+function _pySpawn() {
+  if (_pyProc) return;
+  _pyProc = spawn('python3', ['-u', join(__dirname, 'yf_worker.py')], { stdio: ['pipe','pipe','pipe'] });
+  _pyProc.stdout.on('data', chunk => {
+    _pyBuf += chunk.toString('utf8');
+    let idx;
+    while ((idx = _pyBuf.indexOf(PY_WORKER_END)) !== -1) {
+      const msg = _pyBuf.slice(0, idx);
+      _pyBuf = _pyBuf.slice(idx + PY_WORKER_END.length);
+      let obj;
+      try { obj = JSON.parse(msg); } catch { continue; }
+      if (obj.id === '__ready__') {
+        _pyReady = true; _pyReadyResolve();
+        console.log('  ✓ Python 워커 준비 완료');
+        continue;
+      }
+      const pending = _pyPending.get(obj.id);
+      if (!pending) continue;
+      _pyPending.delete(obj.id);
+      clearTimeout(pending.timer);
+      if (obj.ok) {
+        try { pending.resolve(_cleanJson(obj.out)); }
+        catch (e) { pending.reject(e); }
+      } else {
+        pending.reject(new Error(obj.error || 'worker error'));
+      }
+    }
+  });
+  _pyProc.stderr.on('data', d => process.stderr.write('[pyw] ' + d));
+  _pyProc.on('exit', code => {
+    console.error(`  ⚠ Python 워커 종료 (code=${code}). 5초 후 재시작.`);
+    _pyProc = null; _pyReady = false; _pyBuf = '';
+    // 보류 중 요청들 reject
+    for (const [, p] of _pyPending) { clearTimeout(p.timer); p.reject(new Error('worker died')); }
+    _pyPending.clear();
+    setTimeout(_pySpawn, 5000);
+  });
+}
+_pySpawn();
+
+async function _pyExec(script, timeout = 30000) {
+  if (!_pyReady) await _pyReadyPromise;
+  if (!_pyProc) throw new Error('python worker not running');
+  const id = String(++_pyRid);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      _pyPending.delete(id);
+      reject(new Error(`python worker timeout (${timeout}ms)`));
+    }, timeout);
+    _pyPending.set(id, { resolve, reject, timer });
+    _pyProc.stdin.write(JSON.stringify({ id, script }) + '\n');
   });
 }
 
-function _pyExecLong(script) { return _pyExec(script, 300000); } // 5분 (US 스크리너 200개 처리)
+function _pyExecLong(script) { return _pyExec(script, 300000); } // 5분 (US 스크리너 등 대용량)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stooq — US quotes (sidebar + indices, reliable/fast)
