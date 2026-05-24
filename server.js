@@ -25,73 +25,119 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   const f1 = v => v != null ? v.toFixed(1) : null;
   const f2 = v => v != null ? v.toFixed(2) : null;
   const fp = v => v != null ? `${(v * 100).toFixed(1)}%` : null;
+  const sign = v => v >= 0 ? `+${v}` : `${v}`;
+
+  // ── reasons 분류 ──
+  const TECH_KW = ['RSI','MACD','BB','볼린저','스토캐스틱','ADX','MA','OBV','CMF','ROC','MFI','이치모쿠','거래량','캔들','정배열','역배열','신고가','신저가','Williams','추세','과매수','과매도'];
+  const VALUE_KW = ['그레이엄','PEG','PER','PBR','Fed모델','과평가','저평가','이익 20%','안전마진'];
+  const QUALITY_KW = ['ROE','FCF','영업이익률','버핏','부채','자본'];
+  const FLOW_KW = ['공매도','기관','수급','내부자','풋콜','거래대금'];
+  const classify = r => {
+    if (FLOW_KW.some(k => r.includes(k))) return 'flow';
+    if (QUALITY_KW.some(k => r.includes(k))) return 'quality';
+    if (VALUE_KW.some(k => r.includes(k))) return 'value';
+    if (TECH_KW.some(k => r.includes(k))) return 'tech';
+    return 'other';
+  };
+  const rByType = { tech: [], value: [], quality: [], flow: [], other: [] };
+  for (const r of reasons) rByType[classify(r)].push(r);
 
   // ── summary ──
-  const topR = reasons.slice(0, 5).join(', ');
-  const summary = `종합 점수 ${score}점 기준 ${signal} 의견입니다. ${topR}. ` +
-    `기술 ${bk.technical >= 0 ? '+' : ''}${bk.technical} / 가치 ${bk.value >= 0 ? '+' : ''}${bk.value} / ` +
-    `품질 ${bk.quality >= 0 ? '+' : ''}${bk.quality} / 성장 ${bk.growth >= 0 ? '+' : ''}${bk.growth}점입니다.`;
+  // 핵심 signals: 각 카테고리에서 1개씩, 최대 5개
+  const topReasons = [
+    ...rByType.tech.slice(0, 2),
+    ...rByType.value.slice(0, 1),
+    ...rByType.quality.slice(0, 1),
+    ...rByType.flow.slice(0, 1),
+    ...rByType.other.slice(0, 1),
+  ].slice(0, 5);
+  const signalLabel = { '강력매수': '강력 매수', '매수': '매수', '약매수': '약 매수', '중립': '중립', '약매도': '약 매도', '매도': '매도', '강력매도': '강력 매도' }[signal] ?? signal;
+  const summary = `종합 점수 ${score}점으로 ${signalLabel} 의견입니다. ` +
+    (topReasons.length ? topReasons.join(', ') + '. ' : '') +
+    `팩터별 점수: 기술 ${sign(bk.technical)} / 가치 ${sign(bk.value)} / 품질 ${sign(bk.quality)} / 성장 ${sign(bk.growth)}점.`;
 
   // ── technical ──
-  const techParts = [];
-  if (t.rsi != null) techParts.push(`RSI(14) ${f1(t.rsi)} — ${t.rsi > 70 ? '과매수 구간' : t.rsi < 30 ? '과매도 구간' : '중립 구간'}`);
-  if (t.macd != null && t.macd_signal != null) techParts.push(t.macd > t.macd_signal ? 'MACD 골든크로스(매수 신호)' : 'MACD 데드크로스(매도 신호)');
-  if (t.ma20 != null && t.ma50 != null && q.price != null) {
-    const a20 = q.price > t.ma20, a50 = q.price > t.ma50;
-    techParts.push(`이동평균 ${a20 && a50 ? '완전 정배열(강세)' : !a20 && !a50 ? '역배열(약세)' : a20 ? 'MA20 위/MA50 아래' : 'MA20 아래/MA50 위'}`);
-  }
-  if (t.adx != null) techParts.push(`ADX ${f1(t.adx)} — ${t.adx > 25 ? (t.pdi > t.mdi ? '강한 상승 추세' : '강한 하락 추세') : '추세 약함/횡보'}`);
-  if (t.bb_pct != null) techParts.push(`볼린저밴드 ${t.bb_pct.toFixed(0)}% 위치${t.bb_pct > 80 ? '(상단 근접)' : t.bb_pct < 20 ? '(하단 근접)' : ''}`);
-  if (t.stoch_k != null) techParts.push(`스토캐스틱 K=${t.stoch_k.toFixed(0)} — ${t.stoch_k > 80 ? '과매수' : t.stoch_k < 20 ? '과매도' : '중립'}`);
-  if (t.obv_trend != null) techParts.push(t.obv_trend > 0 ? 'OBV 상승(매집 신호)' : 'OBV 하락(분산 신호)');
-  const technical = (techParts.length ? techParts.join('. ') + '. ' : '') +
-    `기술적 점수 ${bk.technical >= 0 ? '+' : ''}${bk.technical}점입니다.`;
+  // 먼저 reasons에서 추출한 풍부한 문자열 사용, 보완 수치 추가
+  const techFromReasons = rByType.tech;
+  const techExtra = [];
+  // reasons에 없는 지표는 수치로 보완
+  if (!techFromReasons.some(r => r.includes('RSI')) && t.rsi != null)
+    techExtra.push(`RSI(14) ${f1(t.rsi)}${t.rsi > 70 ? ' 과매수' : t.rsi < 30 ? ' 과매도' : ' 중립'}`);
+  if (!techFromReasons.some(r => r.includes('MACD')) && t.macd != null && t.macd_signal != null)
+    techExtra.push(t.macd > t.macd_signal ? 'MACD 골든크로스' : 'MACD 데드크로스');
+  if (!techFromReasons.some(r => r.includes('ADX')) && t.adx != null)
+    techExtra.push(`ADX ${f1(t.adx)} — ${t.adx > 25 ? (t.pdi > t.mdi ? '강한 상승 추세' : '강한 하락 추세') : '횡보'}`);
+  if (!techFromReasons.some(r => r.includes('볼린저') || r.includes('BB')) && t.bb_pct != null)
+    techExtra.push(`볼린저밴드 ${t.bb_pct.toFixed(0)}% 위치${t.bb_pct > 80 ? '(상단)' : t.bb_pct < 20 ? '(하단)' : ''}`);
+  if (!techFromReasons.some(r => r.includes('OBV')) && t.obv_trend != null)
+    techExtra.push(t.obv_trend > 0 ? 'OBV 상승(매집)' : 'OBV 하락(분산)');
+  const allTechParts = [...techFromReasons, ...techExtra];
+  const technical = (allTechParts.length ? allTechParts.join('. ') + '. ' : '') +
+    `기술적 점수 ${sign(bk.technical)}점.`;
 
   // ── fundamental ──
-  const funParts = [];
-  if (q.per != null) funParts.push(`PER ${f1(q.per)}배`);
-  if (q.forwardPer != null) funParts.push(`예상PER ${f1(q.forwardPer)}배`);
-  if (q.pbr != null) funParts.push(`PBR ${f2(q.pbr)}배`);
-  if (q.roe != null) funParts.push(`ROE ${fp(q.roe)}`);
-  if (q.operatingMargin != null) funParts.push(`영업이익률 ${fp(q.operatingMargin)}`);
-  if (q.earningsGrowth != null) funParts.push(`이익성장률 ${fp(q.earningsGrowth)}`);
-  if (q.revenueGrowth != null) funParts.push(`매출성장률 ${fp(q.revenueGrowth)}`);
-  if (q.debtToEquity != null) funParts.push(`부채비율 ${q.debtToEquity.toFixed(0)}%`);
-  if (q.freeCashflow != null) funParts.push(`FCF ${q.freeCashflow > 0 ? '양수(건전)' : '음수'}`);
-  if (q.recommendation) funParts.push(`애널리스트 ${q.recommendation}${q.targetPrice ? ` / 목표가 ${currSym}${q.targetPrice.toLocaleString()}` : ''}`);
-  const fundamental = (funParts.length ? funParts.join(', ') + '. ' : '') +
-    `가치 ${bk.value >= 0 ? '+' : ''}${bk.value} / 품질 ${bk.quality >= 0 ? '+' : ''}${bk.quality} / 성장 ${bk.growth >= 0 ? '+' : ''}${bk.growth}점입니다.`;
+  const fundFromReasons = [...rByType.value, ...rByType.quality];
+  const fundExtra = [];
+  // 수치 데이터로 보완
+  const numFund = [];
+  if (q.per != null) numFund.push(`PER ${f1(q.per)}배`);
+  if (q.forwardPer != null) numFund.push(`예상PER ${f1(q.forwardPer)}배`);
+  if (q.pbr != null) numFund.push(`PBR ${f2(q.pbr)}배`);
+  if (q.roe != null) numFund.push(`ROE ${fp(q.roe)}`);
+  if (q.operatingMargin != null) numFund.push(`영업이익률 ${fp(q.operatingMargin)}`);
+  if (q.earningsGrowth != null) numFund.push(`이익성장률 ${fp(q.earningsGrowth)}`);
+  if (q.revenueGrowth != null) numFund.push(`매출성장률 ${fp(q.revenueGrowth)}`);
+  if (q.debtToEquity != null) numFund.push(`부채비율 ${q.debtToEquity.toFixed(0)}%`);
+  if (q.freeCashflow != null) numFund.push(`FCF ${q.freeCashflow > 0 ? '양수(건전)' : '음수(주의)'}`);
+  if (q.recommendation) numFund.push(`애널리스트 ${q.recommendation}${q.targetPrice ? ` / 목표가 ${currSym}${q.targetPrice.toLocaleString()}` : ''}`);
+  const allFundParts = fundFromReasons.length
+    ? [...fundFromReasons, ...(numFund.length ? [`[수치] ${numFund.join(', ')}`] : [])]
+    : numFund;
+  const fundamental = (allFundParts.length ? allFundParts.join('. ') + '. ' : '') +
+    `가치 ${sign(bk.value)} / 품질 ${sign(bk.quality)} / 성장 ${sign(bk.growth)}점.`;
 
   // ── flow ──
-  const flowParts = [];
-  if (flow.institutionPct != null) flowParts.push(`기관 지분율 ${flow.institutionPct}%`);
-  if (flow.insiderPct != null) flowParts.push(`내부자 지분율 ${flow.insiderPct}%`);
-  if (flow.shortPct != null) flowParts.push(`공매도 ${flow.shortPct}%`);
-  if (flow.topHolders?.length) flowParts.push(`주요 기관: ${flow.topHolders.slice(0, 2).map(h => `${h.name}(${h.pct}%)`).join(', ')}`);
+  const flowFromReasons = rByType.flow;
+  const flowExtra = [];
+  if (flow.institutionPct != null) flowExtra.push(`기관 지분율 ${flow.institutionPct}%`);
+  if (flow.insiderPct != null) flowExtra.push(`내부자 지분율 ${flow.insiderPct}%`);
+  if (flow.shortPct != null) flowExtra.push(`공매도 ${flow.shortPct}%`);
+  if (flow.topHolders?.length) flowExtra.push(`주요 기관: ${flow.topHolders.slice(0, 2).map(h => `${h.name}(${h.pct}%)`).join(', ')}`);
   if (flow.insiderTx?.length) {
     const tx = flow.insiderTx[0];
-    flowParts.push(`최근 내부자 ${tx.type}: ${tx.name} ${tx.shares?.toLocaleString()}주 (${tx.date})`);
+    flowExtra.push(`내부자 ${tx.type}: ${tx.name} ${tx.shares?.toLocaleString()}주 (${tx.date})`);
   }
-  if (flow.options) flowParts.push(`풋콜비율 ${flow.options.putCallRatio} / 내재변동성 ${flow.options.impliedVol}%`);
-  const flowStr = (flowParts.length ? flowParts.join('. ') + '. ' : '') +
-    `수급 점수 ${bk.flow >= 0 ? '+' : ''}${bk.flow}점입니다.`;
+  if (flow.options) flowExtra.push(`풋콜비율 ${flow.options.putCallRatio} / 내재변동성 ${flow.options.impliedVol}%`);
+  const allFlowParts = [...flowFromReasons, ...flowExtra];
+  const flowStr = (allFlowParts.length ? allFlowParts.join('. ') + '. ' : '') +
+    `수급 점수 ${sign(bk.flow)}점.`;
 
   // ── sentiment ──
   const sentParts = [];
-  if (news.length > 0) sentParts.push(`최근 뉴스: ${news.slice(0, 3).map(n => n.title.slice(0, 50)).join(' / ')}`);
-  if (macro.vix) sentParts.push(`VIX ${macro.vix.value}${macro.vix.value > 25 ? '(공포 구간)' : macro.vix.value < 15 ? '(안정 구간)' : ''}`);
+  if (news.length > 0) {
+    const headlines = news.slice(0, 3).map(n => n.title.slice(0, 55));
+    sentParts.push(`최근 뉴스: ${headlines.join(' / ')}`);
+  }
+  if (macro.vix) sentParts.push(`VIX ${macro.vix.value}${macro.vix.value > 25 ? '(공포 구간)' : macro.vix.value < 15 ? '(안정 구간)' : '(보통)'}`);
   if (macro.usdkrw && isKr) sentParts.push(`환율 ${macro.usdkrw.value}원(${macro.usdkrw.chg > 0 ? '+' : ''}${macro.usdkrw.chg}%)`);
+  if (macro.us10y) sentParts.push(`미국 10년물 ${macro.us10y.value}%`);
   const sentiment = (sentParts.length ? sentParts.join('. ') + '. ' : '') +
-    `심리 점수 ${bk.sentiment >= 0 ? '+' : ''}${bk.sentiment}점입니다.`;
+    `심리 점수 ${sign(bk.sentiment)}점.`;
 
   // ── risk ──
   const riskItems = [];
-  if (t.rsi > 75) riskItems.push('RSI 극과매수 — 단기 조정 가능성');
-  else if (t.rsi < 25) riskItems.push('RSI 극과매도 — 추가 하락 주의');
+  if (t.rsi != null && t.rsi > 75) riskItems.push('RSI 극과매수 — 단기 조정 가능성');
+  else if (t.rsi != null && t.rsi < 25) riskItems.push('RSI 극과매도 — 추가 하락 주의');
   if (bk.value < -15) riskItems.push('고평가 밸류에이션 리스크');
-  if (q.debtToEquity > 200) riskItems.push(`부채비율 ${q.debtToEquity.toFixed(0)}% — 재무 리스크`);
+  if (q.debtToEquity != null && q.debtToEquity > 200) riskItems.push(`부채비율 ${q.debtToEquity.toFixed(0)}% — 재무 리스크`);
   if (macro.vix?.value > 25) riskItems.push(`VIX ${macro.vix.value} — 시장 변동성 확대`);
   if (macro.us10y?.value > 4.5) riskItems.push(`미국 10년물 ${macro.us10y.value}% — 고금리 환경`);
+  if (flow.shortPct != null && flow.shortPct > 10) riskItems.push(`공매도 비율 ${flow.shortPct}% — 하방 압력 주의`);
+  // reasons 중 매도 신호에서 리스크 추출
+  const bearReasons = reasons.filter(r => r.includes('과평가') || r.includes('데드크로스') || r.includes('역배열') || r.includes('하락') || r.includes('고PBR'));
+  for (const r of bearReasons.slice(0, 2)) {
+    if (!riskItems.some(ri => ri.includes(r.slice(0, 8)))) riskItems.push(r);
+  }
   if (!riskItems.length) riskItems.push('시장 변동성 및 거시경제 리스크를 고려하시기 바랍니다');
   const risk = riskItems.join('. ') + '.';
 
@@ -99,9 +145,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   let price_move = '';
   if (q.changePct != null && Math.abs(q.changePct) > 0.05) {
     const topNw = news.length > 0 ? ` — ${news[0].title.slice(0, 60)}` : '';
-    const techTrig = !topNw && t.macd != null && t.macd_signal != null
-      ? ` — ${t.macd > t.macd_signal ? 'MACD 골든크로스' : 'MACD 데드크로스'}`
-      : '';
+    const techTrig = !topNw && reasons.length > 0 ? ` — ${reasons[0]}` : '';
     price_move = `${isUp ? '+' : ''}${q.changePct.toFixed(2)}%${topNw || techTrig}`;
   }
 
