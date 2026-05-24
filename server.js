@@ -796,17 +796,27 @@ print(json.dumps({
     });
   } catch {}
 
-  // yfinance가 비었거나 핵심 필드 누락 시 NAVER integration으로 보완
+  // yfinance가 비었거나 핵심 필드 누락 시 보완
   const needsFallback = !fund || (fund.per == null && fund.pbr == null && fund.eps == null);
   if (needsFallback) {
-    try {
-      const nv = await cached(`nvFund:${ticker}`, 86400_000, () => naverUsFundamentals(ticker));
-      // yfinance 결과 우선, 누락 필드만 NAVER로 채움
+    // 1순위: 스크리너 캐시 (이미 fetch됨, 네트워크 0회)
+    const sc = getC('screener') || {};
+    const scData = sc[ticker];
+    if (scData && (scData.per != null || scData.pbr != null)) {
       fund = {
-        ...nv,
+        ...scData,
         ...Object.fromEntries(Object.entries(fund || {}).filter(([,v]) => v != null && v !== 0)),
       };
-    } catch {}
+    } else {
+      // 2순위: NAVER integration 크롤링
+      try {
+        const nv = await cached(`nvFund:${ticker}`, 86400_000, () => naverUsFundamentals(ticker));
+        fund = {
+          ...nv,
+          ...Object.fromEntries(Object.entries(fund || {}).filter(([,v]) => v != null && v !== 0)),
+        };
+      } catch {}
+    }
   }
 
   // 52주 가격은 base(NAVER 실시간)에 없을 수 있어서 fund에서 끌어옴
@@ -2767,38 +2777,12 @@ app.get('/api/analysis', async (req, res) => {
         })(),
         getNews(symbol, isKr),
         getFlowData(symbol, isKr),
-        cached('macroAll', 1800_000, () => yfRun(`
-import yfinance as yf, json
-result = {}
-for sym, key in [('USDKRW=X','usdkrw'),('DX-Y.NYB','dxy'),('USDJPY=X','usdjpy')]:
-    try:
-        h = yf.Ticker(sym).history(period='2d')
-        if len(h) >= 1:
-            p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
-            result[key] = {'value': round(p,2), 'chg': round((p-prev)/prev*100,2)}
-    except: pass
-for sym, key in [('^TNX','us10y'),('^IRX','us3m')]:
-    try:
-        h = yf.Ticker(sym).history(period='2d')
-        if len(h) >= 1:
-            p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
-            result[key] = {'value': round(p,2), 'chg': round(p-prev,3)}
-    except: pass
-try:
-    h = yf.Ticker('^VIX').history(period='2d')
-    if len(h) >= 1:
-        p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
-        result['vix'] = {'value': round(p,2), 'chg': round(p-prev,2)}
-except: pass
-for sym, key in [('GC=F','gold'),('CL=F','oil')]:
-    try:
-        h = yf.Ticker(sym).history(period='2d')
-        if len(h) >= 1:
-            p = float(h['Close'].iloc[-1]); prev = float(h['Close'].iloc[-2]) if len(h)>=2 else p
-            result[key] = {'value': round(p,2), 'chg': round((p-prev)/prev*100,2)}
-    except: pass
-print(json.dumps(result))
-`)),
+        // macroAll → /api/macro 캐시 재사용 (중복 Python 호출 제거)
+        (async () => {
+          const m = getC('macro');
+          if (m) return normalizeMacro(m);
+          return normalizeMacro(await cached('macro', 300_000, fetchMacroData));
+        })(),
       ]);
 
       const t    = techR.status  === 'fulfilled' ? techR.value  : {};
@@ -3592,6 +3576,24 @@ app.get('/api/screener-data', async (_, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 매크로 대시보드 (지수 + 환율 + 금리 + 원자재 통합)
 // ─────────────────────────────────────────────────────────────────────────────
+// macro 캐시 정규화: /api/macro는 {value, change} 형식
+// computeSignal/buildDeterministicAnalysis/buildAIPrompt는 {value, chg} 형식 기대
+// → chg 필드를 항상 추가해 두 코드베이스 모두 호환
+function normalizeMacro(m) {
+  if (!m) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(m)) {
+    if (v && typeof v === 'object') {
+      out[k] = { ...v };
+      if (out[k].chg == null && out[k].change != null) out[k].chg = out[k].change;
+      if (out[k].change == null && out[k].chg != null) out[k].change = out[k].chg;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 async function fetchMacroData() {
   const result = {};
   const naverJobs = [
@@ -3920,7 +3922,7 @@ async function computeSignalForTicker(ticker, market, opts = {}) {
     }
 
     // macro는 캐시에서 (상세 페이지와 동일)
-    const macro = getC('macro') || {};
+    const macro = normalizeMacro(getC('macro'));
     const sig = computeSignal(t, q, flow, macro);
     const reason = sig.reasons.slice(0, 3).join(' · ') || '5대 전략 종합';
     return {
@@ -3944,8 +3946,10 @@ async function precomputeAllSignals(opts = {}) {
   const isFull = opts.full === true; // true = 자정 정밀분석, false = 빠른 screener-only
   _signalsComputing = (async () => {
     try {
-      // AI 분석 캐시 초기화 (재계산 시 최신 신호 반영)
-      for (const k of _c.keys()) { if (k.startsWith('ai:')) _c.delete(k); }
+      // 분석 캐시 초기화 (재계산 시 최신 신호 반영) — det:/ai-text:/rawdata: 모두 클리어
+      for (const k of _c.keys()) {
+        if (k.startsWith('ai:') || k.startsWith('ai-text:') || k.startsWith('det:') || k.startsWith('rawdata:')) _c.delete(k);
+      }
       let universe = await fetchTopByMarketCap(1000);
       const krCount = universe.filter(u => u.market === 'kr').length;
       if (!universe.length) {
@@ -4017,13 +4021,14 @@ async function precomputeTopAnalysis(N = 100) {
     }
     console.log(`  🤖 상위 ${targets.length}개 상세 페이지 사전 계산 시작...`);
     let done = 0, skipped = 0, failed = 0;
-    // analysis는 LLM 호출이므로 precompute에서 제외 — rate limit 보호
-    // (사용자가 종목 클릭 시 자연스럽게 캐싱됨)
-    const endpoints = ['quote', 'flow', 'news', 'earnings', 'peers', 'chart'];
+    // analysis(det) + ai-text 포함해서 워밍 — 사용자 첫 클릭 즉시 응답
+    const endpoints = ['quote', 'flow', 'news', 'earnings', 'peers', 'chart', 'analysis'];
     for (const t of targets) {
-      const aiCached = getC(`ai:${t.ticker}`);
-      if (aiCached) { skipped++; continue; } // AI 캐시 있으면 워밍 불필요
-      // 상세 페이지에서 동시 호출되는 엔드포인트를 병렬로 워밍 (analysis 제외)
+      // det: 캐시 + ai-text: 캐시 둘 다 있으면 완전히 스킵
+      const detCached = getC(`det:${t.ticker}`);
+      const aiCached  = getC(`ai-text:${t.ticker}`);
+      if (detCached && aiCached) { skipped++; continue; }
+      // 상세 페이지 엔드포인트 병렬 워밍
       const reqs = endpoints.map(ep => {
         const qs = ep === 'chart' ? `range=1mo&` : '';
         const url = `http://localhost:${PORT}/api/${ep}?${qs}symbol=${t.ticker}&market=${t.market}`;
@@ -4033,8 +4038,18 @@ async function precomputeTopAnalysis(N = 100) {
         const results = await Promise.all(reqs);
         if (results.every(Boolean)) done++; else failed++;
       } catch { failed++; }
-      if ((done + failed) % 10 === 0 && (done + failed) > 0) console.log(`  🤖 상세 사전 계산 진행: ${done+failed}/${targets.length} (ok:${done} skip:${skipped} fail:${failed})`);
-      await new Promise(r => setTimeout(r, 1000)); // 1s 간격 — 다른 API rate limit 보호
+      // analysis/ai 엔드포인트는 별도로 워밍 (Gemini rate limit 배려: 4s 간격)
+      if (!aiCached) {
+        try {
+          const aiUrl = `http://localhost:${PORT}/api/analysis/ai?symbol=${t.ticker}&market=${t.market}`;
+          await fetch(aiUrl, { signal: AbortSignal.timeout(60000) }).catch(() => {});
+        } catch {}
+        await new Promise(r => setTimeout(r, 4000)); // Gemini 15 RPM → 4s 간격 안전
+      } else {
+        await new Promise(r => setTimeout(r, 500));
+      }
+      if ((done + failed) % 10 === 0 && (done + failed) > 0)
+        console.log(`  🤖 사전 계산 진행: ${done+failed}/${targets.length} (ok:${done} skip:${skipped} fail:${failed})`);
     }
     console.log(`  ✓ 상세 페이지 사전 계산 완료: ${done}/${targets.length} (skip:${skipped} fail:${failed})`);
   } finally {
@@ -4123,7 +4138,7 @@ async function warmupCache() {
     await Promise.allSettled(usTop.map(async sym => {
       try {
         const q = await naverUsQuote(sym);
-        if (q?.price) { setC(`sb:${sym}`, { price: q.price, changePct: q.changePct, name: q.name, market: 'us' }, 60_000); ok++; }
+        if (q?.price) { setC(`sb:${sym}`, { price: q.price, changePct: q.changePct, name: q.name, market: 'us' }, 300_000); ok++; }
       } catch {}
     }));
     console.log(`  ✓ US 사이드바 워밍업 완료 (${ok}개)`);
@@ -4137,7 +4152,7 @@ async function warmupCache() {
         const d = await fetchJSON(`https://polling.finance.naver.com/api/realtime/domestic/stock/${ticker}`,{Referer:'https://finance.naver.com/'});
         const rt = d.datas?.[0] ?? {};
         const data = { price: pKr(rt.closePrice), changePct: parseFloat(rt.fluctuationsRatioRaw ?? '0'), name: rt.stockName, market: 'kr' };
-        if (data.price) setC(`sb:${ticker}`, data, 60_000);
+        if (data.price) setC(`sb:${ticker}`, data, 300_000);
       } catch {}
     }));
     console.log(`  ✓ KR 사이드바 워밍업 완료`);
