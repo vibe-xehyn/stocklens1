@@ -270,24 +270,12 @@ async function naverFutures(code) {
   } catch { return null; }
 }
 
-// ── Yahoo crumb 인증 (12시간 캐시 + 디스크 영구화 + singleton 발급) — v10 quoteSummary용
-const CRUMB_CACHE_FILE = join(__dirname, '.yahoo-crumb.json');
+// ── Yahoo crumb 인증 (12시간 캐시 + singleton 발급) — v10 quoteSummary용
 let _yCrumb = { value: null, cookie: '', exp: 0 };
 let _yCrumbInflight = null;
-(function loadCrumbCache() {
-  try {
-    if (existsSync(CRUMB_CACHE_FILE)) {
-      const c = JSON.parse(readFileSync(CRUMB_CACHE_FILE, 'utf-8'));
-      if (c.value && Date.now() < (c.exp || 0)) {
-        _yCrumb = c;
-        console.log('  ✓ Yahoo crumb 캐시 로드 (디스크)');
-      }
-    }
-  } catch {}
-})();
 async function yahooCrumb(force = false) {
   if (!force && _yCrumb.value && Date.now() < _yCrumb.exp) return _yCrumb;
-  if (_yCrumbInflight) return _yCrumbInflight;
+  if (_yCrumbInflight) return _yCrumbInflight; // 동시 발급 요청 dedupe
   _yCrumbInflight = (async () => {
     let cookie = '';
     try {
@@ -295,23 +283,14 @@ async function yahooCrumb(force = false) {
       const sc = fc.headers.get('set-cookie') || '';
       cookie = sc.split(/,(?=[^;]+=)/).map(s => s.split(';')[0].trim()).filter(Boolean).join('; ');
     } catch {}
-    // 429일 경우 백오프 재시도 (최대 3회)
-    let cr, lastErr;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      cr = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-        headers: { 'User-Agent': UA, 'Cookie': cookie, 'Accept': 'text/plain' },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (cr.ok) break;
-      lastErr = `Yahoo crumb ${cr.status}`;
-      if (cr.status !== 429) break;
-      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
-    }
-    if (!cr.ok) throw new Error(lastErr);
+    const cr = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': UA, 'Cookie': cookie, 'Accept': 'text/plain' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!cr.ok) throw new Error(`Yahoo crumb ${cr.status}`);
     const crumb = (await cr.text()).trim();
     if (!crumb || crumb.length > 50) throw new Error('Yahoo crumb invalid');
     _yCrumb = { value: crumb, cookie, exp: Date.now() + 12 * 3600_000 };
-    try { writeFileSync(CRUMB_CACHE_FILE, JSON.stringify(_yCrumb), 'utf-8'); } catch {}
     return _yCrumb;
   })().finally(() => { _yCrumbInflight = null; });
   return _yCrumbInflight;
