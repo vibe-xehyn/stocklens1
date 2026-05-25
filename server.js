@@ -17,6 +17,50 @@ try {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
+// ── 결정론적 상승/하락 원인 생성 (친절하고 전문적인 분석 텍스트) ──────────────
+function buildDeterministicPriceMove(symbol, isKr, q, news, reasons) {
+  if (q.changePct == null) return '';
+  const isUp = (q.changePct ?? 0) >= 0;
+  const direction = isUp ? '상승' : '하락';
+  const signStr = isUp ? '+' : '';
+  const pctStr = `${signStr}${q.changePct.toFixed(2)}%`;
+  
+  // 뉴스 핵심 추출 (특수문자 및 기호 제거로 정제)
+  let newsCause = '';
+  if (news.length > 0) {
+    const cleanTitle = news[0].title.replace(/[▲▼▽▲◇◆□■\-\[\]]/g, '').replace(/\s+/g, ' ').trim();
+    newsCause = `최근 언론 보도인 "${cleanTitle}" 등의 소식`;
+  }
+  
+  // 주요 팩터/시그널 추출
+  const activeReasons = reasons.slice(0, 2).map(r => {
+    return r.replace(/[✅⚠️▲▼◆◇■□\-]/g, '').trim();
+  });
+  
+  let reasonCause = '';
+  if (activeReasons.length > 0) {
+    reasonCause = `수급/기술적 측면의 지표 신호(${activeReasons.join(', ')})`;
+  }
+  
+  if (newsCause && reasonCause) {
+    if (isUp) {
+      return `오늘 주가는 ${pctStr} 상승하였습니다. 이는 ${newsCause}으로 인해 투자자들의 강한 매수 유입세가 유입된 가운데, ${reasonCause}이(가) 복합적인 지지대 역할을 수행하며 주가 상승을 견인한 것으로 분석됩니다.`;
+    } else {
+      return `오늘 주가는 ${pctStr} 하락하였습니다. 이는 ${newsCause}으로 인해 시장의 매도 압력이 커지고 투자 심리가 위축된 가운데, ${reasonCause}이(가) 복합적인 하방 압력으로 작용하여 주가 전개를 견인한 것으로 분석됩니다.`;
+    }
+  } else if (newsCause) {
+    if (isUp) {
+      return `오늘 주가는 ${pctStr} 상승하였습니다. 주로 ${newsCause}이(가) 시장의 강한 호재성 모멘텀으로 작용하여 투자자들의 적극적인 매수 전개를 이끌어낸 것으로 분석됩니다.`;
+    } else {
+      return `오늘 주가는 ${pctStr} 하락하였습니다. 주로 ${newsCause}이(가) 부정적인 리스크 모멘텀으로 작용하여 시장의 하방 압력 및 매도 심리를 자극한 것으로 분석됩니다.`;
+    }
+  } else if (reasonCause) {
+    return `오늘 주가는 ${pctStr} ${direction}하였습니다. 특별한 뉴스성 모멘텀이 포착되지 않은 상황에서, ${reasonCause} 등의 수급 밀집 및 기술 지표 추세에 의해 주가가 변동을 나타낸 것으로 분석됩니다.`;
+  } else {
+    return `오늘 주가는 ${pctStr} ${direction}하였습니다. 현재 기술 지표들은 대체로 중립 구간에 머무르고 있으며, 거시 경제 환경 및 시장 전체의 평균 흐름에 동조하여 완만한 변동을 보이고 있습니다.`;
+  }
+}
+
 // ── 결정론적 분석 텍스트 생성 (LLM 없이 실제 지표값으로 직접 생성) ──────────────
 function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) {
   const { signal, confidence, score, breakdown: bk, reasons } = sig;
@@ -142,12 +186,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   const risk = riskItems.join('. ') + '.';
 
   // ── price_move ──
-  let price_move = '';
-  if (q.changePct != null && Math.abs(q.changePct) > 0.05) {
-    const topNw = news.length > 0 ? ` — ${news[0].title.slice(0, 60)}` : '';
-    const techTrig = !topNw && reasons.length > 0 ? ` — ${reasons[0]}` : '';
-    price_move = `${isUp ? '+' : ''}${q.changePct.toFixed(2)}%${topNw || techTrig}`;
-  }
+  const price_move = buildDeterministicPriceMove(symbol, isKr, q, news, reasons);
 
   return { signal, confidence, score, breakdown: bk, reasons, summary, technical, fundamental, flow: flowStr, sentiment, risk, price_move };
 }
@@ -2888,10 +2927,8 @@ app.get('/api/analysis/ai', async (req, res) => {
     // price_move: AI가 생성한 값 사용, 없으면 결정론적 폴백
     const isUp = (q.changePct ?? 0) >= 0;
     let price_move = parsed.price_move || '';
-    if (!price_move && q.changePct != null && Math.abs(q.changePct) > 0.05) {
-      const topNw = news.length > 0 ? ` — ${news[0].title.slice(0, 60)}` : '';
-      const topR = !topNw && sig.reasons.length > 0 ? ` — ${sig.reasons[0]}` : '';
-      price_move = `${isUp ? '+' : ''}${q.changePct.toFixed(2)}%${topNw || topR}`;
+    if (!price_move && q.changePct != null) {
+      price_move = buildDeterministicPriceMove(symbol, isKr, q, news, sig.reasons);
     }
 
     const result = { ...parsed, price_move };
