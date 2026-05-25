@@ -326,7 +326,7 @@
   /* Mobile search drawer */
   .mobile-search-drawer {
     display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: 60px; z-index: 151;
-    background: var(--bg); flex-direction: column;
+    background: var(--bg); flex-direction: column; overflow: hidden;
   }
   .mobile-search-drawer.open { display: flex; }
   .mobile-search-header {
@@ -2993,9 +2993,23 @@ window.addEventListener('popstate', (e) => {
 history.replaceState({ page: 'home' }, '', '/');
 init();
 
-// ── Mobile Tab Bar ────────────────────────────────────────────────────────────
+// ── Mobile Tab Bar & Scroll Lock ──────────────────────────────────────────────
 let _mobileTab = 'home';
 let _mobileMarket = 'kr';
+
+function toggleBodyScroll(lock) {
+  if (lock) {
+    document.body.style.overflow = 'hidden';
+    document.body.style.height = '100%';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100%';
+  } else {
+    document.body.style.overflow = '';
+    document.body.style.height = '';
+    document.documentElement.style.overflow = '';
+    document.documentElement.style.height = '';
+  }
+}
 
 function mobileTab(tab) {
   _mobileTab = tab;
@@ -3005,14 +3019,17 @@ function mobileTab(tab) {
 
   if (tab === 'home') {
     document.getElementById('bnavHome').classList.add('active');
+    toggleBodyScroll(false);
     goHome();
   } else if (tab === 'stocks') {
     document.getElementById('bnavStocks').classList.add('active');
     document.getElementById('mobileDrawer').classList.add('open');
+    toggleBodyScroll(true);
     renderMobileStockList();
   } else if (tab === 'search') {
     document.getElementById('bnavSearch').classList.add('active');
     document.getElementById('mobileSearchDrawer').classList.add('open');
+    toggleBodyScroll(true);
     setTimeout(() => document.getElementById('mobileSearchInput').focus(), 100);
   }
 }
@@ -3047,6 +3064,7 @@ function renderMobileStockList() {
 
 function mobileSelectStock(id) {
   document.getElementById('mobileDrawer').classList.remove('open');
+  toggleBodyScroll(false);
   document.getElementById('bnavHome').classList.add('active');
   document.getElementById('bnavStocks').classList.remove('active');
   document.getElementById('bnavSearch').classList.remove('active');
@@ -3097,6 +3115,7 @@ function mobileSearchSelectResult(r) {
     STOCK_DEFS.push(def);
   }
   document.getElementById('mobileSearchDrawer').classList.remove('open');
+  toggleBodyScroll(false);
   document.getElementById('mobileSearchInput').value = '';
   document.getElementById('mobileSearchResults').innerHTML = '';
   document.getElementById('bnavHome').classList.add('active');
@@ -3121,6 +3140,7 @@ document.addEventListener('keydown', e => {
 
 function closeMobileSearch() {
   document.getElementById('mobileSearchDrawer').classList.remove('open');
+  toggleBodyScroll(false);
   document.getElementById('mobileSearchInput').value = '';
   document.getElementById('mobileSearchResults').innerHTML = '';
   document.getElementById('bnavSearch').classList.remove('active');
