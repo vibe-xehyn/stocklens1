@@ -4033,7 +4033,7 @@ app.get('/api/admin/recompute-signals', async (req, res) => {
 // 상위 N개 종목의 LLM 분석 사전 계산 (백그라운드)
 // 캐시(`ai:${symbol}`)를 채워두어 사용자 첫 클릭이 즉시 응답되도록 함
 let _llmPrecomputing = false;
-async function precomputeTopAnalysis(N = 100) {
+async function precomputeTopAnalysis(N = 300) {
   if (_llmPrecomputing) return;
   _llmPrecomputing = true;
   try {
@@ -4075,7 +4075,7 @@ app.get('/api/admin/precompute-llm', async (req, res) => {
   precomputeTopAnalysis(N).catch(e => console.error('LLM 사전 계산 실패:', e.message));
 });
 
-// 매수/매도 신호: mode(buy|sell) + market(kr/us/all) + signal 필터 + limit=50
+// 매수/매도 신호: mode(buy|sell) + market(kr/us/all) + signal 필터 + limit=100
 // 매일 00:00 KST에 사전 계산된 _signalStore 에서 즉시 반환 (재계산 없음)
 app.get('/api/buy-signals', (req, res) => {
   // 있는 데이터 즉시 반환 — 절대 블로킹 안 함 (계산은 자정 자동 실행)
@@ -4097,10 +4097,10 @@ app.get('/api/buy-signals', (req, res) => {
   counts.all = allSignals.length;
 
   res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
-  // 각 신호 카테고리별 상위 50개씩 반환 (모든 탭에 데이터)
+  // 각 신호 카테고리별 상위 100개씩 반환 (모든 탭에 데이터)
   const bySignal = {};
   for (const sig of SIGNALS) {
-    bySignal[sig] = all.filter(r => r.signal === sig).slice(0, 50);
+    bySignal[sig] = all.filter(r => r.signal === sig).slice(0, 100);
   }
   const buys = SIGNALS.flatMap(s => bySignal[s]);
   res.json({ buys, total: all.length, counts, updatedAt: _signalsUpdatedAt });
@@ -4179,9 +4179,9 @@ async function warmupCache() {
         if (_signalStore.size === 0) {
           try { await precomputeAllSignals({ full: false }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
         }
-        // 6. 상위 100개 LLM 분석 사전 계산 (백그라운드, ~25분) — 첫 클릭 즉시 응답 보장
+        // 6. 상위 300개 LLM 분석 사전 계산 (백그라운드, ~25분) — 첫 클릭 즉시 응답 보장
         setTimeout(() => {
-          precomputeTopAnalysis(100).catch(e => console.log('  ⚠ LLM 사전 계산 실패:', e.message));
+          precomputeTopAnalysis(300).catch(e => console.log('  ⚠ LLM 사전 계산 실패:', e.message));
         }, 30_000); // 30초 후 시작 (다른 워밍업 작업과 분리)
       });
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
@@ -4193,9 +4193,9 @@ async function warmupCache() {
       catch(e) { console.log('  ⚠ 스크리너 갱신 실패:', e.message); }
       try { await precomputeAllSignals({ full: true }); }
       catch(e) { console.log('  ⚠ 시그널 갱신 실패:', e.message); }
-      // 시그널 갱신 시 ai: 캐시도 무효화됨 → 상위 100개 LLM 재계산
+      // 시그널 갱신 시 ai: 캐시도 무효화됨 → 상위 300개 LLM 재계산
       setTimeout(() => {
-        precomputeTopAnalysis(100).catch(e => console.log('  ⚠ LLM 사전 계산 실패:', e.message));
+        precomputeTopAnalysis(300).catch(e => console.log('  ⚠ LLM 사전 계산 실패:', e.message));
       }, 60_000);
     };
     const scheduleNext = () => {
