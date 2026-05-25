@@ -3102,7 +3102,7 @@ PEER_MAP = {
     # 금융
     'Banks—Diversified': ['JPM','BAC','WFC','GS','MS','C','105560.KS','055550.KS'],
     'Banks—Regional': ['USB','PNC','TFC','FITB','HBAN','105560.KS','055550.KS'],
-    'Financial Services': ['V','MA','AXP','PYPL','SQ','GS','MS'],
+    'Financial Services': ['V','MA','AXP','PYPL','GS','MS'],
     'Insurance—Diversified': ['BRK-B','MET','PRU','AFL','ALL','TRV'],
     'Asset Management': ['BLK','SCHW','AMP','IVZ','WDR','TROW'],
     'Credit Services': ['V','MA','AXP','PYPL','COF','DFS','SYF'],
@@ -3111,7 +3111,7 @@ PEER_MAP = {
     'Drug Manufacturers—General': ['LLY','JNJ','PFE','ABBV','MRK','BMY','NVO','AZN'],
     'Drug Manufacturers—Specialty & Generic': ['TEVA','MYL','PRGO','ENDP','HZN'],
     'Medical Devices': ['MDT','ABT','SYK','BSX','EW','ISRG','DXCM'],
-    'Healthcare Plans': ['UNH','CVS','CI','HUM','ANTM','MOH'],
+    'Healthcare Plans': ['UNH','CVS','CI','HUM','ELV','MOH'],
     # 에너지
     'Oil & Gas Integrated': ['XOM','CVX','SHEL','BP','TTE','096770.KS','034020.KS'],
     'Oil & Gas E&P': ['COP','EOG','PXD','DVN','FANG','MRO'],
@@ -3344,7 +3344,7 @@ const SP500 = [
   'VZ','TMUS','DIS','CMCSA','BA','LMT','NOC','GD','DE','MMM',
   'ETN','EMR','DHR','SYK','MDT','ELV','HCA','BMY','BSX','ZTS',
   'REGN','VRTX','MRNA','BX','KKR','SCHW','USB','PNC','TFC','COF',
-  'WFC','PYPL','UBER','ABNB','SQ','SHOP','SNAP','COIN','MSTR','INTC',
+  'WFC','PYPL','UBER','ABNB','SHOP','SNAP','COIN','MSTR','INTC',
   'MU','AMAT','LRCX','KLAC','MRVL','MCHP','ADI','ON','NXPI','SWKS',
   'COP','SLB','HAL','MPC','PSX','VLO','EOG','DVN','OXY',
   'SO','DUK','AEP','EXC','SRE','D','PCG','ED','XEL','ES',
