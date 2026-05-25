@@ -2902,7 +2902,15 @@ app.get('/api/analysis/ai', async (req, res) => {
     // 실패 시 결정론적 텍스트 폴백
     const det = getC(`det:${symbol}`);
     if (det) return res.json({ ...det, _fallback: true });
-    res.status(500).json({ error: e.message });
+    
+    // det 캐시도 없으면 rawdata로 직접 결정론적 생성
+    try {
+      const fallback = buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig);
+      return res.json({ ...fallback, _fallback: true });
+    } catch (fallbackErr) {
+      console.error('결정론적 폴백 생성 실패:', symbol, fallbackErr.message?.slice(0, 120));
+      res.status(500).json({ error: e.message });
+    }
   }
 });
 
