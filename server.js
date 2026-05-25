@@ -1256,7 +1256,7 @@ async function fetchChartData(symbol, range, market) {
 
 app.get('/api/chart', async (req, res) => {
   const { symbol, range='1mo', market } = req.query;
-  if (!symbol) return res.status(400).json({ error: 'symbol required' });
+  if (!symbol || symbol === 'UNDEFINED' || symbol === 'undefined' || symbol === 'null') return res.status(400).json({ error: 'symbol required' });
   await serveSWR(res, `c:${symbol}:${range}`, 300_000, () => fetchChartData(symbol, range, market));
 });
 
