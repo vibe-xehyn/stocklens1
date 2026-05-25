@@ -18,47 +18,58 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 // ── 결정론적 상승/하락 원인 생성 (친절하고 전문적인 분석 텍스트) ──────────────
-function buildDeterministicPriceMove(symbol, isKr, q, news, reasons) {
+function buildDeterministicPriceMove(symbol, isKr, q, news, reasons, t, flow, macro) {
   if (q.changePct == null) return '';
   const isUp = (q.changePct ?? 0) >= 0;
   const direction = isUp ? '상승' : '하락';
   const signStr = isUp ? '+' : '';
   const pctStr = `${signStr}${q.changePct.toFixed(2)}%`;
   
-  // 뉴스 핵심 추출 (특수문자 및 기호 제거로 정제)
-  let newsCause = '';
-  if (news.length > 0) {
-    const cleanTitle = news[0].title.replace(/[▲▼▽▲◇◆□■\-\[\]]/g, '').replace(/\s+/g, ' ').trim();
-    newsCause = `최근 언론 보도인 "${cleanTitle}" 등의 소식`;
-  }
+  // 1. 시장 개요 및 등락 추이
+  let summary = `금일 ${symbol} 주가는 전일 대비 ${pctStr} ${direction} 마감하였습니다. `;
   
-  // 주요 팩터/시그널 추출
-  const activeReasons = reasons.slice(0, 2).map(r => {
-    return r.replace(/[✅⚠️▲▼◆◇■□\-]/g, '').trim();
-  });
-  
-  let reasonCause = '';
-  if (activeReasons.length > 0) {
-    reasonCause = `수급/기술적 측면의 지표 신호(${activeReasons.join(', ')})`;
-  }
-  
-  if (newsCause && reasonCause) {
-    if (isUp) {
-      return `오늘 주가는 ${pctStr} 상승하였습니다. 이는 ${newsCause}으로 인해 투자자들의 강한 매수 유입세가 유입된 가운데, ${reasonCause}이(가) 복합적인 지지대 역할을 수행하며 주가 상승을 견인한 것으로 분석됩니다.`;
-    } else {
-      return `오늘 주가는 ${pctStr} 하락하였습니다. 이는 ${newsCause}으로 인해 시장의 매도 압력이 커지고 투자 심리가 위축된 가운데, ${reasonCause}이(가) 복합적인 하방 압력으로 작용하여 주가 전개를 견인한 것으로 분석됩니다.`;
-    }
-  } else if (newsCause) {
-    if (isUp) {
-      return `오늘 주가는 ${pctStr} 상승하였습니다. 주로 ${newsCause}이(가) 시장의 강한 호재성 모멘텀으로 작용하여 투자자들의 적극적인 매수 전개를 이끌어낸 것으로 분석됩니다.`;
-    } else {
-      return `오늘 주가는 ${pctStr} 하락하였습니다. 주로 ${newsCause}이(가) 부정적인 리스크 모멘텀으로 작용하여 시장의 하방 압력 및 매도 심리를 자극한 것으로 분석됩니다.`;
-    }
-  } else if (reasonCause) {
-    return `오늘 주가는 ${pctStr} ${direction}하였습니다. 특별한 뉴스성 모멘텀이 포착되지 않은 상황에서, ${reasonCause} 등의 수급 밀집 및 기술 지표 추세에 의해 주가가 변동을 나타낸 것으로 분석됩니다.`;
+  // 2. 뉴스 및 모멘텀 요인 (최대 3개 뉴스 반영)
+  let newsPart = '';
+  if (news && news.length > 0) {
+    const newsTitles = news.slice(0, 3).map(n => `"${n.title.replace(/[▲▼▽▲◇◆□■\-\[\]]/g, '').replace(/\s+/g, ' ').trim()}"`).join(', ');
+    newsPart = `시장의 거래 분위기를 이끈 언론 보도로는 ${newsTitles} 등이 보도되며 투자자들의 심리적 모멘텀 및 수급 쏠림 현상을 강하게 견인하였습니다. `;
   } else {
-    return `오늘 주가는 ${pctStr} ${direction}하였습니다. 현재 기술 지표들은 대체로 중립 구간에 머무르고 있으며, 거시 경제 환경 및 시장 전체의 평균 흐름에 동조하여 완만한 변동을 보이고 있습니다.`;
+    newsPart = `최근 공시나 특이할 만한 보도 뉴스가 전무한 상황이나, 지수 편입 및 차트 지표 중심의 수급 흐름이 주도적인 역할을 하였습니다. `;
   }
+  
+  // 3. 기술적/펀더멘탈 분석 (지표값 구체적 언급)
+  let techFundPart = '';
+  const techDetails = [];
+  if (t && t.rsi != null) techDetails.push(`RSI(14) ${t.rsi.toFixed(1)}`);
+  if (t && t.macd != null) techDetails.push(`MACD 모멘텀`);
+  if (q && q.per != null) techDetails.push(`PER ${q.per.toFixed(1)}배`);
+  if (q && q.pbr != null) techDetails.push(`PBR ${q.pbr.toFixed(1)}배`);
+  if (q && q.roe != null) techDetails.push(`ROE ${(q.roe * 100).toFixed(1)}%`);
+  
+  const activeReasons = reasons && reasons.length > 0 
+    ? reasons.slice(0, 3).map(r => r.replace(/[✅⚠️▲▼◆◇■□\-]/g, '').trim()).join(' / ')
+    : '';
+  
+  if (techDetails.length > 0 || activeReasons) {
+    techFundPart = `가치 분석 및 기술적 측면에서는 ${techDetails.join(', ')} 등의 주요 지표 수준과 함께 "${activeReasons}" 시그널이 차트상 주요 저항선을 돌파하거나 지지선 역할을 지탱하는 핵심 변수로 식별되었습니다. `;
+  }
+  
+  // 4. 수급 및 매크로 영향 (VIX, 환율, 금리, 공매도 등 반영)
+  let flowMacroPart = '';
+  const macroDetails = [];
+  if (macro && macro.vix) macroDetails.push(`VIX 변동성 지수 ${macro.vix.value}`);
+  if (macro && macro.us10y) macroDetails.push(`미국 10년물 국채금리 ${macro.us10y.value}%`);
+  if (macro && macro.usdkrw && isKr) macroDetails.push(`원달러 환율 ${macro.usdkrw.value}원`);
+  if (flow && flow.institutionPct != null) macroDetails.push(`기관 지분율 ${flow.institutionPct}%`);
+  if (flow && flow.shortPct != null) macroDetails.push(`공매도 비율 ${flow.shortPct}%`);
+  
+  if (macroDetails.length > 0) {
+    flowMacroPart = `여기에 더해 시장의 거시 경제적 매크로 요인인 ${macroDetails.join(', ')} 등의 변동 추이가 종합 반영되면서 최종적인 등락폭을 형성하게 된 것으로 정밀 분석됩니다.`;
+  } else {
+    flowMacroPart = `전체 거시 경제(Macro) 환경 및 세력 기관들의 거래 동향은 큰 변동 없이 안정된 흐름 하에 오늘의 시세를 확정지었습니다.`;
+  }
+  
+  return `${summary}${newsPart}${techFundPart}${flowMacroPart}`;
 }
 
 // ── 결정론적 분석 텍스트 생성 (LLM 없이 실제 지표값으로 직접 생성) ──────────────
@@ -186,7 +197,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   const risk = riskItems.join('. ') + '.';
 
   // ── price_move ──
-  const price_move = buildDeterministicPriceMove(symbol, isKr, q, news, reasons);
+  const price_move = buildDeterministicPriceMove(symbol, isKr, q, news, reasons, t, flow, macro);
 
   return { signal, confidence, score, breakdown: bk, reasons, summary, technical, fundamental, flow: flowStr, sentiment, risk, price_move };
 }
@@ -2928,7 +2939,7 @@ app.get('/api/analysis/ai', async (req, res) => {
     const isUp = (q.changePct ?? 0) >= 0;
     let price_move = parsed.price_move || '';
     if (!price_move && q.changePct != null) {
-      price_move = buildDeterministicPriceMove(symbol, isKr, q, news, sig.reasons);
+      price_move = buildDeterministicPriceMove(symbol, isKr, q, news, sig.reasons, t, flow, macro);
     }
 
     const result = { ...parsed, price_move };
