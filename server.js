@@ -79,7 +79,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   const isUp = (q.changePct ?? 0) >= 0;
   const f1 = v => v != null ? v.toFixed(1) : null;
   const f2 = v => v != null ? v.toFixed(2) : null;
-  const fp = v => v != null ? `${(v * 100).toFixed(1)}%` : null;
+  const fp = v => v != null ? `${v.toFixed(1)}%` : null;
   const sign = v => v >= 0 ? `+${v}` : `${v}`;
 
   // ── reasons 분류 ──
@@ -107,9 +107,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
     ...rByType.other.slice(0, 1),
   ].slice(0, 5);
   const signalLabel = { '강력매수': '강력 매수', '매수': '매수', '약매수': '약 매수', '중립': '중립', '약매도': '약 매도', '매도': '매도', '강력매도': '강력 매도' }[signal] ?? signal;
-  const summary = `종합 점수 ${score}점으로 ${signalLabel} 의견입니다. ` +
-    (topReasons.length ? topReasons.join(', ') + '. ' : '') +
-    `팩터별 점수: 기술 ${sign(bk.technical)} / 가치 ${sign(bk.value)} / 품질 ${sign(bk.quality)} / 성장 ${sign(bk.growth)}점.`;
+  const summary = `종합 분석 결과, ${symbol} 종목은 평가 점수 ${score}점으로 최종 [${signalLabel}] 의견을 제시합니다. 금일 시장의 거래 방향성을 견인한 핵심 재료로는 "${topReasons.join(', ')}" 등의 퀀트 시그널이 도출되어 시세 전반에 주도적인 모멘텀을 형성하고 있습니다. 각 팩터별 상세 진단 결과, 기술 지표 점수 ${sign(bk.technical)}점, 내재 가치 점수 ${sign(bk.value)}점, 품질 기업 점수 ${sign(bk.quality)}점, 성장성 점수 ${sign(bk.growth)}점으로 집계되었습니다. 이는 기업 고유의 내재 펀더멘탈과 차트상의 강력한 수급 에너지가 상호 결합되어 있음을 가리키고 있습니다.`;
 
   // ── technical ──
   // 먼저 reasons에서 추출한 풍부한 문자열 사용, 보완 수치 추가
@@ -127,8 +125,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   if (!techFromReasons.some(r => r.includes('OBV')) && t.obv_trend != null)
     techExtra.push(t.obv_trend > 0 ? 'OBV 상승(매집)' : 'OBV 하락(분산)');
   const allTechParts = [...techFromReasons, ...techExtra];
-  const technical = (allTechParts.length ? allTechParts.join('. ') + '. ' : '') +
-    `기술적 점수 ${sign(bk.technical)}점.`;
+  const technical = `차트 기술적 분석 결과, 최근 거래 대금과 주가 이동 속도가 정렬되면서 "${techFromReasons.join(', ')}" 신호가 발생하여 핵심 추세 전환 혹은 강력한 지지선 확보 시그널을 형성하고 있습니다. 세부 보조 지표들을 교차 분석해 보면, 현재 ${techExtra.join(', ')} 등의 수준을 기록하며 차트상의 매수/매도 강도가 고도로 응축되어 있음을 보여줍니다. 이러한 지표들을 바탕으로 종합 산출된 최종 기술적 평가 점수는 ${sign(bk.technical)}점으로, 현재 단기 모멘텀이 한쪽 방향으로 강하게 편향되어 추가적인 변동성 돌파 혹은 강력한 추세 연장을 지속하는 상태로 분석됩니다.`;
 
   // ── fundamental ──
   const fundFromReasons = [...rByType.value, ...rByType.quality];
@@ -148,8 +145,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   const allFundParts = fundFromReasons.length
     ? [...fundFromReasons, ...(numFund.length ? [`[수치] ${numFund.join(', ')}`] : [])]
     : numFund;
-  const fundamental = (allFundParts.length ? allFundParts.join('. ') + '. ' : '') +
-    `가치 ${sign(bk.value)} / 품질 ${sign(bk.quality)} / 성장 ${sign(bk.growth)}점.`;
+  const fundamental = `내재 가치 및 가치 분석 결과, 장기적인 투자 가치 궤도를 견인하는 신호로 "${fundFromReasons.join(', ')}" 시그널이 도출되어 비즈니스 체력의 건전성을 뒷받침하고 있습니다. 주요 재무 수준을 보여주는 구체적인 펀더멘탈 지표는 PER ${f1(q.per)}배, PBR ${f2(q.pbr)}배, ROE ${fp(q.roe)}, 영업이익률 ${fp(q.operatingMargin)}, 부채비율 ${q.debtToEquity ? q.debtToEquity.toFixed(0) : '0'}% 등을 기록하여 우수한 현금 흐름 및 자본 효율성을 입증하고 있습니다. 이를 토대로 평가된 내재가치(${sign(bk.value)}점), 이익품질(${sign(bk.quality)}점), 성장전망(${sign(bk.growth)}점) 점수를 고려할 때, 현재 시장 가격은 향후 영업 성장 대비 매력적인 저평가 혹은 고평가 구간에 진입하여 장기 가치 실현의 기회를 내포하고 있는 것으로 분석됩니다.`;
 
   // ── flow ──
   const flowFromReasons = rByType.flow;
@@ -164,8 +160,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   }
   if (flow.options) flowExtra.push(`풋콜비율 ${flow.options.putCallRatio} / 내재변동성 ${flow.options.impliedVol}%`);
   const allFlowParts = [...flowFromReasons, ...flowExtra];
-  const flowStr = (allFlowParts.length ? allFlowParts.join('. ') + '. ' : '') +
-    `수급 점수 ${sign(bk.flow)}점.`;
+  const flowStr = `수급 세력 및 지주 지분 분석 결과, 장내 매수 주체들의 핵심 성향을 보여주는 "${flowFromReasons.join(', ')}" 요인이 감지되어 주요 지분을 쥔 거대 세력의 방어 포지션을 대변하고 있습니다. 시장의 실제 지분 및 파생 거래 현황을 살펴보면, ${flowExtra.join(', ')} 등의 지표 구조를 보여주고 있어 기관 수급의 연속적인 뒷받침 혹은 공매도 하방 헤지 성향이 동시에 관찰됩니다. 종합 수급 점수는 ${sign(bk.flow)}점으로, 향후 기관 및 거대 세력의 거래량 집중 현상이 주가 흐름의 향방을 지탱할 것으로 예상됩니다.`;
 
   // ── sentiment ──
   const sentParts = [];
@@ -176,8 +171,7 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   if (macro.vix) sentParts.push(`VIX ${macro.vix.value}${macro.vix.value > 25 ? '(공포 구간)' : macro.vix.value < 15 ? '(안정 구간)' : '(보통)'}`);
   if (macro.usdkrw && isKr) sentParts.push(`환율 ${macro.usdkrw.value}원(${macro.usdkrw.chg > 0 ? '+' : ''}${macro.usdkrw.chg}%)`);
   if (macro.us10y) sentParts.push(`미국 10년물 ${macro.us10y.value}%`);
-  const sentiment = (sentParts.length ? sentParts.join('. ') + '. ' : '') +
-    `심리 점수 ${sign(bk.sentiment)}점.`;
+  const sentiment = `언론 뉴스 심리 및 매크로(Macro) 환경 분석 결과, ${sentParts.join('. ')} 등으로 구성되어 대외 이슈와 시장 심리가 민감하게 동조하여 전개되고 있습니다. 특히 대외 금리 및 안전 자산, 공포 변동성 지표의 추이는 시장 전체의 멀티플 배수 할인 요인으로 작용 중입니다. 종합 반영된 최종 심리 평가 점수는 ${sign(bk.sentiment)}점으로, 투자 주체들의 일시적인 심리적 과열 혹은 우려가 혼재되어 시장 전반의 방향성을 끊임없이 테스트하는 구간으로 분석됩니다.`;
 
   // ── risk ──
   const riskItems = [];
@@ -2719,7 +2713,7 @@ function buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig) {
   const { signal, score, breakdown: bk, reasons } = sig;
   const cur = isKr ? '₩' : '$';
   const n = (v, d=1) => v != null ? (+v).toFixed(d) : null;
-  const pct = v => v != null ? `${(+v*100).toFixed(1)}%` : null;
+  const pct = v => v != null ? `${(+v).toFixed(1)}%` : null;
 
   const changePct = q.changePct != null ? `${q.changePct>=0?'+':''}${q.changePct.toFixed(2)}%` : null;
 
