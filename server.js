@@ -4022,14 +4022,10 @@ async function precomputeTopAnalysis(N = 100) {
     }
     console.log(`  🤖 상위 ${targets.length}개 상세 페이지 사전 계산 시작...`);
     let done = 0, skipped = 0, failed = 0;
-    // analysis(det) + ai-text 포함해서 워밍 — 사용자 첫 클릭 즉시 응답
+    // AI(analysis/ai) 제외 — 사용자 클릭 시 자연스럽게 캐싱됨
     const endpoints = ['quote', 'flow', 'news', 'earnings', 'peers', 'chart', 'analysis'];
     for (const t of targets) {
-      // det: 캐시 + ai-text: 캐시 둘 다 있으면 완전히 스킵
-      const detCached = getC(`det:${t.ticker}`);
-      const aiCached  = getC(`ai-text:${t.ticker}`);
-      if (detCached && aiCached) { skipped++; continue; }
-      // 상세 페이지 엔드포인트 병렬 워밍
+      if (getC(`det:${t.ticker}`)) { skipped++; continue; }
       const reqs = endpoints.map(ep => {
         const qs = ep === 'chart' ? `range=1mo&` : '';
         const url = `http://localhost:${PORT}/api/${ep}?${qs}symbol=${t.ticker}&market=${t.market}`;
@@ -4039,16 +4035,7 @@ async function precomputeTopAnalysis(N = 100) {
         const results = await Promise.all(reqs);
         if (results.every(Boolean)) done++; else failed++;
       } catch { failed++; }
-      // analysis/ai 엔드포인트는 별도로 워밍 (Gemini rate limit 배려: 4s 간격)
-      if (!aiCached) {
-        try {
-          const aiUrl = `http://localhost:${PORT}/api/analysis/ai?symbol=${t.ticker}&market=${t.market}`;
-          await fetch(aiUrl, { signal: AbortSignal.timeout(60000) }).catch(() => {});
-        } catch {}
-        await new Promise(r => setTimeout(r, 4000)); // Gemini 15 RPM → 4s 간격 안전
-      } else {
-        await new Promise(r => setTimeout(r, 500));
-      }
+      await new Promise(r => setTimeout(r, 500));
       if ((done + failed) % 10 === 0 && (done + failed) > 0)
         console.log(`  🤖 사전 계산 진행: ${done+failed}/${targets.length} (ok:${done} skip:${skipped} fail:${failed})`);
     }
