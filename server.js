@@ -2666,95 +2666,110 @@ async function groqChat(messages, { maxTokens = 1200 } = {}) {
 }
 
 function buildAIPrompt(symbol, isKr, t, q, news, flow, macro, sig) {
-  const { signal, confidence, score, breakdown: bk, reasons } = sig;
+  const { signal, score, breakdown: bk, reasons } = sig;
   const cur = isKr ? '₩' : '$';
   const n = (v, d=1) => v != null ? (+v).toFixed(d) : null;
   const pct = v => v != null ? `${(+v*100).toFixed(1)}%` : null;
-  const x = v => v != null ? v : undefined; // null 제거용
-
-  // 전 지표 포함 (압축 표현으로 토큰 최소화)
-  const tech = [
-    t.rsi!=null && `RSI:${n(t.rsi)}${t.rsi>70?'(과매수)':t.rsi<30?'(과매도)':''}`,
-    t.macd!=null&&t.macd_signal!=null && `MACD:${n(t.macd,3)}vs${n(t.macd_signal,3)}(${t.macd>t.macd_signal?'골든크로스':'데드크로스'})`,
-    t.adx!=null && `ADX:${n(t.adx)}${t.adx>25?(t.pdi>t.mdi?'↑강세':'↓약세'):'횡보'}`,
-    t.bb_pct!=null && `BB:${n(t.bb_pct,0)}%${t.bb_pct>80?'(상단)':t.bb_pct<20?'(하단)':''}`,
-    t.stoch_k!=null && `Stoch:${n(t.stoch_k,0)}${t.stoch_k>80?'(과매수)':t.stoch_k<20?'(과매도)':''}`,
-    t.obv_trend!=null && `OBV:${t.obv_trend>0?'↑매집':'↓분산'}`,
-    t.cmf!=null && `CMF:${n(t.cmf,2)}`,
-    t.mfi!=null && `MFI:${n(t.mfi,0)}`,
-    t.ich_signal && `이치모쿠:${t.ich_signal}`,
-    t.will_r!=null && `W%R:${n(t.will_r,0)}`,
-    t.roc20!=null && `ROC20:${n(t.roc20,0)}%`,
-    t.price_vs_52h!=null && `52wH:${n(t.price_vs_52h,0)}%`,
-    t.price_vs_52l!=null && `52wL:+${n(t.price_vs_52l,0)}%`,
-    t.sar_signal && `SAR:${t.sar_signal}`,
-    t.candles?.length && `캔들:${t.candles.join(',')}`,
-  ].filter(Boolean).join(' | ');
-
-  const fund = [
-    q.per!=null && `PER:${n(q.per)}배`,
-    q.forwardPer!=null && `fPER:${n(q.forwardPer)}배`,
-    q.pbr!=null && `PBR:${n(q.pbr,2)}`,
-    q.roe!=null && `ROE:${pct(q.roe)}`,
-    q.operatingMargin!=null && `OPM:${pct(q.operatingMargin)}`,
-    q.earningsGrowth!=null && `EG:${pct(q.earningsGrowth)}`,
-    q.revenueGrowth!=null && `RG:${pct(q.revenueGrowth)}`,
-    q.debtToEquity!=null && `D/E:${n(q.debtToEquity,0)}%`,
-    q.freeCashflow!=null && `FCF:${q.freeCashflow>0?'+':'−'}`,
-    q.recommendation && `컨센서스:${q.recommendation}${q.targetPrice?` TP:${cur}${(+q.targetPrice).toLocaleString()}`:''}`,
-  ].filter(Boolean).join(' | ');
-
-  const flowStr = [
-    flow.institutionPct!=null && `기관:${flow.institutionPct}%`,
-    flow.shortPct!=null && `공매도:${flow.shortPct}%`,
-    flow.insiderTx?.length && `내부자:${flow.insiderTx[0].type}(${flow.insiderTx[0].shares?.toLocaleString()}주)`,
-    flow.options && `PC:${flow.options.putCallRatio} IV:${flow.options.impliedVol}%`,
-    flow.topHolders?.length && `대주주:${flow.topHolders.slice(0,2).map(h=>`${h.name}${h.pct}%`).join(',')}`,
-  ].filter(Boolean).join(' | ');
-
-  const macroStr = [
-    macro.vix && `VIX:${macro.vix.value}${macro.vix.value>25?'(공포)':macro.vix.value<15?'(안정)':''}`,
-    macro.us10y && `10Y:${macro.us10y.value}%`,
-    macro.usdkrw && `USDKRW:${macro.usdkrw.value}`,
-    macro.gold && `금:$${macro.gold.value}(${macro.gold.chg>0?'+':''}${macro.gold.chg}%)`,
-    macro.oil && `WTI:$${macro.oil.value}(${macro.oil.chg>0?'+':''}${macro.oil.chg}%)`,
-  ].filter(Boolean).join(' | ');
-
-  const newsStr = news.slice(0,3).map(n=>n.title.slice(0,60)).join(' / ');
 
   const changePct = q.changePct != null ? `${q.changePct>=0?'+':''}${q.changePct.toFixed(2)}%` : null;
 
-  // 시스템 + 유저 합쳐서 단일 프롬프트 (Gemini는 system role 없음)
-  return `당신은 CFA 자격을 보유한 전문 주식 애널리스트입니다. 아래 실제 데이터를 바탕으로 ${symbol}(${isKr?'한국':'미국'}) 종목 분석을 작성하세요.
+  // ── 기술지표 팩트 문장 (AI가 반드시 포함해야 할 수치) ──
+  const techFacts = [
+    t.rsi!=null && `RSI(14) ${n(t.rsi)}${t.rsi>70?' — 과매수 구간':t.rsi<30?' — 과매도 구간':' — 중립 구간'}`,
+    t.macd!=null&&t.macd_signal!=null && `MACD ${n(t.macd,3)} vs 시그널 ${n(t.macd_signal,3)} (${t.macd>t.macd_signal?'골든크로스 — 상승 모멘텀':'데드크로스 — 하락 모멘텀'})`,
+    t.adx!=null && `ADX ${n(t.adx)} — ${t.adx>25?(t.pdi>t.mdi?'강한 상승추세(+DI>-DI)':'강한 하락추세(-DI>+DI)'):'추세 없음(횡보)'}`,
+    t.bb_pct!=null && `볼린저밴드 ${n(t.bb_pct,0)}% 위치${t.bb_pct>80?' — 상단 돌파(과열 주의)':t.bb_pct<20?' — 하단 접근(반등 가능)':' — 밴드 중간'}`,
+    t.stoch_k!=null && `스토캐스틱 K ${n(t.stoch_k,0)}${t.stoch_k>80?' — 과매수':t.stoch_k<20?' — 과매도':''}`,
+    t.will_r!=null && `Williams %R ${n(t.will_r,0)}${t.will_r>-20?' — 과매수':t.will_r<-80?' — 과매도':''}`,
+    t.obv_trend!=null && `OBV ${t.obv_trend>0?'상승 추세 — 매집 신호':'하락 추세 — 분산 신호'}`,
+    t.cmf!=null && `CMF ${n(t.cmf,2)}${t.cmf>0.1?' — 강한 매수 압력':t.cmf<-0.1?' — 강한 매도 압력':' — 중립'}`,
+    t.mfi!=null && `MFI ${n(t.mfi,0)}${t.mfi>80?' — 과매수':t.mfi<20?' — 과매도':''}`,
+    t.ich_signal && `이치모쿠 ${t.ich_signal}`,
+    t.roc20!=null && `ROC(20) ${n(t.roc20,1)}%${t.roc20>0?' — 양의 모멘텀':' — 음의 모멘텀'}`,
+    t.sar_signal && `Parabolic SAR ${t.sar_signal}`,
+    t.price_vs_52h!=null && `52주 고점 대비 ${n(t.price_vs_52h,1)}%`,
+    t.price_vs_52l!=null && `52주 저점 대비 +${n(t.price_vs_52l,1)}%`,
+    t.candles?.length && `캔들 패턴: ${t.candles.join(', ')}`,
+  ].filter(Boolean);
 
-[필수 작성 원칙 — 반드시 준수]
-1. 반드시 한국어 존댓말(~합니다/~입니다)로 작성하세요
-2. 각 섹션에서 아래 제공된 수치를 최대한 모두 직접 인용하세요 (RSI, MACD, ADX, BB%, W%R, OBV, CMF, MFI, ROC, 이치모쿠, SAR, PER, PBR, ROE, FCF, 이익성장률, 기관지분율, 공매도, 풋콜비율, VIX, 금리 등)
-3. 수치를 나열한 뒤 반드시 그 의미와 해석을 친절하게 설명하세요
-4. 단기·중기 예상 전개와 투자 판단 근거를 명확히 제시하세요
-5. 긍정/부정 요인을 균형 있게 다루고, 근거 없는 낙관은 배제하세요
-6. JSON만 출력하고 다른 텍스트는 절대 포함하지 마세요
+  // ── 펀더멘탈 팩트 문장 ──
+  const fundFacts = [
+    q.per!=null && `PER ${n(q.per)}배`,
+    q.forwardPer!=null && `예상 PER ${n(q.forwardPer)}배`,
+    q.pbr!=null && `PBR ${n(q.pbr,2)}배`,
+    q.roe!=null && `ROE ${pct(q.roe)}`,
+    q.operatingMargin!=null && `영업이익률 ${pct(q.operatingMargin)}`,
+    q.earningsGrowth!=null && `이익성장률 ${pct(q.earningsGrowth)}`,
+    q.revenueGrowth!=null && `매출성장률 ${pct(q.revenueGrowth)}`,
+    q.debtToEquity!=null && `부채비율 ${n(q.debtToEquity,0)}%`,
+    q.freeCashflow!=null && `FCF ${q.freeCashflow>0?'양수(현금 창출력 우수)':'음수(현금 소진 중)'}`,
+    q.recommendation && `애널리스트 컨센서스 ${q.recommendation}${q.targetPrice?` / 목표주가 ${cur}${(+q.targetPrice).toLocaleString()}`:''}`,
+  ].filter(Boolean);
 
-[종목 데이터]
-신호: ${signal} | 점수: ${score}/200 | 확신도: ${confidence}%
-팩터: 기술${bk.technical>=0?'+':''}${bk.technical} / 가치${bk.value>=0?'+':''}${bk.value} / 품질${bk.quality>=0?'+':''}${bk.quality} / 성장${bk.growth>=0?'+':''}${bk.growth} / 수급${bk.flow>=0?'+':''}${bk.flow} / 심리${bk.sentiment>=0?'+':''}${bk.sentiment}
-주요시그널: ${reasons.join(' / ')}
-기술지표: ${tech||'N/A'}
-펀더멘탈: ${fund||'N/A'}
-수급: ${flowStr||'N/A'}
-매크로: ${macroStr||'N/A'}
-오늘등락: ${changePct||'N/A'}
-뉴스: ${newsStr||'없음'}
+  // ── 수급 팩트 문장 ──
+  const flowFacts = [
+    flow.institutionPct!=null && `기관 지분율 ${flow.institutionPct}%`,
+    flow.insiderPct!=null && `내부자 지분율 ${flow.insiderPct}%`,
+    flow.shortPct!=null && `공매도 비율 ${flow.shortPct}%`,
+    flow.topHolders?.length && `주요 기관주주: ${flow.topHolders.slice(0,2).map(h=>`${h.name}(${h.pct}%)`).join(', ')}`,
+    flow.insiderTx?.length && `내부자 ${flow.insiderTx[0].type}: ${flow.insiderTx[0].name} ${flow.insiderTx[0].shares?.toLocaleString()}주 (${flow.insiderTx[0].date})`,
+    flow.options && `풋콜비율 ${flow.options.putCallRatio} / 내재변동성 ${flow.options.impliedVol}%`,
+  ].filter(Boolean);
 
-[출력 JSON 형식 및 각 필드 요구사항]
+  // ── 매크로 팩트 문장 ──
+  const macroFacts = [
+    macro.vix && `VIX ${macro.vix.value}${macro.vix.value>25?' — 공포 구간(시장 변동성 극대)':macro.vix.value<15?' — 안정 구간':' — 보통 수준'}`,
+    macro.us10y && `미국 10년물 국채금리 ${macro.us10y.value}%${macro.us10y.value>4.5?' — 고금리(주가 할인율 상승)':''}`,
+    macro.usdkrw && isKr && `원달러 환율 ${macro.usdkrw.value}원 (전일 대비 ${macro.usdkrw.chg>0?'+':''}${macro.usdkrw.chg}%)`,
+    macro.gold && `금 $${macro.gold.value} (${macro.gold.chg>0?'+':''}${macro.gold.chg}%)`,
+    macro.oil && `WTI 원유 $${macro.oil.value} (${macro.oil.chg>0?'+':''}${macro.oil.chg}%)`,
+  ].filter(Boolean);
+
+  const newsStr = news.slice(0,3).map(n=>n.title.slice(0,70)).join('\n- ');
+
+  const sk = (v) => v>=0?`+${v}`:v; // signed
+
+  return `당신은 CFA 자격을 보유한 전문 주식 애널리스트입니다. ${symbol}(${isKr?'한국':'미국'}) 종목 분석 JSON을 작성하세요.
+
+[절대 원칙]
+- 반드시 한국어 존댓말(~합니다/~입니다)로 작성
+- 아래 [팩트 데이터]의 수치를 각 섹션에서 빠짐없이 인용하고, 각 수치가 무엇을 의미하는지 친절하게 설명
+- 수치 나열에 그치지 말고, 수치 → 의미 → 투자 판단으로 이어지는 흐름으로 서술
+- 단기·중기 예상 전개와 실질적인 투자 판단 근거 제시
+- JSON만 출력 (다른 텍스트 없음)
+
+[종합 평가]
+신호: ${signal} | 점수: ${score}/200
+팩터: 기술${sk(bk.technical)} / 가치${sk(bk.value)} / 품질${sk(bk.quality)} / 성장${sk(bk.growth)} / 수급${sk(bk.flow)} / 심리${sk(bk.sentiment)}
+주요 시그널: ${reasons.join(' / ')}
+
+[기술지표 팩트]
+${techFacts.length ? techFacts.map(f=>`- ${f}`).join('\n') : '- 데이터 없음'}
+
+[펀더멘탈 팩트]
+${fundFacts.length ? fundFacts.map(f=>`- ${f}`).join('\n') : '- 데이터 없음'}
+
+[수급 팩트]
+${flowFacts.length ? flowFacts.map(f=>`- ${f}`).join('\n') : '- 데이터 없음'}
+
+[매크로 팩트]
+${macroFacts.length ? macroFacts.map(f=>`- ${f}`).join('\n') : '- 데이터 없음'}
+
+[오늘 등락]
+${changePct || '데이터 없음'}
+
+[최근 뉴스]
+${newsStr ? `- ${newsStr}` : '없음'}
+
+[출력 JSON]
 {
-  "price_move": "${changePct ? `오늘 ${changePct} 등락의 원인 분석. 위 뉴스 제목의 실제 내용을 근거로 주가 변동 원인을 1~2문장으로 설명하세요. 기술적 요인(RSI 과매수/매도, MACD 크로스 등)이나 수급 요인도 함께 언급하세요. 뉴스 제목을 그대로 복사하지 말고 내용을 해석하세요.` : '빈 문자열'}",
-  "summary": "종합점수 ${score}점(${signal})의 의미를 설명하고, 팩터별 점수(기술${bk.technical>=0?'+':''}${bk.technical}/가치${bk.value>=0?'+':''}${bk.value}/품질${bk.quality>=0?'+':''}${bk.quality}/성장${bk.growth>=0?'+':''}${bk.growth})를 언급하며 이 종목의 핵심 투자 포인트를 3~4문장으로 설명하세요. 주요시그널(${reasons.slice(0,3).join(', ')})을 반드시 포함하세요.",
-  "technical": "RSI, MACD, ADX, 볼린저밴드, Williams%R, OBV, CMF, MFI, ROC, 이치모쿠, SAR 등 위 기술지표 수치를 모두 직접 인용하며, 각 수치가 현재 추세·모멘텀·과매수/과매도 측면에서 무엇을 의미하는지 해석하고 단기 예상 흐름을 설명하세요. 기술적 점수 ${bk.technical>=0?'+':''}${bk.technical}점도 언급하세요.",
-  "fundamental": "PER, 예상PER, PBR, ROE, 영업이익률, 이익성장률, 매출성장률, 부채비율, FCF, 애널리스트 컨센서스·목표주가 등 위 수치를 모두 직접 인용하며, 현재 주가 수준이 기업 가치 대비 적정한지 가치평가 관점에서 설명하세요. 가치${bk.value>=0?'+':''}${bk.value}/품질${bk.quality>=0?'+':''}${bk.quality}/성장${bk.growth>=0?'+':''}${bk.growth}점도 언급하세요.",
-  "flow": "기관 지분율, 내부자 지분율, 공매도 비율, 주요 기관주주, 내부자 거래, 풋콜비율, 내재변동성 등 위 수치를 모두 직접 인용하며, 현재 기관·세력·옵션 시장의 포지션이 주가에 어떤 영향을 미칠지 해석하세요. 수급 점수 ${bk.flow>=0?'+':''}${bk.flow}점도 언급하세요.",
-  "sentiment": "위 뉴스 제목들의 핵심 내용이 주가에 어떤 영향을 미치는지 설명하고, VIX, 미국 10년물 금리, 환율, 금, 원유 등 매크로 수치를 직접 인용하며 이 종목에 유리/불리한 거시 환경인지 판단하세요. 심리 점수 ${bk.sentiment>=0?'+':''}${bk.sentiment}점도 언급하세요.",
-  "risk": "이 종목 데이터에서 도출되는 구체적 리스크 2~3가지를 실제 수치(RSI, PER, 부채비율, VIX, 금리 등)를 근거로 설명하세요. 막연한 표현이 아닌, 현재 이 종목 고유의 리스크를 명확한 수치와 함께 서술하세요."
+  "price_move": "${changePct ? `오늘 ${changePct} 변동. 위 뉴스와 기술지표(RSI, MACD 등)를 근거로 변동 원인을 2~3문장으로 설명하세요. 뉴스 제목을 그대로 복사하지 말고 핵심 내용을 해석하세요.` : ''}",
+  "summary": "종합 점수 ${score}점(${signal}) 의미와 팩터별 점수(기술${sk(bk.technical)}/가치${sk(bk.value)}/품질${sk(bk.quality)}/성장${sk(bk.growth)})를 바탕으로, 위 주요 시그널을 인용하며 핵심 투자 포인트를 4~5문장으로 설명하세요.",
+  "technical": "위 [기술지표 팩트]의 모든 수치(RSI, MACD, ADX, 볼린저밴드, 스토캐스틱, Williams%R, OBV, CMF, MFI, 이치모쿠, ROC, SAR 등)를 각각 인용하고, 각 지표가 현재 추세·모멘텀·과매수/과매도에서 무엇을 의미하는지 구체적으로 설명하세요. 기술적 점수 ${sk(bk.technical)}점의 의미도 포함하세요.",
+  "fundamental": "위 [펀더멘탈 팩트]의 모든 수치(PER, 예상PER, PBR, ROE, 영업이익률, 이익성장률, 매출성장률, 부채비율, FCF, 컨센서스)를 각각 인용하고, 현재 주가가 기업 가치 대비 적정한지 설명하세요. 가치${sk(bk.value)}/품질${sk(bk.quality)}/성장${sk(bk.growth)}점도 언급하세요.",
+  "flow": "위 [수급 팩트]의 모든 수치(기관지분율, 내부자지분율, 공매도비율, 주요기관주주, 내부자거래, 풋콜비율, 내재변동성)를 각각 인용하고, 기관·세력·옵션 시장의 포지션이 주가에 어떤 영향을 미칠지 해석하세요. 수급 점수 ${sk(bk.flow)}점도 언급하세요.",
+  "sentiment": "위 [최근 뉴스] 내용을 해석하여 주가에 미치는 영향을 설명하고, [매크로 팩트]의 VIX·금리·환율·금·원유 수치를 모두 인용하며 현재 거시 환경이 이 종목에 유리한지 불리한지 판단하세요. 심리 점수 ${sk(bk.sentiment)}점도 언급하세요.",
+  "risk": "이 종목의 [기술지표 팩트]·[펀더멘탈 팩트]·[매크로 팩트]에서 도출되는 구체적 리스크 3가지를 실제 수치를 근거로 설명하세요. 막연한 표현 없이, 이 종목 고유의 리스크를 명확한 수치와 함께 서술하세요."
 }`;
 }
 
