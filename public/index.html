@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StockLens - 주식 투자 대시보드</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
 <style>
   :root {
@@ -38,7 +37,7 @@
     max-width: 100%; 
     background: var(--bg); 
     color: var(--text); 
-    font-family: 'Noto Sans KR', -apple-system, system-ui, sans-serif; 
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
     min-height: 100vh; 
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
@@ -144,11 +143,11 @@
   }
   .stock-item:hover { background: var(--surface2); }
   .stock-item.active { background: var(--surface2); border-left-color: var(--accent); }
-  .stock-left .ticker { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13.5px; font-weight: 700; }
+  .stock-left .ticker { font-size: 13.5px; font-weight: 700; }
   .stock-left .sname { font-size: 11.5px; color: var(--text2); margin-top: 1px; }
   .stock-right { text-align: right; }
-  .stock-price { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 700; }
-  .stock-chg { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; margin-top: 1px; }
+  .stock-price { font-size: 13px; font-weight: 700; }
+  .stock-chg { font-size: 11px; margin-top: 1px; }
   
   .skeleton { 
     background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%); 
@@ -179,8 +178,8 @@
   .badge-NYSE { background: rgba(20,184,166,0.1); color: #2dd4bf; }
   
   .price-block { text-align: right; }
-  .current-price { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 38px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
-  .price-change { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 16px; font-weight: 700; margin-top: 6px; }
+  .current-price { font-size: 38px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+  .price-change { font-size: 16px; font-weight: 700; margin-top: 6px; }
   
   .analyst-box {
     margin-top: 8px; display: inline-flex; align-items: center; gap: 6px;
@@ -200,7 +199,7 @@
   .card:hover { border-color: var(--border2); transform: translateY(-1px); box-shadow: var(--shadow-md); }
   
   .card-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; }
-  .card-value { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 21px; font-weight: 800; margin-top: 6px; }
+  .card-value { font-size: 21px; font-weight: 800; margin-top: 6px; }
   .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .indicator-bar { height: 4px; background: rgba(255,255,255,0.03); border-radius: 99px; margin-top: 8px; overflow: hidden; }
   .indicator-fill { height: 100%; border-radius: 99px; transition: width 0.6s ease; }
@@ -230,7 +229,7 @@
   .indicators-table td { padding: 11px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
   .indicators-table tr:last-child td { border-bottom: none; }
   .ind-name { color: var(--text2); }
-  .ind-val { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; text-align: right; }
+  .ind-val { font-weight: 700; text-align: right; }
   .ind-grade { text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; }
   
   .grade-good { color: var(--green); } 
@@ -248,12 +247,12 @@
   .fin-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .fin-row:last-child { border-bottom: none; }
   .fin-label { color: var(--text2); }
-  .fin-val { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; }
+  .fin-val { font-weight: 700; }
 
   .score-section { display: flex; align-items: center; gap: 20px; }
   .score-ring { position: relative; width: 90px; height: 90px; flex-shrink: 0; }
   .score-ring svg { transform: rotate(-90deg); }
-  .score-number { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 24px; font-weight: 800; }
+  .score-number { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 24px; font-weight: 800; }
   .score-details { flex: 1; }
   .score-bar-item { margin-bottom: 8px; }
   .score-bar-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); margin-bottom: 4px; }
@@ -270,7 +269,7 @@
   /* Home Screen */
   .home-wrap { padding: 24px; }
   .home-hero { text-align: center; padding: 40px 0 32px; }
-  .home-hero h1 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 44px; font-weight: 900; letter-spacing: -2px; margin-bottom: 8px; }
+  .home-hero h1 { font-size: 44px; font-weight: 900; letter-spacing: -2px; margin-bottom: 8px; }
   .home-hero h1 span { color: var(--accent); }
   .home-hero p { color: var(--text2); font-size: 14px; }
   
@@ -283,8 +282,8 @@
   }
   .home-idx-card:hover { border-color: var(--border2); box-shadow: var(--shadow-md); transform: translateY(-1px); }
   .home-idx-name { font-size: 10px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
-  .home-idx-val { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 17px; font-weight: 800; }
-  .home-idx-chg { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12.5px; font-weight: 700; margin-top: 3px; }
+  .home-idx-val { font-size: 17px; font-weight: 800; }
+  .home-idx-chg { font-size: 12.5px; font-weight: 700; margin-top: 3px; }
   
   .home-stocks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
   @media(max-width:700px){ .home-stocks-grid { grid-template-columns: 1fr; } }
@@ -298,11 +297,11 @@
   .home-stock-row:hover { background: var(--surface2); }
   
   .home-stock-info { display: flex; flex-direction: column; }
-  .home-stock-ticker { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13.5px; font-weight: 700; }
+  .home-stock-ticker { font-size: 13.5px; font-weight: 700; }
   .home-stock-name { font-size: 11.5px; color: var(--text2); }
   .home-stock-price { text-align: right; }
-  .home-stock-pval { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 700; }
-  .home-stock-pchg { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; margin-top: 1px; }
+  .home-stock-pval { font-size: 13px; font-weight: 700; }
+  .home-stock-pchg { font-size: 11px; margin-top: 1px; }
   
   .idx-detail-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:28px; flex-wrap:wrap; gap:14px; }
   .idx-range-tabs { display:flex; gap:4px; }
