@@ -2391,13 +2391,22 @@ async function renderHome(opts = {}) {
       ${renderScreenerCard(all)}
     </div>`;
 
-  // 섹터 ETF 비동기 로드 (홈 렌더 블로킹 없음)
-  api('/api/sectors').then(sectors => {
-    const el = document.getElementById('sectorHeatmapContainer');
-    if (el && sectors && Object.keys(sectors).length) {
-      el.innerHTML = `<div class="card" style="margin-bottom:24px">${renderSectorHeatmap(sectors)}</div>`;
-    }
-  }).catch(() => {});
+  // 히트맵 영역에 프리미엄 인터랙티브 Finviz 맵 주입 (사진 느낌의 정교한 실시간 히트맵 최우선 노출)
+  const usMapEl = document.getElementById('sectorHeatmapContainer');
+  if (usMapEl) {
+    usMapEl.innerHTML = `
+      <div class="card" style="margin-bottom:24px; padding: 20px;">
+        <div style="font-size:14px;color:var(--text);font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:6px">
+          <span>🇺🇸 미국 시장 실시간 히트맵 (S&P 500 Map)</span>
+        </div>
+        <div style="position:relative;width:100%;height:0;padding-bottom:56.25%;overflow:hidden;border-radius:12px;border:1px solid var(--border)">
+          <iframe src="https://finviz.com/map.ashx?t=sec&st=" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allowfullscreen></iframe>
+        </div>
+      </div>
+    `;
+  }
+
+  // 한국 업종 히트맵은 기존 텍스트 카드를 완전히 고유하고 예쁜 격자형 비주얼 구조로 실시간 렌더링 유지
   api('/api/kr-sectors').then(sectors => {
     const el = document.getElementById('krHeatmapContainer');
     if (el && sectors && sectors.length) el.innerHTML = renderKrHeatmap(sectors);
