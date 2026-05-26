@@ -198,12 +198,16 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
 
 app.use(compression({ level: 6 })); // gzip 압축
 app.use(express.static(join(__dirname, 'public'), {
-  maxAge: '1d',          // JS/CSS/이미지 24시간 브라우저 캐시
-  etag: true,
-  lastModified: true,
-  setHeaders(res, path) {
-    // HTML은 캐시 안 함 (항상 최신)
-    if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+  maxAge: 0,
+  etag: false,
+  lastModified: false,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surrogate-Control', 'no-store');
+    }
   }
 }));
 app.use((_, res, next) => { res.header('Access-Control-Allow-Origin', '*'); next(); });
