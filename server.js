@@ -3315,9 +3315,10 @@ main_data = {
     'profitMargin': round(safe_float(info.get('profitMargins') or 0)*100,1) if info.get('profitMargins') else None,
     'marketCap': mc0,
 }
-print(json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'peers': result}, ensure_ascii=False, default=str))
+print('SECTORS_JSON:' + json.dumps({'sector': sector, 'industry': industry, 'main': main_data, 'peers': result}, ensure_ascii=False, default=str))
 `;
-      const raw = await _pyExecLong(py).catch(e => { console.error('peers 실패:', symbol, e.message?.slice(0,100)); return null; });
+      const output = await _pyExecLong(py).catch(e => { console.error('peers 실패:', symbol, e.message?.slice(0,100)); return null; });
+      const raw = output ? JSON.parse(output.split('SECTORS_JSON:').pop()) : null;
       if (!raw) throw new Error('peers python 실패');
 
       // ── KR 종목: 하드코딩 피어맵 + 스크리너 캐시로 보완 ──────────────────
@@ -3771,7 +3772,9 @@ app.get('/api/sectors', async (_, res) => {
       const tickers = etfMap.map(([t]) => t).join(' ');
       // yfinance로 섹터 ETF 일괄 조회
       const pyCode = `
-import yfinance as yf, json, sys
+import yfinance as yf, json, sys, warnings, os
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
 tickers = "${tickers}".split()
 result = {}
 etf_map = {${etfMap.map(([t,k]) => `"${t}":"${k}"`).join(',')}}
@@ -3788,13 +3791,18 @@ try:
         except: pass
 except Exception as e:
     sys.stderr.write(str(e))
-print(json.dumps(result))
+sys.stdout.write("SECTORS_JSON:" + json.dumps(result) + "\\n")
 `;
       try {
         const out = await _pyExecLong(pyCode);
-        const parsed = JSON.parse(out.trim());
-        if (parsed && Object.keys(parsed).length > 0) return parsed;
-      } catch {}
+        // SECTORS_JSON: 마커 뒤 JSON만 추출 (yfinance 경고 메시지 무시)
+        const marker = 'SECTORS_JSON:';
+        const idx = out.lastIndexOf(marker);
+        if (idx !== -1) {
+          const parsed = JSON.parse(out.slice(idx + marker.length).trim());
+          if (parsed && Object.keys(parsed).length > 0) return parsed;
+        }
+      } catch(e) { console.error('sectors yfinance 실패:', e.message?.slice(0,120)); }
       // stooq 폴백
       const result = {};
       await Promise.allSettled(etfMap.map(async ([sym, key]) => {
