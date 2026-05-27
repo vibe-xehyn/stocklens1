@@ -3772,13 +3772,15 @@ app.get('/api/sectors', async (_, res) => {
       const tickers = etfMap.map(([t]) => t).join(' ');
       // yfinance로 섹터 ETF 일괄 조회
       const pyCode = `
-import yfinance as yf, json, sys, warnings, os
+import yfinance as yf, json, sys, warnings, os, io
 warnings.filterwarnings('ignore')
-os.environ['PYTHONWARNINGS'] = 'ignore'
-tickers = "${tickers}".split()
+# stdout 임시 차단 (yfinance 내부 print 억제)
+_real_stdout = sys.stdout
+sys.stdout = io.StringIO()
 result = {}
 etf_map = {${etfMap.map(([t,k]) => `"${t}":"${k}"`).join(',')}}
 try:
+    tickers = "${tickers}".split()
     data = yf.download(tickers, period="2d", interval="1d", progress=False, auto_adjust=True)
     closes = data["Close"]
     for t in tickers:
@@ -3790,18 +3792,14 @@ try:
                 result[etf_map[t]] = {"value": round(cur, 2), "change": chg, "ticker": t}
         except: pass
 except Exception as e:
-    sys.stderr.write(str(e))
-sys.stdout.write("SECTORS_JSON:" + json.dumps(result) + "\\n")
+    sys.stderr.write(str(e) + "\\n")
+finally:
+    sys.stdout = _real_stdout
+print(json.dumps(result))
 `;
       try {
-        const out = await _pyExecLong(pyCode);
-        // SECTORS_JSON: 마커 뒤 JSON만 추출 (yfinance 경고 메시지 무시)
-        const marker = 'SECTORS_JSON:';
-        const idx = out.lastIndexOf(marker);
-        if (idx !== -1) {
-          const parsed = JSON.parse(out.slice(idx + marker.length).trim());
-          if (parsed && Object.keys(parsed).length > 0) return parsed;
-        }
+        const parsed = await _pyExecLong(pyCode);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) return parsed;
       } catch(e) { console.error('sectors yfinance 실패:', e.message?.slice(0,120)); }
       // stooq 폴백
       const result = {};
