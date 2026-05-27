@@ -3762,17 +3762,45 @@ app.get('/api/kr-sectors', async (_, res) => {
 app.get('/api/sectors', async (_, res) => {
   try {
     const data = await cached('sectors', 600_000, async () => {
-      const jobs = [
-        ['xlk','tech'], ['xlf','finance'], ['xlv','health'],
-        ['xle','energy'], ['xli','industrial'], ['xlc','comm'],
-        ['xlb','materials'], ['xlre','realestate'], ['xlp','staples'],
-        ['xly','discretionary'], ['xlu','utilities'],
+      const etfMap = [
+        ['XLK','tech'], ['XLF','finance'], ['XLV','health'],
+        ['XLE','energy'], ['XLI','industrial'], ['XLC','comm'],
+        ['XLB','materials'], ['XLRE','realestate'], ['XLP','staples'],
+        ['XLY','discretionary'], ['XLU','utilities'],
       ];
+      const tickers = etfMap.map(([t]) => t).join(' ');
+      // yfinance로 섹터 ETF 일괄 조회
+      const pyCode = `
+import yfinance as yf, json, sys
+tickers = "${tickers}".split()
+result = {}
+etf_map = {${etfMap.map(([t,k]) => `"${t}":"${k}"`).join(',')}}
+try:
+    data = yf.download(tickers, period="2d", interval="1d", progress=False, auto_adjust=True)
+    closes = data["Close"]
+    for t in tickers:
+        try:
+            vals = closes[t].dropna()
+            if len(vals) >= 2:
+                cur, prev = float(vals.iloc[-1]), float(vals.iloc[-2])
+                chg = round((cur - prev) / prev * 100, 2)
+                result[etf_map[t]] = {"value": round(cur, 2), "change": chg, "ticker": t}
+        except: pass
+except Exception as e:
+    sys.stderr.write(str(e))
+print(json.dumps(result))
+`;
+      try {
+        const out = await _pyExecLong(pyCode);
+        const parsed = JSON.parse(out.trim());
+        if (parsed && Object.keys(parsed).length > 0) return parsed;
+      } catch {}
+      // stooq 폴백
       const result = {};
-      await Promise.allSettled(jobs.map(async ([sym, key]) => {
+      await Promise.allSettled(etfMap.map(async ([sym, key]) => {
         try {
-          const q = await stooqQuote(sym);
-          result[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100 };
+          const q = await stooqQuote(sym.toLowerCase());
+          result[key] = { value: q.price, change: Math.round(q.changePct * 100) / 100, ticker: sym };
         } catch {}
       }));
       return result;

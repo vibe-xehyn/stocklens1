@@ -614,104 +614,85 @@ if ('serviceWorker' in navigator) {
   }
   .modal-price-tag strong { color: var(--text); font-weight: 700; }
 
-  /* ── Photographic Treemap Heatmap ── */
-  .heatmap-section {
-    margin-bottom: 24px;
-  }
+  /* ── Bloomberg-Style Sector Heatmap ── */
+  .heatmap-section { margin-bottom: 24px; }
   .heatmap-header {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 14px; gap: 8px;
+    margin-bottom: 12px; gap: 8px;
   }
   .heatmap-title {
     font-size: 13px; font-weight: 800; color: var(--text);
     display: flex; align-items: center; gap: 6px;
   }
-  .heatmap-meta {
-    font-size: 11px; color: var(--muted);
-  }
+  .heatmap-meta { font-size: 11px; color: var(--muted); }
   .heatmap-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    grid-auto-rows: auto;
-    gap: 4px;
-    border-radius: 14px;
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: minmax(72px, auto);
+    gap: 3px;
+    border-radius: 12px;
     overflow: hidden;
   }
   .heatmap-cell {
-    position: relative;
-    min-height: 70px;
-    border-radius: 0;
-    overflow: hidden;
-    cursor: default;
+    position: relative; overflow: hidden; cursor: default;
     display: flex; flex-direction: column;
-    align-items: flex-start; justify-content: flex-end;
-    padding: 8px 10px;
-    transition: filter 0.2s ease;
+    align-items: flex-start; justify-content: space-between;
+    padding: 8px 10px 7px;
+    transition: brightness 0.15s;
   }
-  .heatmap-cell::before {
-    content: '';
-    position: absolute; inset: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 60%);
-    pointer-events: none;
-  }
+  .heatmap-cell:hover { filter: brightness(1.12); }
   .heatmap-cell::after {
-    content: '';
-    position: absolute; bottom: 0; left: 0; right: 0; height: 50%;
-    background: linear-gradient(to top, rgba(0,0,0,0.35), transparent);
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 55%);
     pointer-events: none;
   }
-  .heatmap-cell.large {
-    grid-column: span 2;
-    grid-row: span 2;
-    min-height: 130px;
-  }
-  .heatmap-cell.medium {
-    grid-column: span 1;
-    grid-row: span 1;
-    min-height: 80px;
-  }
-  .heatmap-cell-name {
-    font-size: 9.5px; font-weight: 800;
-    color: rgba(255,255,255,0.85);
-    text-transform: uppercase; letter-spacing: 0.4px;
+  /* 크기 클래스 */
+  .hm-xl { grid-column: span 2; grid-row: span 2; }
+  .hm-lg { grid-column: span 2; grid-row: span 1; }
+  .hm-md { grid-column: span 1; grid-row: span 1; }
+  .hm-sm { grid-column: span 1; grid-row: span 1; }
+
+  .hm-top { display: flex; flex-direction: column; gap: 1px; position: relative; z-index: 1; width: 100%; }
+  .hm-sector {
+    font-size: 9px; font-weight: 800; color: rgba(255,255,255,0.75);
+    text-transform: uppercase; letter-spacing: 0.5px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    max-width: 100%;
+  }
+  .hm-xl .hm-sector { font-size: 10.5px; }
+  .hm-ticker {
+    font-size: 8px; color: rgba(255,255,255,0.45);
+    font-weight: 600; letter-spacing: 0.3px;
+  }
+  .hm-change {
+    font-size: 17px; font-weight: 900; color: #fff; line-height: 1;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.6);
     position: relative; z-index: 1;
   }
-  .heatmap-cell.large .heatmap-cell-name {
-    font-size: 11px;
+  .hm-xl .hm-change { font-size: 26px; }
+  .hm-lg .hm-change { font-size: 20px; }
+  .hm-sm .hm-change { font-size: 14px; }
+  .hm-bottom { display: flex; flex-direction: column; gap: 2px; position: relative; z-index: 1; width: 100%; }
+  .hm-bar-wrap {
+    height: 3px; background: rgba(0,0,0,0.25); border-radius: 99px; overflow: hidden; width: 100%;
   }
-  .heatmap-cell-change {
-    font-size: 15px; font-weight: 900;
-    color: #fff;
-    line-height: 1.1;
-    position: relative; z-index: 1;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  .hm-bar-fill { height: 100%; border-radius: 99px; background: rgba(255,255,255,0.7); }
+  .hm-count {
+    font-size: 8px; color: rgba(255,255,255,0.55); font-weight: 600;
+    display: flex; gap: 4px;
   }
-  .heatmap-cell.large .heatmap-cell-change {
-    font-size: 22px;
-  }
-  .heatmap-cell-sub {
-    font-size: 9px; color: rgba(255,255,255,0.6);
-    position: relative; z-index: 1;
-    margin-top: 1px;
-  }
+  .hm-count-up { color: rgba(150,255,180,0.8); }
+  .hm-count-dn { color: rgba(255,150,150,0.8); }
+
   .heatmap-skeleton {
-    height: 200px;
+    height: 220px;
     background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 14px;
+    background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 12px;
   }
-  @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   @media (max-width: 768px) {
-    .heatmap-grid { grid-template-columns: repeat(3, 1fr); }
-    .heatmap-cell.large { grid-column: span 2; grid-row: span 1; min-height: 80px; }
-    .heatmap-cell-change { font-size: 13px; }
-    .heatmap-cell.large .heatmap-cell-change { font-size: 16px; }
+    .heatmap-grid { grid-template-columns: repeat(4, 1fr); }
+    .hm-xl { grid-column: span 2; grid-row: span 1; }
+    .hm-change { font-size: 14px !important; }
   }
 </style>
 </head>
@@ -2603,31 +2584,40 @@ function _heatmapCellColor(change, maxAbs, isUp) {
 
 function renderKrHeatmap(sectors) {
   if (!sectors || !sectors.length) return '';
-  // 상위10 + 하위10 선별 후 변동률 기준 정렬
-  const sorted = [...sectors].sort((a,b) => b.change - a.change);
-  const top = sorted.slice(0, 6);
-  const bot = sorted.slice(-6).reverse().filter(s => !top.includes(s));
-  const shown = [...top, ...bot].slice(0, 12);
-  const maxAbs = Math.max(...shown.map(s => Math.abs(s.change)), 0.1);
 
-  // 1등과 꼴등은 크게, 나머지는 작게
+  // 변동률 기준 정렬, 상위 8 + 하위 6 표시 (총 14개 이내)
+  const sorted = [...sectors].sort((a,b) => b.change - a.change);
+  const top = sorted.slice(0, 8);
+  const bot = sorted.slice(-6).reverse().filter(s => !top.includes(s));
+  const shown = [...top, ...bot];
+  const maxAbs = Math.max(...shown.map(s => Math.abs(s.change)), 0.1);
+  const maxTotal = Math.max(...shown.map(s => s.total || 1));
+
   const cells = shown.map((s, i) => {
     const up = s.change >= 0;
     const bg = _heatmapCellColor(s.change, maxAbs, up);
-    const isLarge = i === 0 || i === shown.length - 1;
-    const cls = isLarge ? 'heatmap-cell large' : 'heatmap-cell medium';
-    const sub = s.total ? `상승 ${s.rise}/${s.total}` : '';
-    return `<div class="${cls}" style="background:${bg}">
-      <div class="heatmap-cell-change">${up?'+':''}${s.change.toFixed(2)}%</div>
-      <div class="heatmap-cell-name">${s.name}</div>
-      ${sub ? `<div class="heatmap-cell-sub">${sub}</div>` : ''}
+    // 종목 수에 따라 셀 크기 결정
+    const ratio = (s.total || 1) / maxTotal;
+    const cls = ratio >= 0.6 ? 'hm-xl' : ratio >= 0.35 ? 'hm-lg' : ratio >= 0.18 ? 'hm-md' : 'hm-sm';
+    const risePct = s.total ? Math.round(s.rise / s.total * 100) : 0;
+    const fallCnt = s.total ? (s.total - s.rise) : 0;
+    return `<div class="heatmap-cell ${cls}" style="background:${bg}">
+      <div class="hm-top">
+        <div class="hm-sector">${s.name}</div>
+      </div>
+      <div class="hm-change">${up?'+':''}${s.change.toFixed(2)}%</div>
+      <div class="hm-bottom">
+        ${s.total ? `<div class="hm-bar-wrap"><div class="hm-bar-fill" style="width:${risePct}%"></div></div>
+        <div class="hm-count"><span class="hm-count-up">▲${s.rise}</span><span class="hm-count-dn">▼${fallCnt}</span><span>/ ${s.total}종목</span></div>` : ''}
+      </div>
     </div>`;
   }).join('');
 
+  const upCount = shown.filter(s => s.change >= 0).length;
   return `<div class="heatmap-section">
     <div class="heatmap-header">
-      <div class="heatmap-title">🇰🇷 한국 업종별 히트맵</div>
-      <div class="heatmap-meta">상위 ${shown.filter(s=>s.change>=0).length}↑ / 하위 ${shown.filter(s=>s.change<0).length}↓</div>
+      <div class="heatmap-title">🇰🇷 한국 업종 히트맵</div>
+      <div class="heatmap-meta">상승 ${upCount}업종 · 하락 ${shown.length - upCount}업종</div>
     </div>
     <div class="heatmap-grid">${cells}</div>
   </div>`;
@@ -2636,33 +2626,49 @@ function renderKrHeatmap(sectors) {
 function renderSectorHeatmap(sectors) {
   if (!sectors || !Object.keys(sectors).length) return '';
   const labelMap = {
-    tech:['기술','XLK'], finance:['금융','XLF'], health:['헬스케어','XLV'],
-    energy:['에너지','XLE'], industrial:['산업재','XLI'], comm:['통신','XLC'],
-    materials:['소재','XLB'], realestate:['부동산','XLRE'], staples:['필수소비재','XLP'],
-    discretionary:['소비재','XLY'], utilities:['유틸리티','XLU'],
+    tech:    ['기술·IT',    'XLK', ['AAPL','MSFT','NVDA']],
+    finance: ['금융',       'XLF', ['JPM','BAC','GS']],
+    health:  ['헬스케어',   'XLV', ['JNJ','UNH','LLY']],
+    energy:  ['에너지',     'XLE', ['XOM','CVX','SLB']],
+    industrial:['산업재',   'XLI', ['CAT','HON','GE']],
+    comm:    ['통신·미디어','XLC', ['GOOGL','META','NFLX']],
+    materials:['소재',      'XLB', ['LIN','APD','SHW']],
+    realestate:['부동산',   'XLRE',['AMT','PLD','CCI']],
+    staples: ['필수소비재', 'XLP', ['PG','KO','PEP']],
+    discretionary:['소비재','XLY',['AMZN','TSLA','HD']],
+    utilities:['유틸리티',  'XLU', ['NEE','DUK','SO']],
   };
   const items = Object.entries(sectors)
-    .map(([k,v]) => ({ key: k, label: labelMap[k]?.[0]||k, etf: labelMap[k]?.[1]||k, change: v.change, value: v.value }))
+    .map(([k,v]) => {
+      const [label, etf, stocks] = labelMap[k] || [k, k, []];
+      return { key: k, label, etf: v.ticker || etf, stocks: stocks||[], change: v.change||0, value: v.value||0 };
+    })
     .sort((a,b) => b.change - a.change);
   const maxAbs = Math.max(...items.map(i => Math.abs(i.change)), 0.1);
 
+  // 크기: 상위2=xl, 다음3=lg, 나머지=md
   const cells = items.map((s, i) => {
     const up = s.change >= 0;
     const bg = _heatmapCellColor(s.change, maxAbs, up);
-    const isLarge = i === 0 || i === items.length - 1;
-    const cls = isLarge ? 'heatmap-cell large' : 'heatmap-cell medium';
-    return `<div class="${cls}" style="background:${bg}">
-      <div class="heatmap-cell-change">${up?'+':''}${s.change.toFixed(2)}%</div>
-      <div class="heatmap-cell-name">${s.label}</div>
-      <div class="heatmap-cell-sub">${s.etf} · $${s.value?.toFixed(2)||'–'}</div>
+    const cls = i < 2 ? 'hm-xl' : i < 5 ? 'hm-lg' : 'hm-md';
+    const stockStr = s.stocks.length ? s.stocks.slice(0,3).join(' · ') : '';
+    return `<div class="heatmap-cell ${cls}" style="background:${bg}">
+      <div class="hm-top">
+        <div class="hm-sector">${s.label}</div>
+        <div class="hm-ticker">${s.etf}${s.value ? ' · $'+s.value.toFixed(2) : ''}</div>
+      </div>
+      <div class="hm-change">${up?'+':''}${s.change.toFixed(2)}%</div>
+      <div class="hm-bottom">
+        ${stockStr ? `<div class="hm-count">${stockStr}</div>` : ''}
+      </div>
     </div>`;
   }).join('');
 
-  const up = items.filter(i=>i.change>=0).length;
+  const up = items.filter(i => i.change >= 0).length;
   return `<div class="heatmap-section">
     <div class="heatmap-header">
       <div class="heatmap-title">🇺🇸 미국 섹터 히트맵</div>
-      <div class="heatmap-meta">상승 ${up}↑ / 하락 ${items.length-up}↓</div>
+      <div class="heatmap-meta">상승 ${up}↑ · 하락 ${items.length-up}↓</div>
     </div>
     <div class="heatmap-grid">${cells}</div>
   </div>`;
