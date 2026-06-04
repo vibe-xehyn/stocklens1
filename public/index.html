@@ -137,7 +137,6 @@ if ('serviceWorker' in navigator) {
   .market-status-label { font-size: 10px; color: var(--text2); letter-spacing: 0.5px; font-weight: 700; }
   
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.85);} }
-  .header-time { font-size: 12.5px; color: var(--muted); }
   
   .refresh-btn {
     padding: 7px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
@@ -498,7 +497,6 @@ if ('serviceWorker' in navigator) {
     main { padding: 18px; padding-bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 100vw; overflow-x: hidden; }
     .home-wrap { padding: 18px; padding-bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 100vw; overflow-x: hidden; }
     .header-ticker-wrapper { display: none; }
-    .header-time { display: none; }
     .refresh-btn { font-size: 11.5px; padding: 6px 12px; }
     header { padding: 0 18px; height: 68px; }
     .home-hero { padding: 32px 0; }
@@ -728,7 +726,6 @@ if ('serviceWorker' in navigator) {
       <span class="market-status-item"><span class="market-status-label">KR</span><span class="live-dot" id="dotKr"></span></span>
       <span class="market-status-item"><span class="market-status-label">US</span><span class="live-dot" id="dotUs"></span></span>
     </div>
-    <span class="header-time" id="headerTime"></span>
     <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">↻ 새로고침</button>
   </div>
 </header>
@@ -900,7 +897,6 @@ function renderRates() {
 }
 
 async function init() {
-  startClock();
   // 휠 가로 스크롤 지원
   const ticker = document.querySelector('.header-ticker-wrapper');
   if (ticker) {
@@ -2329,15 +2325,7 @@ function recLabel(r) {
   return { 'strongBuy':'강력 매수','buy':'매수','hold':'보유','underperform':'시장하회','sell':'매도' }[r] || r;
 }
 
-// ── 시계 ──────────────────────────────────────────────────────────────────────
-function startClock() {
-  const tick = () => {
-    document.getElementById('headerTime').textContent =
-      new Date().toLocaleString('ko', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-  };
-  tick();
-  setInterval(tick, 1000);
-}
+
 
 // ── 홈 화면 ───────────────────────────────────────────────────────────────────
 let isHomePage = true;
