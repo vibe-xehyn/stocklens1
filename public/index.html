@@ -932,6 +932,7 @@ async function init() {
     let autoScrollSpeed = 0.45; // 프레임당 이동 픽셀 (부드러운 속도)
     let isPaused = false;
     let resumeTimeout = null;
+    let currentScrollX = 0; // 소수점 단위 누적 스크롤 값 보관 (정수 변환 버그 우회)
 
     const pauseAutoScroll = () => {
       isPaused = true;
@@ -942,6 +943,7 @@ async function init() {
       if (resumeTimeout) clearTimeout(resumeTimeout);
       resumeTimeout = setTimeout(() => {
         isPaused = false;
+        currentScrollX = ticker.scrollLeft; // 재개 시 현재 스크롤 위치 동기화
       }, delay);
     };
 
@@ -951,6 +953,7 @@ async function init() {
         e.preventDefault();
         pauseAutoScroll();
         ticker.scrollLeft += e.deltaY;
+        currentScrollX = ticker.scrollLeft;
         resumeAutoScrollWithDelay(3000); // 휠 조작 종료 3초 후 자동스크롤 재개
       }
     }, { passive: false });
@@ -959,11 +962,13 @@ async function init() {
     ticker.addEventListener('mouseenter', pauseAutoScroll);
     ticker.addEventListener('mouseleave', () => {
       isPaused = false;
+      currentScrollX = ticker.scrollLeft; // 마우스 아웃 시 위치 동기화
     });
 
     // 모바일 터치 시 일시 정지
     ticker.addEventListener('touchstart', pauseAutoScroll, { passive: true });
     ticker.addEventListener('touchend', () => {
+      currentScrollX = ticker.scrollLeft;
       resumeAutoScrollWithDelay(3000);
     }, { passive: true });
 
@@ -974,17 +979,23 @@ async function init() {
         const gap = 24; // 자식 간 gap
 
         if (!isPaused) {
-          ticker.scrollLeft += autoScrollSpeed;
+          currentScrollX += autoScrollSpeed;
           // 트랙 전체 너비 + gap 만큼 스크롤되면 리셋하여 완벽한 루프 지원
-          if (ticker.scrollLeft >= trackWidth + gap) {
-            ticker.scrollLeft -= (trackWidth + gap);
+          if (currentScrollX >= trackWidth + gap) {
+            currentScrollX -= (trackWidth + gap);
           }
+          ticker.scrollLeft = Math.floor(currentScrollX);
         } else {
+          // 사용자가 조작 중일 때는 정수 값을 소수점 변수에 지속 동기화
+          currentScrollX = ticker.scrollLeft;
+
           // 사용자가 조작 중일 때도 경계를 벗어나면 무한 휠링 보정
           if (ticker.scrollLeft >= trackWidth + gap) {
             ticker.scrollLeft -= (trackWidth + gap);
+            currentScrollX = ticker.scrollLeft;
           } else if (ticker.scrollLeft < 0) {
             ticker.scrollLeft += (trackWidth + gap);
+            currentScrollX = ticker.scrollLeft;
           }
         }
       }
@@ -993,6 +1004,7 @@ async function init() {
 
     // 데이터 로딩 시간 고려하여 1.5초 후 스크롤 자동시작
     setTimeout(() => {
+      currentScrollX = ticker.scrollLeft;
       requestAnimationFrame(autoScrollStep);
     }, 1500);
   }
