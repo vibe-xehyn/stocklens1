@@ -897,15 +897,69 @@ function renderRates() {
 }
 
 async function init() {
-  // 휠 가로 스크롤 지원
+  // 휠 가로 스크롤 및 자동 스크롤 지원
   const ticker = document.querySelector('.header-ticker-wrapper');
   if (ticker) {
+    let autoScrollSpeed = 0.4; // 프레임당 이동 픽셀 (부드러운 속도)
+    let isPaused = false;
+    let resumeTimeout = null;
+    let direction = 1; // 1: 우측, -1: 좌측
+
+    const pauseAutoScroll = () => {
+      isPaused = true;
+      if (resumeTimeout) clearTimeout(resumeTimeout);
+    };
+
+    const resumeAutoScrollWithDelay = (delay = 2000) => {
+      if (resumeTimeout) clearTimeout(resumeTimeout);
+      resumeTimeout = setTimeout(() => {
+        isPaused = false;
+      }, delay);
+    };
+
+    // 휠 가로 스크롤
     ticker.addEventListener('wheel', (e) => {
       if (e.deltaY !== 0) {
         e.preventDefault();
+        pauseAutoScroll();
         ticker.scrollLeft += e.deltaY;
+        resumeAutoScrollWithDelay(3000); // 휠 조작 종료 3초 후 자동스크롤 재개
       }
     }, { passive: false });
+
+    // 마우스 호버 시 일시 정지 (사용자가 항목을 조작/클릭하기 쉽도록)
+    ticker.addEventListener('mouseenter', pauseAutoScroll);
+    ticker.addEventListener('mouseleave', () => {
+      isPaused = false;
+    });
+
+    // 모바일 터치 시 일시 정지
+    ticker.addEventListener('touchstart', pauseAutoScroll, { passive: true });
+    ticker.addEventListener('touchend', () => {
+      resumeAutoScrollWithDelay(3000);
+    }, { passive: true });
+
+    function autoScrollStep() {
+      if (!isPaused) {
+        const maxScroll = ticker.scrollWidth - ticker.clientWidth;
+        if (maxScroll > 0) {
+          ticker.scrollLeft += autoScrollSpeed * direction;
+          
+          // 끝에 도달 시 방향 전환 (왕복 요요 스크롤)
+          if (direction === 1 && ticker.scrollLeft >= maxScroll - 1) {
+            direction = -1;
+          } else if (direction === -1 && ticker.scrollLeft <= 1) {
+            direction = 1;
+          }
+        }
+      }
+      requestAnimationFrame(autoScrollStep);
+    }
+
+    // 데이터 로딩 시간 고려하여 1.5초 후 스크롤 자동시작
+    setTimeout(() => {
+      requestAnimationFrame(autoScrollStep);
+    }, 1500);
   }
   // 홈 즉시 렌더
   try { await renderHome(); } catch(e) {
