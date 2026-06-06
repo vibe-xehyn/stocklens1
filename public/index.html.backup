@@ -3,518 +3,295 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
 <title>StockLens - 주식 투자 대시보드</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
-<script>
-// 혹시 등록된 서비스워커가 있으면 즉시 제거
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
-}
-</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
-<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
-    --bg: #F5F5F7;
-    --surface: rgba(255, 255, 255, 0.45);
-    --surface2: rgba(255, 255, 255, 0.7);
-    --surface3: rgba(255, 255, 255, 0.95);
-    --border: rgba(0, 0, 0, 0.05);
-    --border2: rgba(0, 0, 0, 0.1);
-    --text: #1D1D1F;
-    --text2: #515154;
-    --muted: #86868B;
-    --accent: #0066CC;
-    --accent2: #0077ED;
-    --accent-glow: rgba(0, 102, 204, 0.06);
-    --green: #34C759;
-    --green-bg: rgba(52, 199, 89, 0.08);
-    --red: #FF3B30;
-    --red-bg: rgba(255, 59, 48, 0.08);
-    --yellow: #FF9500;
-    --radius: 18px;
-    --radius-sm: 12px;
-    --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.03), inset 0 1px 0 0 rgba(255, 255, 255, 0.65);
-    --shadow-md: 0 12px 40px 0 rgba(31, 38, 135, 0.07), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+    --bg: #0d0f18; --surface: #161929; --surface2: #1e2236; --surface3: #252840;
+    --border: #2a2e45; --border2: #343858;
+    --text: #e1e7f0; --text2: #a0abc0; --muted: #6b7a95;
+    --accent: #4f8ef7; --accent2: #3b7aec;
+    --green: #22c55e; --green2: #16a34a;
+    --red: #ef4444; --red2: #b91c1c;
+    --yellow: #f59e0b;
+    --radius: 10px; --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 8px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
   }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { overflow-x: clip; background: var(--bg); scroll-behavior: smooth; }
-  body { 
-    overflow-x: clip; 
-    max-width: 100%; 
-    background: #F4F5F9; 
-    background-image: 
-      radial-gradient(at 0% 0%, rgba(130, 201, 255, 0.15) 0px, transparent 45%), 
-      radial-gradient(at 100% 0%, rgba(255, 182, 193, 0.12) 0px, transparent 50%), 
-      radial-gradient(at 50% 100%, rgba(220, 200, 255, 0.15) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, rgba(168, 255, 220, 0.1) 0px, transparent 40%);
-    color: var(--text); 
-    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-    min-height: 100vh; 
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-  }
+  html { overflow-x: clip; background: var(--bg); }
+  body { overflow-x: clip; max-width: 100%; background: var(--bg); color: var(--text); font-family: 'Noto Sans KR', -apple-system, 'Segoe UI', system-ui, sans-serif; min-height: 100vh; line-height: 1.5; }
 
-  /* ── Scrollbar ── */
+  /* ── 스크롤바 ── */
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.08); border-radius: 99px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.15); }
-
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  /* 모바일: 가로 스크롤은 명시적으로 표시된 영역(.h-scroll)에서만 발생 */
   .h-scroll {
     overflow-x: auto; overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     scroll-snap-type: x proximity;
   }
-  .h-scroll::-webkit-scrollbar { height: 4px; }
-  .h-scroll::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.08); border-radius: 99px; }
+  .h-scroll::-webkit-scrollbar { height: 6px; }
+  .h-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   .h-scroll > * { scroll-snap-align: start; }
 
   header {
-    background: rgba(255, 255, 255, 0.45);
-    backdrop-filter: blur(30px);
-    -webkit-backdrop-filter: blur(30px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
-    padding: 0 28px; display: flex; align-items: center; justify-content: space-between;
-    height: 68px; position: sticky; top: 0; z-index: 100; gap: 12px;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.015), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 0 20px; display: flex; align-items: center; justify-content: space-between;
+    height: 56px; position: sticky; top: 0; z-index: 100; gap: 12px;
   }
-  
-  .logo { 
-    font-size: 18px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; flex-shrink: 0; cursor: pointer;
-  }
-  .logo span { color: var(--accent); font-weight: 600; text-shadow: none; }
-  .logo:hover {
-    text-shadow: none;
-  }
-  
-  .header-ticker-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    flex: 1;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .header-ticker-wrapper::-webkit-scrollbar {
-    display: none;
-  }
-  .ticker-track {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    flex-shrink: 0;
-  }
-  .market-bar { display: flex; gap: 24px; font-size: 13px; flex-wrap: nowrap; flex-shrink: 0; }
-  #ratesBar { border-left: 1px solid var(--border); padding-left: 24px; }
-  #ratesBar:empty { border-left: none; padding-left: 0; }
-  .market-item { 
-    display: flex; flex-direction: column; align-items: flex-start;
-    padding: 6px 12px; border-radius: 8px; transition: all 0.25s ease;
-    white-space: nowrap; flex-shrink: 0;
-  }
-  .market-item:hover {
-    background: rgba(255, 255, 255, 0.04);
-  }
-  .market-name { 
-    color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
-  }
-  .market-val { 
-    font-weight: 700; font-size: 13.5px; margin-top: 2px;
-  }
-  .market-val small { font-size: 11px; margin-left: 2px; font-weight: 600; }
-  
-  .up { color: var(--green) !important; } 
-  .down { color: var(--red) !important; }
-  
-  .rate-item { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
-  .rate-name { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; }
-  
-  .header-right { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
-  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
-  .market-status { 
-    display: flex; align-items: center; gap: 10px; 
-    background: rgba(255, 255, 255, 0.03); 
-    padding: 6px 14px; border-radius: 99px; 
-    border: 1px solid var(--border); 
-  }
-  .market-status-item { display: inline-flex; align-items: center; gap: 6px; }
+  .logo { font-size: 18px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; flex-shrink: 0; }
+  .logo span { color: var(--text); font-weight: 600; }
+  .market-bar { display: flex; gap: 16px; font-size: 12px; }
+  .market-item { display: flex; flex-direction: column; align-items: center; }
+  .market-name { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .market-val { font-weight: 700; font-size: 12px; margin-top: 1px; }
+  .up { color: var(--green); } .down { color: var(--red); }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .market-status { display: flex; align-items: center; gap: 8px; }
+  .market-status-item { display: inline-flex; align-items: center; gap: 4px; }
   .market-status-label { font-size: 10px; color: var(--text2); letter-spacing: 0.5px; font-weight: 700; }
-  
-  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.85);} }
-  
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .header-time { font-size: 11px; color: var(--muted); }
   .refresh-btn {
-    padding: 7px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.4); color: var(--text2); font-size: 12.5px; cursor: pointer;
-    font-weight: 500; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    padding: 5px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 12px; cursor: pointer;
+    transition: all 0.18s;
   }
-  .refresh-btn:hover { 
-    border-color: var(--accent); color: var(--accent); 
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 4px 15px rgba(0, 102, 204, 0.1);
-  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(79,142,247,0.06); }
   .refresh-btn.spinning { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .container { display: grid; grid-template-columns: 270px 1fr; min-height: calc(100vh - 68px); }
+  .container { display: grid; grid-template-columns: 252px 1fr; min-height: calc(100vh - 56px); }
 
   aside {
-    background: rgba(255, 255, 255, 0.25);
-    backdrop-filter: blur(30px);
-    -webkit-backdrop-filter: blur(30px);
-    border-right: 1px solid rgba(255, 255, 255, 0.4);
-    padding: 20px 0; overflow-y: auto;
-    height: calc(100vh - 68px); position: sticky; top: 68px;
-    box-shadow: inset -1px 0 0 0 rgba(255, 255, 255, 0.5);
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 14px 0; overflow-y: auto;
+    height: calc(100vh - 56px); position: sticky; top: 56px;
   }
-  .sidebar-search { margin: 0 16px 14px; position: relative; }
+  .sidebar-search { margin: 0 10px 10px; position: relative; }
   .sidebar-search input {
-    width: 100%; background: rgba(0, 0, 0, 0.02); border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: var(--radius-sm); padding: 10px 14px; color: var(--text); font-size: 13.5px; outline: none;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text); font-size: 13px; outline: none;
+    transition: border-color 0.15s;
   }
   .sidebar-search input::placeholder { color: var(--muted); }
-  .sidebar-search input:focus { 
-    border-color: var(--accent); background: rgba(255, 255, 255, 0.85);
-    box-shadow: 0 4px 15px rgba(0, 102, 204, 0.05);
-  }
-  
-  .market-tabs { 
-    display: flex; margin: 0 16px 14px; gap: 4px; 
-    background: rgba(0, 0, 0, 0.025); border-radius: var(--radius-sm); 
-    padding: 3px; border: 1px solid rgba(0, 0, 0, 0.025); 
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
-  }
+  .sidebar-search input:focus { border-color: var(--accent); background: var(--surface3); }
+  .market-tabs { display: flex; margin: 0 10px 10px; gap: 3px; background: var(--surface2); border-radius: var(--radius-sm); padding: 3px; }
   .market-tab {
-    flex: 1; padding: 7px; font-size: 12px; font-weight: 700; text-align: center;
-    border-radius: 6px; cursor: pointer; border: none;
-    background: transparent; color: var(--text2); transition: all 0.2s;
+    flex: 1; padding: 5px; font-size: 11px; font-weight: 700; text-align: center;
+    border-radius: 4px; cursor: pointer; border: none;
+    background: transparent; color: var(--muted); transition: all 0.18s;
   }
-  .market-tab.active { background: rgba(255, 255, 255, 0.9); color: var(--accent); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03), inset 0 1px 0 0 rgba(255,255,255,0.9); border: 0.5px solid rgba(255, 255, 255, 0.8); }
-  .market-tab:not(.active):hover { color: var(--text); background: rgba(255, 255, 255, 0.35); }
-  
+  .market-tab.active { background: var(--accent2); color: #fff; }
+  .market-tab:not(.active):hover { color: var(--text); }
   .search-result-item {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 18px; cursor: pointer; transition: all 0.2s ease;
-    border-left: 3px solid transparent;
+    padding: 9px 14px; cursor: pointer; transition: background 0.12s;
+    border-left: 2px solid transparent;
   }
-  .search-result-item:hover { background: rgba(0, 0, 0, 0.02); border-left-color: var(--accent); }
-  .result-type { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 700; margin-left: 6px; text-transform: uppercase; }
-  .type-ETF { background: rgba(245,158,11,0.08); color: #f59e0b; }
-  .type-EQUITY, .type-stock { background: rgba(0,102,204,0.08); color: #0066cc; }
-  
+  .search-result-item:hover { background: var(--surface2); border-left-color: var(--accent); }
+  .result-type { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700; margin-left: 5px; }
+  .type-ETF { background: rgba(245,158,11,0.12); color: #f59e0b; }
+  .type-EQUITY, .type-stock { background: rgba(79,142,247,0.12); color: #7bb3fa; }
   .section-label {
-    font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase;
-    letter-spacing: 1px; padding: 16px 18px 6px;
+    font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.8px; padding: 10px 14px 4px;
   }
   .stock-item {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 18px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    border-left: 3px solid transparent;
+    padding: 9px 14px; cursor: pointer; transition: background 0.12s;
+    border-left: 2px solid transparent;
   }
-  .stock-item:hover { background: rgba(0, 0, 0, 0.02); }
-  .stock-item.active { background: rgba(0, 102, 204, 0.04); border-left-color: var(--accent); }
-  .stock-left .ticker { font-size: 14px; font-weight: 700; }
-  .stock-left .sname { font-size: 12px; color: var(--text2); margin-top: 2px; }
-  .stock-right  .stock-price { font-size: 13.5px; font-weight: 700; }
-  .stock-chg { font-size: 11px; margin-top: 2px; font-weight: 600; }
-  
-  .skeleton { 
-    background: linear-gradient(90deg, rgba(0,0,0,0.01) 25%, rgba(0,0,0,0.03) 50%, rgba(0,0,0,0.01) 75%); 
-    background-size: 200%; animation: shimmer 1.5s infinite; border-radius: var(--radius-sm); 
-  }
+  .stock-item:hover { background: var(--surface2); }
+  .stock-item.active { background: var(--surface2); border-left-color: var(--accent); }
+  .stock-left .ticker { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; }
+  .stock-left .sname { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .stock-right { text-align: right; }
+  .stock-price { font-size: 12px; font-weight: 600; }
+  .stock-chg { font-size: 11px; margin-top: 1px; }
+  .skeleton { background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%); background-size: 200%; animation: shimmer 1.5s infinite; border-radius: 4px; }
   @keyframes shimmer { to { background-position: -200% 0; } }
   @keyframes indeterminate { 0% { left:-40%; width:40%; } 50% { left:30%; width:50%; } 100% { left:100%; width:40%; } }
-  .progress-indet { position:relative; width:100%; height:4px; background:rgba(0,0,0,0.02); border-radius:99px; overflow:hidden; }
-  .progress-indet > span { position:absolute; top:0; bottom:0; background:linear-gradient(90deg, var(--accent), var(--green)); border-radius:99px; animation: indeterminate 1.4s ease-in-out infinite; }
- 
-  main { padding: 28px; overflow-y: auto; background: var(--bg); }
- 
-  /* ── Luxury Card Design ── */
+  .progress-indet { position:relative; width:100%; height:4px; background:rgba(148,163,184,0.18); border-radius:2px; overflow:hidden; }
+  .progress-indet > span { position:absolute; top:0; bottom:0; background:linear-gradient(90deg,#3b82f6,#22c55e); border-radius:2px; animation: indeterminate 1.4s ease-in-out infinite; }
+
+  main { padding: 24px; overflow-y: auto; }
+
   .stock-header {
     display: flex; align-items: flex-start; justify-content: space-between;
-    margin-bottom: 30px; gap: 20px; flex-wrap: nowrap;
-    border-bottom: 1px solid var(--border); padding-bottom: 26px;
+    margin-bottom: 24px; gap: 16px; flex-wrap: nowrap;
   }
-  .stock-title h1 { font-size: 28px; font-weight: 900; letter-spacing: -0.8px; }
-  .stock-title .subtitle { color: var(--text2); font-size: 14px; margin-top: 6px; }
-  
-  .badge { display: inline-block; font-size: 10px; padding: 3px 8px; border-radius: 4px; margin-right: 6px; margin-top: 6px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
-  .badge-kr { background: rgba(0,102,204,0.06); color: #0066cc; border: 1px solid rgba(0,102,204,0.12); }
-  .badge-us { background: rgba(52,199,89,0.06); color: #34c759; border: 1px solid rgba(52,199,89,0.12); }
-  .badge-KOSPI { background: rgba(0,102,204,0.08); color: #0066cc; }
-  .badge-KOSDAQ { background: rgba(142,68,173,0.08); color: #8e44ad; }
-  .badge-NASDAQ { background: rgba(39,174,96,0.08); color: #27ae60; }
-  .badge-NYSE { background: rgba(22,160,133,0.08); color: #16a085; }
-  
+  .stock-title h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .stock-title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; margin-top: 6px; font-weight: 600; }
+  .badge-kr { background: #1e3a5f; color: #60a5fa; }
+  .badge-us { background: #1a3a2a; color: #4ade80; }
+  .badge-KOSPI { background: #1e3a5f; color: #60a5fa; }
+  .badge-KOSDAQ { background: #2d1f5e; color: #c084fc; }
+  .badge-NASDAQ { background: #1a3a2a; color: #4ade80; }
+  .badge-NYSE { background: #1f3a2a; color: #34d399; }
   .price-block { text-align: right; }
-  .current-price { font-size: 40px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
-  .price-change { font-size: 17px; font-weight: 700; margin-top: 6px; }
-  
+  .current-price { font-size: 36px; font-weight: 800; letter-spacing: -1px; }
+  .price-change { font-size: 16px; font-weight: 600; margin-top: 4px; }
   .analyst-box {
     margin-top: 8px; display: inline-flex; align-items: center; gap: 6px;
-    padding: 6px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700;
-    background: rgba(0, 102, 204, 0.05); border: 1px solid rgba(0, 102, 204, 0.12); color: #0066cc;
+    padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: var(--accent);
   }
- 
-  .cards-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 28px; }
-  .card { 
-    background: rgba(255, 255, 255, 0.42); 
-    border: 1px solid rgba(255, 255, 255, 0.55); 
-    border-radius: var(--radius); 
-    padding: 22px; 
-    box-shadow: 
-      0 4px 24px -2px rgba(29, 29, 31, 0.02),
-      0 12px 40px -10px rgba(0, 102, 204, 0.04),
-      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(25px);
-    -webkit-backdrop-filter: blur(25px);
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .card:hover { 
-    transform: translateY(-2px);
-    background: rgba(255, 255, 255, 0.52);
-    border-color: rgba(255, 255, 255, 0.7);
-    box-shadow: 
-      0 6px 30px -2px rgba(29, 29, 31, 0.03),
-      0 16px 48px -8px rgba(0, 102, 204, 0.07),
-      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.95);
-  }
-  
-  .card-label { font-size: 11px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
-  .card-value { font-size: 22px; font-weight: 800; margin-top: 8px; }
-  .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .indicator-bar { height: 4px; background: rgba(0,0,0,0.03); border-radius: 99px; margin-top: 10px; overflow: hidden; }
-  .indicator-fill { height: 100%; border-radius: 99px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
 
-  .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 28px; }
-  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-bottom: 28px; }
+  .cards-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .card-label { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
+  .card-value { font-size: 20px; font-weight: 700; margin-top: 5px; letter-spacing: -0.5px; }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .indicator-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .indicator-fill { height: 100%; border-radius: 2px; transition: width 0.6s; }
 
-  .chart-card { 
-    background: rgba(255, 255, 255, 0.42); 
-    border: 1px solid rgba(255, 255, 255, 0.55); 
-    border-radius: var(--radius); 
-    padding: 24px; 
-    box-shadow: 
-      0 4px 24px -2px rgba(29, 29, 31, 0.02),
-      0 12px 40px -10px rgba(0, 102, 204, 0.04),
-      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(25px);
-    -webkit-backdrop-filter: blur(25px);
-  }
-  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
-  .chart-header-left { display: flex; align-items: center; gap: 12px; }
-  .chart-header-right { display: flex; align-items: center; gap: 8px; }
-  .chart-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; }
-  .chart-tabs { display: flex; gap: 4px; background: rgba(0, 0, 0, 0.03); border-radius: var(--radius-sm); padding: 3px; border: 1px solid var(--border); }
+  .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .chart-title { font-size: 14px; font-weight: 700; letter-spacing: -0.2px; }
+  .chart-tabs { display: flex; gap: 3px; background: var(--surface2); border-radius: var(--radius-sm); padding: 2px; }
   .chart-tab {
-    padding: 6px 14px; font-size: 11.5px; font-weight: 700; border-radius: 6px;
+    padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 4px;
     cursor: pointer; border: none; background: transparent;
-    color: var(--text2); transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    color: var(--muted); transition: all 0.15s;
   }
-  .chart-tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 10px rgba(0, 102, 204, 0.25); }
-  .chart-tab:not(.active):hover { color: var(--text); background: rgba(0, 0, 0, 0.02); }
-
-  /* Chart type toggle */
-  .chart-type-btns { display: flex; gap: 3px; background: rgba(0,0,0,0.03); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
-  .chart-type-btn {
-    padding: 5px 10px; font-size: 11px; font-weight: 700; border-radius: 5px;
-    cursor: pointer; border: none; background: transparent;
-    color: var(--text2); transition: all 0.2s;
-  }
-  .chart-type-btn.active { background: #fff; color: var(--text); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-
-  /* Trendline draw button */
-  .trendline-btn {
-    display: flex; align-items: center; gap: 5px;
-    padding: 5px 11px; font-size: 11px; font-weight: 700; border-radius: 7px;
-    cursor: pointer; border: 1.5px solid var(--border); background: transparent;
-    color: var(--text2); transition: all 0.2s;
-  }
-  .trendline-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(0,102,204,0.04); }
-  .trendline-btn.active { border-color: #ff6b00; color: #ff6b00; background: rgba(255,107,0,0.06); box-shadow: 0 0 0 2px rgba(255,107,0,0.15); }
-
-  /* Lightweight chart container */
-  #tvChartWrap { position: relative; width: 100%; height: 240px; border-radius: 10px; overflow: hidden; }
-  #tvChartContainer { width: 100%; height: 100%; }
-  #trendlineCanvas {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 100;
-    border-radius: 10px;
-  }
-  #trendlineCanvas.drawing-mode { pointer-events: all; cursor: crosshair; }
+  .chart-tab.active { background: var(--accent2); color: #fff; }
+  .chart-tab:not(.active):hover { color: var(--text); }
 
   .indicators-table { width: 100%; border-collapse: collapse; }
   .indicators-table th {
-    font-size: 11px; color: var(--muted); text-align: left; padding: 12px 0;
-    border-bottom: 1px solid var(--border); font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;
+    font-size: 11px; color: var(--muted); text-align: left; padding: 8px 0;
+    border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase;
   }
-  .indicators-table td { padding: 12px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+  .indicators-table td { padding: 9px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
   .indicators-table tr:last-child td { border-bottom: none; }
-  .ind-name { color: var(--text2); font-weight: 500; }
-  .ind-val { font-weight: 700; text-align: right; }
-  .ind-grade { text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
-  
-  .grade-good { color: var(--green); } 
-  .grade-neutral { color: var(--yellow); } 
-  .grade-bad { color: var(--red); }
+  .ind-name { color: var(--muted); }
+  .ind-val { font-weight: 600; text-align: right; }
+  .ind-grade { text-align: right; font-size: 11px; font-weight: 700; }
+  .grade-good { color: var(--green); } .grade-neutral { color: var(--yellow); } .grade-bad { color: var(--red); }
 
-  .news-item { padding: 16px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: all 0.2s; }
+  .news-item { padding: 14px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
   .news-item:last-child { border-bottom: none; }
   .news-item:hover .news-title { color: var(--accent); }
-  .news-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-  .news-source { font-size: 11px; font-weight: 800; color: var(--accent); }
+  .news-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .news-source { font-size: 11px; font-weight: 700; color: var(--accent); }
   .news-time { font-size: 11px; color: var(--muted); }
-  .news-title { font-size: 14px; font-weight: 500; line-height: 1.6; transition: color 0.2s; }
+  .news-title { font-size: 13px; font-weight: 600; line-height: 1.4; transition: color 0.15s; }
 
-  .fin-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+  .fin-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .fin-row:last-child { border-bottom: none; }
-  .fin-label { color: var(--text2); }
-  .fin-val { font-weight: 700; }
+  .fin-label { color: var(--muted); }
+  .fin-val { font-weight: 600; }
 
-  .score-section { display: flex; align-items: center; gap: 24px; }
-  .score-ring { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+  .score-section { display: flex; align-items: center; gap: 20px; }
+  .score-ring { position: relative; width: 90px; height: 90px; flex-shrink: 0; }
   .score-ring svg { transform: rotate(-90deg); }
-  .score-number { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; font-weight: 800; }
+  .score-number { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 22px; font-weight: 800; }
   .score-details { flex: 1; }
-  .score-bar-item { margin-bottom: 10px; }
-  .score-bar-label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text2); margin-bottom: 5px; font-weight: 600; }
-  .score-bar-track { height: 4px; background: rgba(0,0,0,0.03); border-radius: 99px; overflow: hidden; }
-  .score-bar-fill { height: 100%; border-radius: 99px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+  .score-bar-item { margin-bottom: 8px; }
+  .score-bar-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .score-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s; }
 
   .watchlist-btn {
-    padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
-    background: rgba(0, 0, 0, 0.01); color: var(--text2); font-size: 12.5px; cursor: pointer; font-weight: 700; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; font-weight: 600; transition: all 0.2s;
   }
-  .watchlist-btn:hover { border-color: var(--yellow); color: var(--yellow); background: rgba(245, 158, 11, 0.03); }
-  .watchlist-btn.watching { background: rgba(245,158,11,0.05); border-color: var(--yellow); color: var(--yellow); }
+  .watchlist-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+  .watchlist-btn.watching { background: rgba(245,158,11,0.1); border-color: var(--yellow); color: var(--yellow); }
 
   /* Home Screen */
-  .home-wrap { padding: 8px 0; }
-  .home-hero { text-align: center; padding: 48px 0 36px; }
-  .home-hero h1 { font-size: 40px; font-weight: 900; letter-spacing: -2px; margin-bottom: 8px; color: var(--text); }
-  .home-hero h1 span { color: var(--accent); text-shadow: none; font-weight: 600; }
-  .home-hero p { color: var(--text2); font-size: 15px; font-weight: 400; letter-spacing: -0.1px; }
-  
-  .home-indices { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; margin-bottom: 30px; }
+  .home-wrap { padding: 20px 24px; }
+  .home-hero { text-align: center; padding: 32px 0 28px; }
+  .home-hero h1 { font-size: 40px; font-weight: 900; letter-spacing: -2px; margin-bottom: 8px; }
+  .home-hero h1 span { color: var(--accent); }
+  .home-hero p { color: var(--muted); font-size: 14px; }
+  .home-indices { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 24px; }
   @media(max-width:900px){ .home-indices { grid-template-columns: repeat(3,1fr); } }
   .home-idx-card {
-    background: rgba(255, 255, 255, 0.42); 
-    border: 1px solid rgba(255, 255, 255, 0.55); 
-    border-radius: var(--radius);
-    padding: 16px; text-align: center; 
-    box-shadow: 
-      0 4px 24px -2px rgba(29, 29, 31, 0.02),
-      0 12px 40px -10px rgba(0, 102, 204, 0.04),
-      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(25px); 
-    -webkit-backdrop-filter: blur(25px);
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .home-idx-card:hover { 
-    background: rgba(255, 255, 255, 0.52);
-    border-color: rgba(255, 255, 255, 0.7); 
-    box-shadow: 
-      0 6px 30px -2px rgba(29, 29, 31, 0.03),
-      0 16px 48px -8px rgba(0, 102, 204, 0.07),
-      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.95);
-    transform: translateY(-2px); 
-  }
-  .home-idx-name { font-size: 11px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-  .home-idx-val { font-size: 19px; font-weight: 800; }
-  .home-idx-chg { font-size: 13px; font-weight: 700; margin-top: 4px; }
-  
-  .home-stocks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
-  @media(max-width:700px){ .home-stocks-grid { grid-template-columns: 1fr; } }
-  .home-section-title { font-size: 17px; font-weight: 800; margin-bottom: 18px; color: var(--text); letter-spacing: -0.4px; }
-  .home-stock-row { 
-    display: flex; align-items: center; justify-content: space-between; 
-    padding: 12px 14px; border-bottom: 1px solid var(--border); cursor: pointer; 
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); border-radius: var(--radius-sm);
-  }
-  .home-stock-row:last-child { border-bottom: none; }
-  .home-stock-row:hover { background: rgba(0, 0, 0, 0.02); }
-  
-  .home-stock-info { display: flex; flex-direction: column; }
-  .home-stock-ticker { font-size: 14px; font-weight: 700; }
-  .home-stock-name { font-size: 12px; color: var(--text2); margin-top: 1px; }
-  .home-stock-price { text-align: right; }
-  .home-stock-pval { font-size: 13.5px; font-weight: 700; }
-  .home-stock-pchg { font-size: 11px; margin-top: 1px; font-weight: 600; }
-  
-  .idx-detail-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:30px; flex-wrap:wrap; gap:14px; }
-  .idx-range-tabs { display:flex; gap:4px; }
-  .back-btn { 
-    display:inline-flex; align-items:center; gap:8px; padding:8px 18px; border-radius:var(--radius-sm); border:1px solid var(--border); 
-    background:rgba(255, 255, 255, 0.4); color:var(--text2); font-size:13px; cursor:pointer; margin-bottom:24px; 
-    transition:all 0.25s cubic-bezier(0.16, 1, 0.3, 1); font-weight: 500;
-  }
-  .back-btn:hover { border-color:var(--accent); color:var(--accent); background: rgba(0, 102, 204, 0.05); }
-
-  /* 🤖 AI Card Design */
-  .ai-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 26px; margin-bottom: 30px; position: relative; overflow: hidden;
-    box-shadow: var(--shadow); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    padding: 10px 14px; text-align: center; box-shadow: var(--shadow);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .home-idx-card:hover { border-color: var(--border2); box-shadow: var(--shadow-md); }
+  .home-idx-name { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .home-idx-val { font-size: 16px; font-weight: 800; letter-spacing: -0.5px; }
+  .home-idx-chg { font-size: 12px; font-weight: 600; margin-top: 3px; }
+  .home-stocks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  @media(max-width:700px){ .home-stocks-grid { grid-template-columns: 1fr; } }
+  .home-section-title { font-size: 15px; font-weight: 800; margin-bottom: 14px; color: var(--text); letter-spacing: -0.3px; }
+  .home-stock-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.12s; margin: 0 -4px; padding-left: 4px; padding-right: 4px; border-radius: 4px; }
+  .home-stock-row:last-child { border-bottom: none; }
+  .home-stock-row:hover { background: var(--surface2); border-bottom-color: transparent; }
+  .home-stock-info { display: flex; flex-direction: column; }
+  .home-stock-ticker { font-size: 13px; font-weight: 700; }
+  .home-stock-name { font-size: 11px; color: var(--muted); }
+  .home-stock-price { text-align: right; }
+  .home-stock-pval { font-size: 13px; font-weight: 600; }
+  .home-stock-pchg { font-size: 11px; }
+  .idx-detail-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+  .idx-range-tabs { display:flex; gap:4px; }
+  .back-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:12px; cursor:pointer; margin-bottom:20px; transition:all 0.2s; }
+  .back-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  /* AI Analysis Card */
+  .ai-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px; margin-bottom: 24px; position: relative; overflow: hidden;
   }
   .ai-card::before {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, var(--accent), var(--green));
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
   }
-  .ai-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; gap: 16px; flex-wrap: wrap; }
-  .ai-title { font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
-  .ai-badge { font-size: 10px; padding: 2px 8px; border-radius: 99px; font-weight: 800; letter-spacing: 0.5px; background: rgba(0,102,204,0.08); color: var(--accent); text-transform: uppercase; }
+  .ai-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .ai-title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .ai-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 700; letter-spacing: 0.5px; background: rgba(139,92,246,0.15); color: #a78bfa; }
   .ai-signal {
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    display: flex; align-items: center; gap: 12px;
   }
   .signal-pill {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 18px; border-radius: 99px; font-size: 14.5px; font-weight: 800; letter-spacing: 0.5px;
+    padding: 6px 16px; border-radius: 20px; font-size: 16px; font-weight: 800; letter-spacing: 0.5px;
   }
-  
-  .signal-strong-buy  { background: rgba(52,199,89,0.12); color: #34c759; border: 1px solid rgba(52,199,89,0.25); }
-  .signal-buy         { background: rgba(52,199,89,0.08); color: #34c759; border: 1px solid rgba(52,199,89,0.18); }
-  .signal-weak-buy    { background: rgba(52,199,89,0.04); color: #2ecc71; border: 1px solid rgba(52,199,89,0.1); }
-  .signal-neutral     { background: rgba(255,149,0,0.08);  color: #ff9500; border: 1px solid rgba(255,149,0,0.15); }
-  .signal-weak-sell   { background: rgba(255,59,48,0.04);  color: #e67e22; border: 1px solid rgba(255,59,48,0.1); }
-  .signal-sell        { background: rgba(255,59,48,0.08);   color: #ff3b30; border: 1px solid rgba(255,59,48,0.18); }
-  .signal-strong-sell { background: rgba(255,59,48,0.12);   color: #ff3b30; border: 1px solid rgba(255,59,48,0.25); }
-  
-  .confidence-bar-wrap { flex: 1; min-width: 120px; max-width: 140px; }
-  .confidence-label { font-size: 10px; color: var(--text2); margin-bottom: 4px; display: flex; justify-content: space-between; font-weight: 700; }
-  .confidence-track { height: 4px; background: rgba(0,0,0,0.02); border-radius: 99px; overflow: hidden; }
-  .confidence-fill { height: 100%; border-radius: 99px; transition: width 0.8s; }
-  
-  .ai-summary { 
-    font-size: 14.5px; line-height: 1.8; color: var(--text); margin-bottom: 20px; 
-    padding: 16px 18px; background: rgba(0, 0, 0, 0.01); border-radius: 12px; border: 1px solid var(--border); 
-  }
-  
-  .ai-breakdown { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .signal-strong-buy  { background: rgba(34,197,94,0.25);  color: #16a34a; border: 1px solid rgba(34,197,94,0.5);  font-weight:800; }
+  .signal-buy         { background: rgba(34,197,94,0.15);  color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+  .signal-weak-buy    { background: rgba(134,239,172,0.12); color: #86efac; border: 1px solid rgba(134,239,172,0.3); }
+  .signal-neutral     { background: rgba(245,158,11,0.15);  color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+  .signal-weak-sell   { background: rgba(251,146,60,0.12);  color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
+  .signal-sell        { background: rgba(239,68,68,0.15);   color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+  .signal-strong-sell { background: rgba(239,68,68,0.25);   color: #b91c1c; border: 1px solid rgba(239,68,68,0.5);  font-weight:800; }
+  .confidence-bar-wrap { flex: 1; max-width: 120px; }
+  .confidence-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; display: flex; justify-content: space-between; }
+  .confidence-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .confidence-fill { height: 100%; border-radius: 3px; transition: width 0.8s; }
+  .ai-summary { font-size: 14px; line-height: 1.65; color: var(--text); margin-bottom: 14px; padding: 12px; background: var(--surface2); border-radius: 8px; }
+  .ai-breakdown { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
   @media (max-width: 900px) { .ai-breakdown { grid-template-columns: 1fr; } }
-  .ai-reason { padding: 16px; background: rgba(0, 0, 0, 0.01); border-radius: 12px; font-size: 13.5px; border: 1px solid var(--border); }
-  .ai-reason-title { font-size: 10.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
-  .ai-reason-text { color: var(--text2); line-height: 1.7; }
-  .ai-loading { display: flex; align-items: center; gap: 12px; color: var(--text2); font-size: 13.5px; padding: 12px 0; }
-  .ai-error { color: var(--text2); font-size: 13.5px; padding: 8px 0; }
+  .ai-reason { padding: 10px 12px; background: var(--surface2); border-radius: 8px; font-size: 14px; }
+  .ai-reason-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+  .ai-reason-text { color: var(--text); line-height: 1.65; }
+  .ai-loading { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; padding: 12px 0; }
+  .ai-error { color: var(--muted); font-size: 13px; padding: 8px 0; }
 
   .error-box {
-    background: rgba(244,63,94,0.06); border: 1px solid rgba(244,63,94,0.15);
-    border-radius: 12px; padding: 14px 20px; color: var(--red); font-size: 13.5px; margin-bottom: 20px;
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 8px; padding: 12px 16px; color: var(--red); font-size: 13px; margin-bottom: 16px;
   }
   .loading-overlay {
     display: flex; align-items: center; justify-content: center;
-    min-height: 240px; color: var(--text2); gap: 12px; font-size: 14px;
+    min-height: 200px; color: var(--muted); gap: 10px; font-size: 14px;
   }
-  .spinner { width: 22px; height: 22px; border: 2px solid rgba(255,255,255,0.05); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 
   @media (max-width: 1200px) { .cards-grid { grid-template-columns: repeat(2,1fr); } }
   @media (max-width: 900px) {
@@ -523,97 +300,103 @@ if ('serviceWorker' in navigator) {
     .two-col, .three-col { grid-template-columns: 1fr; }
   }
 
-  /* ── Mobile Nav ── */
+  /* ── Mobile Bottom Tab Bar ────────────────────────────────── */
   .bottom-nav {
     display: none;
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    border-top: 1px solid var(--border);
-    box-shadow: 0 -1px 0 0 rgba(255, 255, 255, 0.5);
+    background: var(--surface); border-top: 1px solid var(--border);
   }
-  .bottom-nav-inner { display: flex; height: 62px; padding-bottom: env(safe-area-inset-bottom); }
+  .bottom-nav-inner { display: flex; height: 60px; padding-bottom: env(safe-area-inset-bottom); }
   .bnav-tab {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 4px; cursor: pointer; color: var(--text2); font-size: 10px; font-weight: 700;
-    border: none; background: transparent; transition: all 0.2s ease;
+    gap: 3px; cursor: pointer; color: var(--muted); font-size: 10px; font-weight: 600;
+    border: none; background: transparent; transition: color 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
-  .bnav-tab svg { width: 20px; height: 20px; }
+  .bnav-tab svg { width: 22px; height: 22px; }
   .bnav-tab.active { color: var(--accent); }
 
-  /* Mobile drawers */
+  /* Mobile drawer (종목 리스트) */
   .mobile-drawer {
-    display: none; position: fixed; top: 68px; left: 0; right: 0; bottom: 62px; z-index: 150;
-    background: var(--bg); flex-direction: column; overflow-y: auto;
+    display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: 60px; z-index: 150;
+    background: var(--surface); flex-direction: column; overflow-y: auto;
   }
   .mobile-drawer.open { display: flex; flex-direction: column; }
 
+  /* Mobile search drawer */
   .mobile-search-drawer {
-    display: none; position: fixed; top: 68px; left: 0; right: 0; bottom: 62px; z-index: 151;
+    display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: 60px; z-index: 151;
     background: var(--bg); flex-direction: column; overflow: hidden;
   }
   .mobile-search-drawer.open { display: flex; }
   .mobile-search-header {
-    padding: 12px 14px; display: flex; align-items: center; gap: 8px;
-    border-bottom: 1px solid var(--border); background: var(--bg);
+    padding: 10px 12px; display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--border); background: var(--surface);
   }
   .mobile-search-header input {
-    flex: 1; background: rgba(0, 0, 0, 0.02); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 10px 14px; color: var(--text); font-size: 14px; outline: none;
+    flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 15px; outline: none;
   }
   .mobile-search-header input:focus { border-color: var(--accent); }
   .mobile-search-cancel {
-    color: var(--accent); font-size: 14px; font-weight: 700; cursor: pointer;
-    border: none; background: transparent; padding: 8px 6px; white-space: nowrap;
+    color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer;
+    border: none; background: transparent; padding: 8px 4px; white-space: nowrap;
   }
   .mobile-search-results { flex: 1; overflow-y: auto; }
 
   @media (max-width: 768px) {
     .bottom-nav { display: block; }
     .bottom-nav-inner {
-      height: calc(62px + env(safe-area-inset-bottom)) !important;
+      height: calc(60px + env(safe-area-inset-bottom)) !important;
       padding-bottom: env(safe-area-inset-bottom) !important;
     }
-    main { padding: 18px; padding-bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 100vw; overflow-x: hidden; }
-    .home-wrap { padding: 18px; padding-bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 100vw; overflow-x: hidden; }
-    .header-ticker-wrapper { display: none; }
-    .refresh-btn { font-size: 11.5px; padding: 6px 12px; }
-    header { padding: 0 18px; height: 68px; }
-    .home-hero { padding: 32px 0; }
-    .home-hero h1 { font-size: 38px; }
-    .home-hero p { font-size: 14px; }
-    .home-indices { grid-template-columns: repeat(2,1fr); gap: 12px; }
+    main { padding: 16px; padding-bottom: calc(76px + env(safe-area-inset-bottom)); max-width: 100vw; overflow-x: hidden; }
+    .home-wrap { padding: 16px; padding-bottom: calc(76px + env(safe-area-inset-bottom)); max-width: 100vw; overflow-x: hidden; }
+    .market-bar { display: none; }
+    .header-time { display: none; }
+    .refresh-btn { font-size: 11px; padding: 4px 8px; }
+    header { padding: 0 14px; height: 52px; }
+    .home-hero { padding: 20px 0 16px; }
+    .home-hero h1 { font-size: 30px; letter-spacing: -1px; }
+    .home-hero p { font-size: 13px; }
+    .home-indices { grid-template-columns: repeat(2,1fr); gap: 8px; }
     .home-stocks-grid { grid-template-columns: 1fr; }
-    .cards-grid { grid-template-columns: repeat(2,1fr); gap: 12px; }
-    .current-price { font-size: 32px; }
-    .stock-title h1 { font-size: 22px; }
+    .cards-grid { grid-template-columns: repeat(2,1fr); gap: 8px; }
+    .current-price { font-size: 26px; }
+    .stock-title h1 { font-size: 20px; }
     
+    /* 종목 상세화면 헤더 모바일 최적화 (세로 컬럼 스택) */
     .stock-header {
       flex-direction: column !important;
       align-items: stretch !important;
-      gap: 18px !important;
-      margin-bottom: 20px;
+      gap: 14px !important;
+      margin-bottom: 16px;
     }
     .price-block {
       text-align: left !important;
       border-top: 1px solid var(--border);
-      padding-top: 18px;
+      padding-top: 12px;
       width: 100%;
     }
     
+    /* 팩터 스코어 원형 링 및 디테일 바 모바일 정렬 */
     .score-section {
       flex-direction: column !important;
       align-items: center !important;
-      gap: 18px !important;
+      gap: 16px !important;
       text-align: center !important;
     }
-    .score-ring { margin: 0 auto; }
-    .score-details { width: 100% !important; }
+    .score-ring {
+      margin: 0 auto;
+    }
+    .score-details {
+      width: 100% !important;
+    }
 
-    .mobile-drawer { top: 68px; bottom: calc(62px + env(safe-area-inset-bottom)) !important; }
-    .mobile-search-drawer { top: 68px; bottom: calc(62px + env(safe-area-inset-bottom)) !important; }
+    .mobile-drawer { top: 52px; bottom: calc(60px + env(safe-area-inset-bottom)) !important; }
+    .mobile-search-drawer { top: 52px; bottom: calc(60px + env(safe-area-inset-bottom)) !important; }
 
+    /* 인라인 그리드를 모바일에서 1열로 강제 */
     div[style*="grid-template-columns:1fr 1fr"],
     div[style*="grid-template-columns: 1fr 1fr"],
     div[style*="grid-template-columns:repeat(2,1fr)"],
@@ -622,194 +405,114 @@ if ('serviceWorker' in navigator) {
     div[style*="grid-template-columns:repeat(3, 1fr)"] {
       grid-template-columns: 1fr !important;
     }
+    /* 모든 그리드 컨테이너 overflow 차단 */
     [style*="display:grid"], [style*="display: grid"] {
       max-width: 100%;
       overflow-x: hidden;
     }
+    /* 카드 strip(매수신호/스크리너): wrap 대신 가로 스크롤 strip으로 전환 */
     .card-strip {
       display: flex !important;
       flex-wrap: nowrap !important;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       scroll-snap-type: x mandatory;
-      padding-bottom: 8px;
+      padding-bottom: 6px;
     }
     .card-strip > * {
       flex: 0 0 auto !important;
       scroll-snap-align: start;
     }
     .card-strip::-webkit-scrollbar { height: 4px; }
-    .card-strip::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
+    .card-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+    /* 와이드 테이블: 컨테이너 안에서만 가로 스크롤 (모바일에서 컬럼 압축 방지) */
     .h-scroll-table { min-width: 560px; }
   }
 
+  /* 초소형 모바일 화면 최적화 (iPhone SE 등) */
   @media (max-width: 480px) {
-    div[style*="width:48px;height:4px"] { display: none !important; }
+    /* 투자 신호의 좁은 가로폭에서 게이지 바 숨김 처리로 종목명 공간 확보 */
+    div[style*="width:48px;height:4px"] {
+      display: none !important;
+    }
+    /* 종목 카드 내 종목명 잘림 방지 (필요 시 줄바꿈 허용) */
     span[style*="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"] {
       white-space: normal !important;
       overflow: visible !important;
       text-overflow: clip !important;
     }
-    .home-hero h1 { font-size: 32px !important; }
-    .current-price { font-size: 30px !important; }
-    .stock-title h1 { font-size: 20px !important; }
+    /* 헤더 폰트 축소 */
+    .home-hero h1 { font-size: 26px !important; }
+    .current-price { font-size: 28px !important; }
+    .stock-title h1 { font-size: 18px !important; }
   }
 
-  /* ── Modals ── */
+  /* ── 모달 ── */
   .modal-overlay {
     display: none; position: fixed; inset: 0; z-index: 500;
-    background: rgba(0,0,0,0.15); backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
     align-items: center; justify-content: center;
   }
   .modal-overlay.open { display: flex; }
   .modal-box {
-    background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(255, 255, 255, 0.6);
-    border-radius: var(--radius); padding: 26px; width: 100%; max-width: 420px;
-    margin: 0 16px; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.05), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
-    animation: modalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 14px; padding: 24px; width: 100%; max-width: 400px;
+    margin: 0 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    animation: modalIn 0.18s ease;
   }
-  @keyframes modalIn { from { opacity:0; transform: scale(0.95) translateY(10px); } to { opacity:1; transform: none; } }
-  .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; }
-  .modal-sub { font-size: 13px; color: var(--text2); margin-bottom: 22px; }
-  .modal-field { margin-bottom: 16px; }
-  .modal-label { font-size: 11px; font-weight: 800; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  @keyframes modalIn { from { opacity:0; transform: scale(0.95) translateY(8px); } to { opacity:1; transform: none; } }
+  .modal-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+  .modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+  .modal-field { margin-bottom: 14px; }
+  .modal-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
   .modal-input {
-    width: 100%; background: rgba(0, 0, 0, 0.02); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 11px 14px; color: var(--text); font-size: 14.5px;
-    outline: none; transition: all 0.2s ease; font-family: inherit;
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 14px;
+    outline: none; transition: border-color 0.15s; font-family: inherit;
   }
-  .modal-input:focus { border-color: var(--accent); background: rgba(255, 255, 255, 0.85); }
-  .modal-hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
-  .modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+  .modal-input:focus { border-color: var(--accent); background: var(--surface3); }
+  .modal-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
   .modal-btn-primary {
-    flex: 1; padding: 11px; border-radius: var(--radius-sm); border: none;
-    background: var(--accent); color: #fff; font-size: 14.5px; font-weight: 700;
-    cursor: pointer; transition: background 0.2s; font-family: inherit;
-    box-shadow: 0 4px 12px rgba(0, 102, 204, 0.2);
+    flex: 1; padding: 10px; border-radius: 8px; border: none;
+    background: var(--accent2); color: #fff; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: background 0.15s; font-family: inherit;
   }
-  .modal-btn-primary:hover { background: var(--accent2); }
+  .modal-btn-primary:hover { background: var(--accent); }
   .modal-btn-cancel {
-    padding: 11px 18px; border-radius: var(--radius-sm); border: 1px solid var(--border);
-    background: transparent; color: var(--text2); font-size: 14px; font-weight: 600;
-    cursor: pointer; font-family: inherit; transition: all 0.2s;
+    padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
   }
-  .modal-btn-cancel:hover { background: rgba(0, 0, 0, 0.02); border-color: var(--border2); }
-  .modal-segment { display: flex; gap: 4px; background: rgba(0, 0, 0, 0.03); border-radius: var(--radius-sm); padding: 3px; margin-bottom: 6px; border: 1px solid var(--border); }
+  .modal-segment { display: flex; gap: 3px; background: var(--surface2); border-radius: 8px; padding: 3px; margin-bottom: 4px; }
   .modal-seg-btn {
-    flex: 1; padding: 9px; border-radius: 6px; border: none; cursor: pointer;
-    font-size: 12.5px; font-weight: 700; transition: all 0.2s; font-family: inherit;
-    background: transparent; color: var(--text2);
+    flex: 1; padding: 8px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 700; transition: all 0.15s; font-family: inherit;
+    background: transparent; color: var(--muted);
   }
-  .modal-seg-btn.active-buy { background: rgba(52,199,89,0.12); color: #34C759; border: 1px solid rgba(52,199,89,0.2); }
-  .modal-seg-btn.active-sell { background: rgba(255,59,48,0.12); color: var(--red); border: 1px solid rgba(255,59,48,0.2); }
+  .modal-seg-btn.active-buy { background: rgba(22,163,74,0.15); color: #16a34a; }
+  .modal-seg-btn.active-sell { background: rgba(239,68,68,0.15); color: #ef4444; }
   .modal-price-tag {
-    display: inline-block; padding: 5px 12px; background: rgba(0, 0, 0, 0.02);
-    border-radius: var(--radius-sm); font-size: 13px; color: var(--text2); margin-top: 8px; border: 1px solid var(--border);
+    display: inline-block; padding: 4px 10px; background: var(--surface2);
+    border-radius: 6px; font-size: 12px; color: var(--muted); margin-top: 6px;
   }
   .modal-price-tag strong { color: var(--text); font-weight: 700; }
-
-  /* ── Bloomberg-Style Sector Heatmap ── */
-  .heatmap-section { margin-bottom: 24px; }
-  .heatmap-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 12px; gap: 8px;
-  }
-  .heatmap-title {
-    font-size: 13px; font-weight: 800; color: var(--text);
-    display: flex; align-items: center; gap: 6px;
-  }
-  .heatmap-meta { font-size: 11px; color: var(--muted); }
-  .heatmap-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    grid-auto-rows: minmax(72px, auto);
-    gap: 3px;
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  .heatmap-cell {
-    position: relative; overflow: hidden; cursor: default;
-    display: flex; flex-direction: column;
-    align-items: flex-start; justify-content: space-between;
-    padding: 8px 10px 7px;
-    transition: brightness 0.15s;
-  }
-  .heatmap-cell:hover { filter: brightness(1.12); }
-  .heatmap-cell::after {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 55%);
-    pointer-events: none;
-  }
-  /* 크기 클래스 */
-  .hm-xl { grid-column: span 2; grid-row: span 2; }
-  .hm-lg { grid-column: span 2; grid-row: span 1; }
-  .hm-md { grid-column: span 1; grid-row: span 1; }
-  .hm-sm { grid-column: span 1; grid-row: span 1; }
-
-  .hm-top { display: flex; flex-direction: column; gap: 1px; position: relative; z-index: 1; width: 100%; }
-  .hm-sector {
-    font-size: 9px; font-weight: 800; color: rgba(255,255,255,0.75);
-    text-transform: uppercase; letter-spacing: 0.5px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .hm-xl .hm-sector { font-size: 10.5px; }
-  .hm-ticker {
-    font-size: 8px; color: rgba(255,255,255,0.45);
-    font-weight: 600; letter-spacing: 0.3px;
-  }
-  .hm-change {
-    font-size: 17px; font-weight: 900; color: #fff; line-height: 1;
-    text-shadow: 0 1px 6px rgba(0,0,0,0.6);
-    position: relative; z-index: 1;
-  }
-  .hm-xl .hm-change { font-size: 26px; }
-  .hm-lg .hm-change { font-size: 20px; }
-  .hm-sm .hm-change { font-size: 14px; }
-  .hm-bottom { display: flex; flex-direction: column; gap: 2px; position: relative; z-index: 1; width: 100%; }
-  .hm-bar-wrap {
-    height: 3px; background: rgba(0,0,0,0.25); border-radius: 99px; overflow: hidden; width: 100%;
-  }
-  .hm-bar-fill { height: 100%; border-radius: 99px; background: rgba(255,255,255,0.7); }
-  .hm-count {
-    font-size: 8px; color: rgba(255,255,255,0.55); font-weight: 600;
-    display: flex; gap: 4px;
-  }
-  .hm-count-up { color: rgba(150,255,180,0.8); }
-  .hm-count-dn { color: rgba(255,150,150,0.8); }
-
-  .heatmap-skeleton {
-    height: 220px;
-    background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
-    background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 12px;
-  }
-  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-  @media (max-width: 768px) {
-    .heatmap-grid { grid-template-columns: repeat(4, 1fr); }
-    .hm-xl { grid-column: span 2; grid-row: span 1; }
-    .hm-change { font-size: 14px !important; }
-  }
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo" onclick="goHome()" style="cursor:pointer">Stock<span>Lens</span></div>
-  <div class="header-ticker-wrapper">
-    <div class="ticker-track" id="tickerTrack">
-      <div class="market-bar" id="marketBar">
-        <div class="market-item"><span class="market-name">로딩중</span><span class="market-val">...</span></div>
-      </div>
-      <div class="market-bar" id="ratesBar"></div>
-    </div>
+  <div class="market-bar" id="marketBar">
+    <div class="market-item"><span class="market-name">로딩중</span><span class="market-val">...</span></div>
   </div>
   <div class="header-right">
     <div class="market-status" title="장 상태">
       <span class="market-status-item"><span class="market-status-label">KR</span><span class="live-dot" id="dotKr"></span></span>
       <span class="market-status-item"><span class="market-status-label">US</span><span class="live-dot" id="dotUs"></span></span>
     </div>
+    <span class="header-time" id="headerTime"></span>
     <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">↻ 새로고침</button>
   </div>
 </header>
@@ -943,21 +646,6 @@ let priceChart = null;
 let currentRange = '1mo';
 let autoRefreshTimer = null;
 
-// ── Lightweight Charts + 추세선 상태 ─────────────────────────────────────────
-let tvChart = null;           // LightweightCharts 인스턴스
-let tvCandleSeries = null;    // 캔들 시리즈
-let tvLineSeries = null;      // 라인 시리즈
-let tvVolSeries = null;       // 거래량 시리즈
-let currentChartType = 'candle'; // 'candle' | 'line'
-let currentChartRawData = null;  // 마지막으로 로드된 차트 원본 데이터
-
-// 추세선 상태
-let trendlines = JSON.parse(localStorage.getItem('trendlines') || '[]');
-let isDrawingMode = false;        // 추세선 그리기 모드 활성화 여부
-let isDrawingActive = false;      // 드래그 진행 중
-let trendlineStartPoint = null;   // { x, y }
-let trendlineEndPoint = null;     // { x, y }
-
 function STOCK_DEF(id) { return STOCK_DEFS.find(s => s.id === id); }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -993,112 +681,10 @@ function renderRates() {
     r.eurusd ? `<span class="rate-item"><span class="rate-name">EUR/USD</span> <span style="font-weight:700">${fmt(r.eurusd.value,4)}</span></span>` : '',
     r.usdjpy ? `<span class="rate-item"><span class="rate-name">USD/JPY</span> <span style="font-weight:700">${fmt(r.usdjpy.value,2)}</span></span>` : '',
   ].filter(Boolean).join('');
-  if (typeof setupInfiniteScroll === 'function') setupInfiniteScroll();
-}
-
-function setupInfiniteScroll() {
-  const wrapper = document.querySelector('.header-ticker-wrapper');
-  const track = document.getElementById('tickerTrack');
-  if (!wrapper || !track) return;
-
-  // 기존 복제본 제거
-  const oldClones = wrapper.querySelectorAll('.ticker-track-clone');
-  oldClones.forEach(el => el.remove());
-
-  // 원본 트랙 복제
-  const clone = track.cloneNode(true);
-  clone.id = ''; // ID 중복 방지
-  clone.classList.add('ticker-track-clone');
-  
-  // 내부 엘리먼트 ID들 중복 방지를 위해 제거
-  clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-
-  wrapper.appendChild(clone);
 }
 
 async function init() {
-  // 휠 가로 스크롤 및 무한 자동 스크롤 지원
-  const ticker = document.querySelector('.header-ticker-wrapper');
-  if (ticker) {
-    let autoScrollSpeed = 0.45; // 프레임당 이동 픽셀 (부드러운 속도)
-    let isPaused = false;
-    let resumeTimeout = null;
-    let currentScrollX = 0; // 소수점 단위 누적 스크롤 값 보관 (정수 변환 버그 우회)
-
-    const pauseAutoScroll = () => {
-      isPaused = true;
-      if (resumeTimeout) clearTimeout(resumeTimeout);
-    };
-
-    const resumeAutoScrollWithDelay = (delay = 2000) => {
-      if (resumeTimeout) clearTimeout(resumeTimeout);
-      resumeTimeout = setTimeout(() => {
-        isPaused = false;
-        currentScrollX = ticker.scrollLeft; // 재개 시 현재 스크롤 위치 동기화
-      }, delay);
-    };
-
-    // 휠 가로 스크롤
-    ticker.addEventListener('wheel', (e) => {
-      if (e.deltaY !== 0) {
-        e.preventDefault();
-        pauseAutoScroll();
-        ticker.scrollLeft += e.deltaY;
-        currentScrollX = ticker.scrollLeft;
-        resumeAutoScrollWithDelay(3000); // 휠 조작 종료 3초 후 자동스크롤 재개
-      }
-    }, { passive: false });
-
-    // 마우스 호버 시 일시 정지 (사용자가 항목을 조작/클릭하기 쉽도록)
-    ticker.addEventListener('mouseenter', pauseAutoScroll);
-    ticker.addEventListener('mouseleave', () => {
-      isPaused = false;
-      currentScrollX = ticker.scrollLeft; // 마우스 아웃 시 위치 동기화
-    });
-
-    // 모바일 터치 시 일시 정지
-    ticker.addEventListener('touchstart', pauseAutoScroll, { passive: true });
-    ticker.addEventListener('touchend', () => {
-      currentScrollX = ticker.scrollLeft;
-      resumeAutoScrollWithDelay(3000);
-    }, { passive: true });
-
-    function autoScrollStep() {
-      const track = document.getElementById('tickerTrack');
-      if (track) {
-        const trackWidth = track.offsetWidth;
-        const gap = 24; // 자식 간 gap
-
-        if (!isPaused) {
-          currentScrollX += autoScrollSpeed;
-          // 트랙 전체 너비 + gap 만큼 스크롤되면 리셋하여 완벽한 루프 지원
-          if (currentScrollX >= trackWidth + gap) {
-            currentScrollX -= (trackWidth + gap);
-          }
-          ticker.scrollLeft = Math.floor(currentScrollX);
-        } else {
-          // 사용자가 조작 중일 때는 정수 값을 소수점 변수에 지속 동기화
-          currentScrollX = ticker.scrollLeft;
-
-          // 사용자가 조작 중일 때도 경계를 벗어나면 무한 휠링 보정
-          if (ticker.scrollLeft >= trackWidth + gap) {
-            ticker.scrollLeft -= (trackWidth + gap);
-            currentScrollX = ticker.scrollLeft;
-          } else if (ticker.scrollLeft < 0) {
-            ticker.scrollLeft += (trackWidth + gap);
-            currentScrollX = ticker.scrollLeft;
-          }
-        }
-      }
-      requestAnimationFrame(autoScrollStep);
-    }
-
-    // 데이터 로딩 시간 고려하여 1.5초 후 스크롤 자동시작
-    setTimeout(() => {
-      currentScrollX = ticker.scrollLeft;
-      requestAnimationFrame(autoScrollStep);
-    }, 1500);
-  }
+  startClock();
   // 홈 즉시 렌더
   try { await renderHome(); } catch(e) {
     console.error('renderHome error:', e);
@@ -1130,7 +716,6 @@ async function fetchInit() {
           <span class="market-val ${up?'up':'down'}">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})} <small>${up?'+':''}${m.change.toFixed(2)}%</small></span>
         </div>`;
       }).join('');
-      if (typeof setupInfiniteScroll === 'function') setupInfiniteScroll();
     }
     if (d.rates && Object.keys(d.rates).length) { ratesCache = d.rates; renderRates(); }
   } catch {
@@ -1212,7 +797,6 @@ async function loadIndices() {
         <span class="market-val ${up ? 'up' : 'down'}">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})} <small>${up?'+':''}${m.change.toFixed(2)}%</small></span>
       </div>`;
     }).join('');
-    if (typeof setupInfiniteScroll === 'function') setupInfiniteScroll();
   } catch(e) { console.error('indices error', e); }
 }
 
@@ -1562,30 +1146,14 @@ function renderMain(def, q, chart, news) {
     <div class="two-col">
       <div class="chart-card">
         <div class="chart-header">
-          <div class="chart-header-left">
-            <span class="chart-title">주가 차트</span>
-            <div class="chart-type-btns">
-              <button class="chart-type-btn ${currentChartType==='candle'?'active':''}" onclick="switchChartType('candle',this.parentNode)">캔들</button>
-              <button class="chart-type-btn ${currentChartType==='line'?'active':''}" onclick="switchChartType('line',this.parentNode)">선형</button>
-            </div>
-            <button class="trendline-btn" id="trendlineDrawBtn" onclick="toggleTrendlineMode()">✏️ 추세선</button>
-          </div>
-          <div class="chart-header-right">
-            <div class="chart-tabs">
-              ${['1wk','1mo','3mo','6mo','1y'].map(r => `
-                <button class="chart-tab ${r===currentRange?'active':''}" onclick="changeRange('${r}',this)">${rangeLabel(r)}</button>
-              `).join('')}
-            </div>
+          <span class="chart-title">주가 차트</span>
+          <div class="chart-tabs">
+            ${['1wk','1mo','3mo','6mo','1y'].map(r => `
+              <button class="chart-tab ${r===currentRange?'active':''}" onclick="changeRange('${r}',this)">${rangeLabel(r)}</button>
+            `).join('')}
           </div>
         </div>
-        <div id="tvChartWrap">
-          <div id="tvChartContainer"></div>
-          <canvas id="trendlineCanvas"></canvas>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
-          <button onclick="clearTrendlines()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;transition:all 0.2s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">추세선 전체 삭제</button>
-          <span id="trendlineCount" style="font-size:11px;color:var(--muted)"></span>
-        </div>
+        <canvas id="priceChart" height="190"></canvas>
       </div>
 
       <div class="card" style="display:flex;flex-direction:column;gap:16px">
@@ -1706,8 +1274,6 @@ function renderMain(def, q, chart, news) {
   `;
 
   drawChart(chart, def.market === 'kr' ? '₩' : '$', up);
-  // 종목 전환 시 추세선 개수 표시 갱신
-  setTimeout(updateTrendlineCount, 100);
 }
 
 
@@ -2197,120 +1763,48 @@ function renderPriceBlock(def) {
   el.innerHTML = priceBlockHTML(q, q.changePct >= 0, sym);
 }
 
-// ── Lightweight Charts 기반 캔들/라인 차트 + 추세선 ────────────────────────────
-
-function buildTvChart(up) {
-  const container = document.getElementById('tvChartContainer');
-  if (!container) return;
-
-  // 기존 차트 제거
-  if (tvChart) {
-    try { tvChart.remove(); } catch(e) {}
-    tvChart = null; tvCandleSeries = null; tvLineSeries = null;
-  }
-  container.innerHTML = '';
-
-  const upColor   = '#22c55e';
-  const downColor = '#ef4444';
-
-  tvChart = LightweightCharts.createChart(container, {
-    width: container.clientWidth,
-    height: 240,
-    layout: { background: { color: 'transparent' }, textColor: '#86868B', fontSize: 11, fontFamily: "'Noto Sans KR', sans-serif" },
-    grid: { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
-    rightPriceScale: { borderColor: 'rgba(0,0,0,0.05)', scaleMargins: { top: 0.06, bottom: 0.06 } },
-    timeScale: { borderColor: 'rgba(0,0,0,0.05)', timeVisible: true, secondsVisible: false, rightOffset: 4 },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    handleScale: true,
-    handleScroll: true,
-  });
-
-  // 반응형 리사이즈
-  const ro = new ResizeObserver(() => {
-    if (tvChart && container.clientWidth > 0) tvChart.applyOptions({ width: container.clientWidth });
-  });
-  ro.observe(container);
-
-  return { upColor, downColor };
-}
-
+// ── 차트 ──────────────────────────────────────────────────────────────────────
 function drawChart(chartData, sym, up) {
-  currentChartRawData = chartData;
+  const color = up ? '#22c55e' : '#ef4444';
+  if (priceChart) priceChart.destroy();
+  const ctx = document.getElementById('priceChart')?.getContext('2d');
+  if (!ctx) return;
+  const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+  gradient.addColorStop(0, up ? 'rgba(34,197,94,0.22)' : 'rgba(239,68,68,0.22)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
 
-  const colors = buildTvChart(up);
-  if (!tvChart || !chartData) return;
-
-  if (currentChartType === 'candle' && chartData.ohlcv) {
-    // ── 캔들스틱 ──────────────────────────────────────────────────
-    tvCandleSeries = tvChart.addCandlestickSeries({
-      upColor:        colors.upColor,
-      downColor:      colors.downColor,
-      borderUpColor:  colors.upColor,
-      borderDownColor:colors.downColor,
-      wickUpColor:    colors.upColor,
-      wickDownColor:  colors.downColor,
-    });
-    const ohlcData = chartData.ohlcv
-      .map(d => ({
-        time: d.time,
-        open: d.open, high: d.high, low: d.low, close: d.close,
-      }))
-      .filter(d => d.time && d.open != null && d.high != null && d.low != null && d.close != null)
-      .sort((a, b) => (a.time > b.time ? 1 : -1));
-    tvCandleSeries.setData(ohlcData);
-    tvLineSeries = null;
-  } else {
-    // ── 라인 차트 (ohlcv 없을 때도 폴백) ─────────────────────────
-    const lineColor = up ? colors.upColor : colors.downColor;
-    tvLineSeries = tvChart.addAreaSeries({
-      lineColor,
-      topColor:    up ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)',
-      bottomColor: 'rgba(255,255,255,0)',
-      lineWidth: 2,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 4,
-    });
-    // ohlcv 있으면 close 값, 없으면 data/labels
-    let lineData;
-    if (chartData.ohlcv) {
-      lineData = chartData.ohlcv
-        .filter(d => d.time && d.close != null)
-        .sort((a, b) => (a.time > b.time ? 1 : -1))
-        .map(d => ({ time: d.time, value: d.close }));
-    } else {
-      lineData = (chartData.labels || []).map((l, i) => ({
-        time: Math.floor(new Date(l).getTime() / 1000),
-        value: chartData.data[i],
-      })).filter(d => d.time && d.value != null);
+  priceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartData.labels,
+      datasets: [{ data: chartData.data, borderColor: color, borderWidth: 2, backgroundColor: gradient, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 4 }]
+    },
+    options: {
+      responsive: true,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          displayColors: false,
+          backgroundColor: 'rgba(26,29,39,0.95)', borderColor: '#2e3248', borderWidth: 1,
+          titleColor: '#8892a4', bodyColor: '#e2e8f0',
+          callbacks: { label: c => ` ${sym}${c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:2})}` }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(46,50,72,0.4)' }, ticks: { color: '#8892a4', maxTicksLimit: 7, font: { size: 11 } } },
+        y: { grid: { color: 'rgba(46,50,72,0.4)' }, ticks: { color: '#8892a4', font: { size: 11 }, callback: v => sym+v.toLocaleString() }, position: 'right' }
+      }
     }
-    tvLineSeries.setData(lineData);
-    tvCandleSeries = null;
-  }
-
-  tvChart.timeScale().fitContent();
-  setupTrendlineCanvas();
-  renderTrendlineCanvas();
+  });
 }
 
-// ── 차트 타입 전환 ─────────────────────────────────────────────────────────────
-function switchChartType(type, btnsContainer) {
-  currentChartType = type;
-  btnsContainer.querySelectorAll('.chart-type-btn').forEach(b => b.classList.remove('active'));
-  btnsContainer.querySelector(`.chart-type-btn:nth-child(${type === 'candle' ? 1 : 2})`).classList.add('active');
-  if (currentChartRawData && currentDef) {
-    const q   = quoteCache[currentDef.id];
-    const sym = currentDef.market === 'kr' ? '₩' : '$';
-    drawChart(currentChartRawData, sym, q?.changePct >= 0);
-  }
-}
-
-// ── 범위 변경 ─────────────────────────────────────────────────────────────────
 async function changeRange(range, btn) {
   currentRange = range;
   document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   const cacheKey = `${currentDef.ticker}:${range}`;
-  const q   = quoteCache[currentDef.id];
+  const q = quoteCache[currentDef.id];
   const sym = currentDef.market === 'kr' ? '₩' : '$';
   if (chartCache[cacheKey]) {
     drawChart(chartCache[cacheKey], sym, q?.changePct >= 0);
@@ -2325,196 +1819,6 @@ async function changeRange(range, btn) {
 
 function rangeLabel(r) {
   return { '1wk':'1W', '1mo':'1M', '3mo':'3M', '6mo':'6M', '1y':'1Y' }[r] || r;
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// ── 추세선 (Trendline) 기능 ─────────────────────────────────────────────────
-// ══════════════════════════════════════════════════════════════════════════════
-
-function toggleTrendlineMode() {
-  isDrawingMode = !isDrawingMode;
-  const btn    = document.getElementById('trendlineDrawBtn');
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!btn || !canvas) return;
-
-  if (isDrawingMode) {
-    btn.classList.add('active');
-    btn.textContent = '✏️ 그리는 중... (클릭해제)';
-    canvas.classList.add('drawing-mode');
-  } else {
-    btn.classList.remove('active');
-    btn.textContent = '✏️ 추세선';
-    canvas.classList.remove('drawing-mode');
-    isDrawingActive = false;
-    trendlineStartPoint = null;
-    trendlineEndPoint   = null;
-    renderTrendlineCanvas();
-  }
-}
-
-function setupTrendlineCanvas() {
-  const wrap   = document.getElementById('tvChartWrap');
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!wrap || !canvas) return;
-
-  // 캔버스 픽셀 크기를 wrap과 동일하게 맞춤
-  canvas.width  = wrap.clientWidth;
-  canvas.height = wrap.clientHeight || 240;
-
-  // 기존 리스너 제거 후 재등록 (클론 교체)
-  const fresh = canvas.cloneNode(false);
-  // drawing-mode 클래스 유지
-  if (isDrawingMode) fresh.classList.add('drawing-mode');
-  wrap.replaceChild(fresh, canvas);
-  setupTrendlineListeners(fresh);
-}
-
-function setupTrendlineListeners(canvas) {
-  canvas.addEventListener('mousedown', onTrendMouseDown);
-  canvas.addEventListener('mousemove', onTrendMouseMove);
-  canvas.addEventListener('mouseup',   onTrendMouseUp);
-  canvas.addEventListener('mouseleave',onTrendMouseLeave);
-  // 터치 지원
-  canvas.addEventListener('touchstart', e => { e.preventDefault(); onTrendMouseDown(e.touches[0]); }, { passive: false });
-  canvas.addEventListener('touchmove',  e => { e.preventDefault(); onTrendMouseMove(e.touches[0]); }, { passive: false });
-  canvas.addEventListener('touchend',   e => { e.preventDefault(); onTrendMouseUp(e.changedTouches[0]); }, { passive: false });
-}
-
-function getCanvasXY(e) {
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!canvas) return { x: 0, y: 0 };
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: (e.clientX ?? e.pageX) - rect.left,
-    y: (e.clientY ?? e.pageY) - rect.top,
-  };
-}
-
-function onTrendMouseDown(e) {
-  if (!isDrawingMode) return;
-  const { x, y } = getCanvasXY(e);
-  isDrawingActive     = true;
-  trendlineStartPoint = { x, y };
-  trendlineEndPoint   = { x, y };
-}
-
-function onTrendMouseMove(e) {
-  if (!isDrawingMode || !isDrawingActive) return;
-  const { x, y } = getCanvasXY(e);
-  trendlineEndPoint = { x, y };
-  renderTrendlineCanvas();
-}
-
-function onTrendMouseUp(e) {
-  if (!isDrawingMode || !isDrawingActive) return;
-  isDrawingActive = false;
-  const { x, y } = getCanvasXY(e);
-  trendlineEndPoint = { x, y };
-
-  // 최소 5px 이상 드래그해야 저장
-  const dx = trendlineEndPoint.x - trendlineStartPoint.x;
-  const dy = trendlineEndPoint.y - trendlineStartPoint.y;
-  if (Math.sqrt(dx * dx + dy * dy) > 5) {
-    trendlines.push({
-      ticker: currentDef?.ticker || '',
-      x1: trendlineStartPoint.x, y1: trendlineStartPoint.y,
-      x2: trendlineEndPoint.x,   y2: trendlineEndPoint.y,
-      // 정규화 (전체 캔버스 대비 비율로 저장)
-      rx1: trendlineStartPoint.x / (document.getElementById('trendlineCanvas')?.width  || 1),
-      ry1: trendlineStartPoint.y / (document.getElementById('trendlineCanvas')?.height || 1),
-      rx2: trendlineEndPoint.x   / (document.getElementById('trendlineCanvas')?.width  || 1),
-      ry2: trendlineEndPoint.y   / (document.getElementById('trendlineCanvas')?.height || 1),
-    });
-    localStorage.setItem('trendlines', JSON.stringify(trendlines));
-    updateTrendlineCount();
-  }
-
-  trendlineStartPoint = null;
-  trendlineEndPoint   = null;
-  renderTrendlineCanvas();
-}
-
-function onTrendMouseLeave() {
-  if (!isDrawingActive) return;
-  // 마우스가 캔버스 밖으로 나가면 드래그 취소
-  isDrawingActive     = false;
-  trendlineStartPoint = null;
-  trendlineEndPoint   = null;
-  renderTrendlineCanvas();
-}
-
-function renderTrendlineCanvas() {
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W   = canvas.width;
-  const H   = canvas.height;
-
-  ctx.clearRect(0, 0, W, H);
-
-  // 현재 종목에 해당하는 추세선만 그리기
-  const currentTicker = currentDef?.ticker || '';
-  const myLines = trendlines.filter(l => l.ticker === currentTicker || l.ticker === '');
-
-  myLines.forEach(line => {
-    // 비율 좌표 → 픽셀 좌표 변환
-    const x1 = (line.rx1 != null ? line.rx1 * W : line.x1);
-    const y1 = (line.ry1 != null ? line.ry1 * H : line.y1);
-    const x2 = (line.rx2 != null ? line.rx2 * W : line.x2);
-    const y2 = (line.ry2 != null ? line.ry2 * H : line.y2);
-    drawTrendlineOnCtx(ctx, x1, y1, x2, y2, '#ff6b00', 2, false);
-  });
-
-  // 드래그 중 미리보기 (주황 점선)
-  if (isDrawingActive && trendlineStartPoint && trendlineEndPoint) {
-    drawTrendlineOnCtx(
-      ctx,
-      trendlineStartPoint.x, trendlineStartPoint.y,
-      trendlineEndPoint.x,   trendlineEndPoint.y,
-      '#ff6b00', 2, true
-    );
-  }
-}
-
-function drawTrendlineOnCtx(ctx, x1, y1, x2, y2, color, lineWidth, dashed) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.strokeStyle = color;
-  ctx.lineWidth   = lineWidth;
-  ctx.lineCap     = 'round';
-  if (dashed) ctx.setLineDash([6, 4]);
-  else        ctx.setLineDash([]);
-
-  // 양 끝 원형 핸들
-  ctx.arc(x1, y1, 3.5, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(x2, y2, 3.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 선 그리기
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function clearTrendlines() {
-  const currentTicker = currentDef?.ticker || '';
-  trendlines = trendlines.filter(l => l.ticker !== currentTicker && l.ticker !== '');
-  localStorage.setItem('trendlines', JSON.stringify(trendlines));
-  updateTrendlineCount();
-  renderTrendlineCanvas();
-}
-
-function updateTrendlineCount() {
-  const el = document.getElementById('trendlineCount');
-  if (!el) return;
-  const currentTicker = currentDef?.ticker || '';
-  const n = trendlines.filter(l => l.ticker === currentTicker || l.ticker === '').length;
-  el.textContent = n > 0 ? `추세선 ${n}개` : '';
 }
 
 // ── 점수 계산 ─────────────────────────────────────────────────────────────────
@@ -2710,14 +2014,14 @@ async function renderIndexDetail(m, range) {
     const color = up ? '#22c55e' : '#ef4444';
     const gradient = ctx.createLinearGradient(0,0,0,260);
     gradient.addColorStop(0, up?'rgba(34,197,94,0.2)':'rgba(239,68,68,0.2)');
-    gradient.addColorStop(1,'rgba(255,255,255,0)');
+    gradient.addColorStop(1,'rgba(0,0,0,0)');
     indexChart = new Chart(ctx, {
       type:'line',
       data:{ labels:chart.labels, datasets:[{ data:chart.data, borderColor:color, borderWidth:2, backgroundColor:gradient, fill:true, tension:0.3, pointRadius:0, pointHoverRadius:4 }] },
       options:{
         responsive:true, interaction:{intersect:false,mode:'index'},
-        plugins:{ legend:{display:false}, tooltip:{ displayColors:false, backgroundColor:'rgba(255,255,255,0.9)', borderColor:'rgba(0,0,0,0.08)', borderWidth:1, titleColor:'#86868B', bodyColor:'#1D1D1F', callbacks:{ label: c => ` ${c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:2})}` } } },
-        scales:{ x:{grid:{color:'rgba(0,0,0,0.05)'},ticks:{color:'#86868B',maxTicksLimit:8,font:{size:11}}}, y:{grid:{color:'rgba(0,0,0,0.05)'},ticks:{color:'#86868B',font:{size:11},callback:v=>v.toLocaleString()},position:'right'} }
+        plugins:{ legend:{display:false}, tooltip:{ displayColors:false, backgroundColor:'rgba(26,29,39,0.95)', borderColor:'#2e3248', borderWidth:1, titleColor:'#8892a4', bodyColor:'#e2e8f0', callbacks:{ label: c => ` ${c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:2})}` } } },
+        scales:{ x:{grid:{color:'rgba(46,50,72,0.4)'},ticks:{color:'#8892a4',maxTicksLimit:8,font:{size:11}}}, y:{grid:{color:'rgba(46,50,72,0.4)'},ticks:{color:'#8892a4',font:{size:11},callback:v=>v.toLocaleString()},position:'right'} }
       }
     });
   } catch(e) {
@@ -2773,14 +2077,14 @@ async function changeIndexRange(range, btn) {
     const color = up ? '#22c55e' : '#ef4444';
     const gradient = ctx.createLinearGradient(0,0,0,260);
     gradient.addColorStop(0, up?'rgba(34,197,94,0.2)':'rgba(239,68,68,0.2)');
-    gradient.addColorStop(1,'rgba(255,255,255,0)');
+    gradient.addColorStop(1,'rgba(0,0,0,0)');
     indexChart = new Chart(ctx, {
       type:'line',
       data:{ labels:chart.labels, datasets:[{ data:chart.data, borderColor:color, borderWidth:2, backgroundColor:gradient, fill:true, tension:0.3, pointRadius:0, pointHoverRadius:4 }] },
       options:{
         responsive:true, interaction:{intersect:false,mode:'index'},
-        plugins:{ legend:{display:false}, tooltip:{ displayColors:false, backgroundColor:'rgba(255,255,255,0.9)', borderColor:'rgba(0,0,0,0.08)', borderWidth:1, titleColor:'#86868B', bodyColor:'#1D1D1F', callbacks:{ label:c=>` ${c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:2})}` } } },
-        scales:{ x:{grid:{color:'rgba(0,0,0,0.05)'},ticks:{color:'#86868B',maxTicksLimit:8,font:{size:11}}}, y:{grid:{color:'rgba(0,0,0,0.05)'},ticks:{color:'#86868B',font:{size:11},callback:v=>v.toLocaleString()},position:'right'} }
+        plugins:{ legend:{display:false}, tooltip:{ displayColors:false, backgroundColor:'rgba(26,29,39,0.95)', borderColor:'#2e3248', borderWidth:1, callbacks:{ label:c=>` ${c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:2})}` } } },
+        scales:{ x:{grid:{color:'rgba(46,50,72,0.4)'},ticks:{color:'#8892a4',maxTicksLimit:8,font:{size:11}}}, y:{grid:{color:'rgba(46,50,72,0.4)'},ticks:{color:'#8892a4',font:{size:11},callback:v=>v.toLocaleString()},position:'right'} }
       }
     });
   } catch(e) { console.error(e); }
@@ -2799,7 +2103,15 @@ function recLabel(r) {
   return { 'strongBuy':'강력 매수','buy':'매수','hold':'보유','underperform':'시장하회','sell':'매도' }[r] || r;
 }
 
-
+// ── 시계 ──────────────────────────────────────────────────────────────────────
+function startClock() {
+  const tick = () => {
+    document.getElementById('headerTime').textContent =
+      new Date().toLocaleString('ko', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  };
+  tick();
+  setInterval(tick, 1000);
+}
 
 // ── 홈 화면 ───────────────────────────────────────────────────────────────────
 let isHomePage = true;
@@ -2937,8 +2249,8 @@ async function renderHome(opts = {}) {
 
       <!-- 매크로 대시보드 + 섹터 히트맵 -->
       <div id="homeMacro">${renderMacroDashboard(macro)}</div>
-      <div id="krHeatmapContainer"><div class="heatmap-section"><div class="heatmap-header"><div class="heatmap-title">🇰🇷 한국 업종별 히트맵</div></div><div class="heatmap-skeleton"></div></div></div>
-      <div id="sectorHeatmapContainer" style="margin-bottom:24px"><div class="heatmap-section"><div class="heatmap-header"><div class="heatmap-title">🇺🇸 미국 섹터 히트맵</div></div><div class="heatmap-skeleton"></div></div></div>
+      <div id="krHeatmapContainer"></div>
+      <div id="sectorHeatmapContainer" style="margin-bottom:24px"></div>
 
       <!-- 등락 상위/하락 -->
       <div class="home-stocks-grid" style="margin-bottom:24px">
@@ -2972,32 +2284,17 @@ async function renderHome(opts = {}) {
       ${renderScreenerCard(all)}
     </div>`;
 
-  // ── 히트맵 비동기 백그라운드 로딩 (IntersectionObserver — 뷰포트 진입 시 로딩)
-  // KR 업종 히트맵
-  const krHeatEl = document.getElementById('krHeatmapContainer');
-  if (krHeatEl) {
-    const krObs = new IntersectionObserver((entries, o) => {
-      if (!entries[0].isIntersecting) return;
-      o.disconnect();
-      api('/api/kr-sectors').then(sectors => {
-        if (sectors && sectors.length) krHeatEl.innerHTML = renderKrHeatmap(sectors);
-      }).catch(() => {});
-    }, { rootMargin: '300px' });
-    krObs.observe(krHeatEl);
-  }
-
-  // US 섹터 히트맵
-  const usHeatEl = document.getElementById('sectorHeatmapContainer');
-  if (usHeatEl) {
-    const usObs = new IntersectionObserver((entries, o) => {
-      if (!entries[0].isIntersecting) return;
-      o.disconnect();
-      api('/api/sectors').then(sectors => {
-        if (sectors && Object.keys(sectors).length) usHeatEl.innerHTML = renderSectorHeatmap(sectors);
-      }).catch(() => {});
-    }, { rootMargin: '300px' });
-    usObs.observe(usHeatEl);
-  }
+  // 섹터 ETF 비동기 로드 (홈 렌더 블로킹 없음)
+  api('/api/sectors').then(sectors => {
+    const el = document.getElementById('sectorHeatmapContainer');
+    if (el && sectors && Object.keys(sectors).length) {
+      el.innerHTML = `<div class="card" style="margin-bottom:24px">${renderSectorHeatmap(sectors)}</div>`;
+    }
+  }).catch(() => {});
+  api('/api/kr-sectors').then(sectors => {
+    const el = document.getElementById('krHeatmapContainer');
+    if (el && sectors && sectors.length) el.innerHTML = renderKrHeatmap(sectors);
+  }).catch(() => {});
 
   // 매수신호: 카드가 뷰포트에 진입할 때 로딩 (IntersectionObserver)
   const bsEl = document.getElementById('buySignalsCard');
@@ -3055,114 +2352,57 @@ function renderMacroDashboard(m) {
   </div>`;
 }
 
-function _heatmapCellColor(change, maxAbs, isUp) {
-  // 색상 강도: 최대 변동 대비 상대적 비율 (0.15 ~ 0.9 사이)
-  const t = Math.min(0.9, Math.abs(change) / maxAbs * 0.75 + 0.15);
-  if (isUp) {
-    // 초록: 어두운 숲 → 밝은 에메랄드
-    const r = Math.round(8 + t * 26);
-    const g = Math.round(70 + t * 127);
-    const b = Math.round(40 + t * 55);
-    return `rgb(${r},${g},${b})`;
-  } else {
-    // 빨강: 어두운 버건디 → 밝은 레드
-    const r = Math.round(80 + t * 175);
-    const g = Math.round(10 + t * 38);
-    const b = Math.round(18 + t * 32);
-    return `rgb(${r},${g},${b})`;
-  }
-}
-
 function renderKrHeatmap(sectors) {
   if (!sectors || !sectors.length) return '';
-
-  // 변동률 기준 정렬, 상위 8 + 하위 6 표시 (총 14개 이내)
   const sorted = [...sectors].sort((a,b) => b.change - a.change);
-  const top = sorted.slice(0, 8);
-  const bot = sorted.slice(-6).reverse().filter(s => !top.includes(s));
-  const shown = [...top, ...bot];
+  const top5 = sorted.slice(0, 5);
+  const bot5 = sorted.slice(-5).reverse();
+  const shown = [...top5, ...bot5.filter(s => !top5.includes(s))];
   const maxAbs = Math.max(...shown.map(s => Math.abs(s.change)), 0.1);
-  const maxTotal = Math.max(...shown.map(s => s.total || 1));
-
-  const cells = shown.map((s, i) => {
+  const cards = shown.map(s => {
     const up = s.change >= 0;
-    const bg = _heatmapCellColor(s.change, maxAbs, up);
-    // 종목 수에 따라 셀 크기 결정
-    const ratio = (s.total || 1) / maxTotal;
-    const cls = ratio >= 0.6 ? 'hm-xl' : ratio >= 0.35 ? 'hm-lg' : ratio >= 0.18 ? 'hm-md' : 'hm-sm';
-    const risePct = s.total ? Math.round(s.rise / s.total * 100) : 0;
-    const fallCnt = s.total ? (s.total - s.rise) : 0;
-    return `<div class="heatmap-cell ${cls}" style="background:${bg}">
-      <div class="hm-top">
-        <div class="hm-sector">${s.name}</div>
-      </div>
-      <div class="hm-change">${up?'+':''}${s.change.toFixed(2)}%</div>
-      <div class="hm-bottom">
-        ${s.total ? `<div class="hm-bar-wrap"><div class="hm-bar-fill" style="width:${risePct}%"></div></div>
-        <div class="hm-count"><span class="hm-count-up">▲${s.rise}</span><span class="hm-count-dn">▼${fallCnt}</span><span>/ ${s.total}종목</span></div>` : ''}
-      </div>
-    </div>`;
+    const intensity = Math.min(0.8, Math.abs(s.change) / maxAbs * 0.7 + 0.1);
+    const bg = up ? 'rgba(34,197,94,' + intensity + ')' : 'rgba(239,68,68,' + intensity + ')';
+    const bar = Math.round(s.rise / s.total * 100);
+    return '<div style="background:' + bg + ';border-radius:8px;padding:8px 10px;cursor:pointer">' +
+      '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.95);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">' + s.name + '</div>' +
+      '<div style="font-size:13px;font-weight:800;color:#fff">' + (up?'+':'') + s.change.toFixed(2) + '%</div>' +
+      '<div style="font-size:9px;color:rgba(255,255,255,0.7);margin-top:2px">상승 ' + s.rise + '/' + s.total + '개</div>' +
+      '</div>';
   }).join('');
-
-  const upCount = shown.filter(s => s.change >= 0).length;
-  return `<div class="heatmap-section">
-    <div class="heatmap-header">
-      <div class="heatmap-title">🇰🇷 한국 업종 히트맵</div>
-      <div class="heatmap-meta">상승 ${upCount}업종 · 하락 ${shown.length - upCount}업종</div>
-    </div>
-    <div class="heatmap-grid">${cells}</div>
-  </div>`;
+  return '<div class="card" style="margin-bottom:24px">' +
+    '<div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">한국 업종별 등락 — 상승 TOP5 / 하락 TOP5</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px">' +
+    cards + '</div></div>';
 }
 
 function renderSectorHeatmap(sectors) {
   if (!sectors || !Object.keys(sectors).length) return '';
-  const labelMap = {
-    tech:    ['기술·IT',    'XLK', ['AAPL','MSFT','NVDA']],
-    finance: ['금융',       'XLF', ['JPM','BAC','GS']],
-    health:  ['헬스케어',   'XLV', ['JNJ','UNH','LLY']],
-    energy:  ['에너지',     'XLE', ['XOM','CVX','SLB']],
-    industrial:['산업재',   'XLI', ['CAT','HON','GE']],
-    comm:    ['통신·미디어','XLC', ['GOOGL','META','NFLX']],
-    materials:['소재',      'XLB', ['LIN','APD','SHW']],
-    realestate:['부동산',   'XLRE',['AMT','PLD','CCI']],
-    staples: ['필수소비재', 'XLP', ['PG','KO','PEP']],
-    discretionary:['소비재','XLY',['AMZN','TSLA','HD']],
-    utilities:['유틸리티',  'XLU', ['NEE','DUK','SO']],
+  const labels = {
+    tech:'기술(XLK)', finance:'금융(XLF)', health:'헬스케어(XLV)',
+    energy:'에너지(XLE)', industrial:'산업재(XLI)', comm:'통신(XLC)',
+    materials:'소재(XLB)', realestate:'부동산(XLRE)', staples:'필수소비재(XLP)',
+    discretionary:'자유소비재(XLY)', utilities:'유틸리티(XLU)',
   };
-  const items = Object.entries(sectors)
-    .map(([k,v]) => {
-      const [label, etf, stocks] = labelMap[k] || [k, k, []];
-      return { key: k, label, etf: v.ticker || etf, stocks: stocks||[], change: v.change||0, value: v.value||0 };
-    })
-    .sort((a,b) => b.change - a.change);
+  const items = Object.entries(sectors).map(([k,v]) => ({
+    label: labels[k]||k, change: v.change, value: v.value
+  })).sort((a,b) => b.change - a.change);
   const maxAbs = Math.max(...items.map(i => Math.abs(i.change)), 0.1);
 
-  // 크기: 상위2=xl, 다음3=lg, 나머지=md
-  const cells = items.map((s, i) => {
+  const cards = items.map(s => {
     const up = s.change >= 0;
-    const bg = _heatmapCellColor(s.change, maxAbs, up);
-    const cls = i < 2 ? 'hm-xl' : i < 5 ? 'hm-lg' : 'hm-md';
-    const stockStr = s.stocks.length ? s.stocks.slice(0,3).join(' · ') : '';
-    return `<div class="heatmap-cell ${cls}" style="background:${bg}">
-      <div class="hm-top">
-        <div class="hm-sector">${s.label}</div>
-        <div class="hm-ticker">${s.etf}${s.value ? ' · $'+s.value.toFixed(2) : ''}</div>
-      </div>
-      <div class="hm-change">${up?'+':''}${s.change.toFixed(2)}%</div>
-      <div class="hm-bottom">
-        ${stockStr ? `<div class="hm-count">${stockStr}</div>` : ''}
-      </div>
-    </div>`;
+    const intensity = Math.min(0.8, Math.abs(s.change) / maxAbs * 0.7 + 0.1);
+    const bg = up ? 'rgba(34,197,94,' + intensity + ')' : 'rgba(239,68,68,' + intensity + ')';
+    return '<div style="background:' + bg + ';border-radius:8px;padding:8px 10px">' +
+      '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + s.label + '</div>' +
+      '<div style="font-size:13px;font-weight:800;color:#fff;margin-top:2px">' + (up?'+':'') + s.change.toFixed(2) + '%</div>' +
+      '</div>';
   }).join('');
 
-  const up = items.filter(i => i.change >= 0).length;
-  return `<div class="heatmap-section">
-    <div class="heatmap-header">
-      <div class="heatmap-title">🇺🇸 미국 섹터 히트맵</div>
-      <div class="heatmap-meta">상승 ${up}↑ · 하락 ${items.length-up}↓</div>
-    </div>
-    <div class="heatmap-grid">${cells}</div>
-  </div>`;
+  return '<div style="margin-bottom:0">' +
+    '<div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px">미국 섹터 ETF 등락</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px">' +
+    cards + '</div></div>';
 }
 
 function renderYieldCurve(m) {

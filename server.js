@@ -407,7 +407,14 @@ async function naverKrItemChart(ticker, range = '1mo') {
     NAVER_REF
   );
   if (!Array.isArray(rows) || !rows.length) throw new Error('NAVER kr-item: no data');
-  return rows.map(r => ({ date: _nDate(String(r.localDate)), close: Math.round(r.closePrice) }));
+  return rows.map(r => ({
+    date:   _nDate(String(r.localDate)),
+    close:  Math.round(r.closePrice),
+    open:   Math.round(r.openPrice   ?? r.closePrice),
+    high:   Math.round(r.highPrice   ?? r.closePrice),
+    low:    Math.round(r.lowPrice    ?? r.closePrice),
+    volume: r.accumulatedTradingVolume ?? 0,
+  }));
 }
 
 async function naverFutures(code) {
@@ -900,11 +907,25 @@ async function usChart(ticker, range) {
   // 1차: NAVER chart, 2차: Yahoo v8 fallback
   try {
     const rows = await naverUsChart(ticker, range);
-    return rows.map(r => ({ date: r.date, close: Math.round(r.close * 100) / 100 }));
+    return rows.map(r => ({
+      date:   r.date,
+      close:  Math.round(r.close   * 100) / 100,
+      open:   Math.round((r.open  ?? r.close) * 100) / 100,
+      high:   Math.round((r.high  ?? r.close) * 100) / 100,
+      low:    Math.round((r.low   ?? r.close) * 100) / 100,
+      volume: r.volume ?? 0,
+    }));
   } catch {
     const yRange = {'1wk':'5d','1mo':'1mo','3mo':'3mo','6mo':'6mo','1y':'1y'}[range] || '1mo';
     const { rows } = await yahooChart(ticker, yRange, '1d');
-    return rows.map(r => ({ date: r.date, close: Math.round(r.close * 100) / 100 }));
+    return rows.map(r => ({
+      date:   r.date,
+      close:  Math.round(r.close  * 100) / 100,
+      open:   Math.round((r.open  ?? r.close) * 100) / 100,
+      high:   Math.round((r.high  ?? r.close) * 100) / 100,
+      low:    Math.round((r.low   ?? r.close) * 100) / 100,
+      volume: r.volume ?? 0,
+    }));
   }
 }
 
@@ -1296,9 +1317,22 @@ async function fetchChartData(symbol, range, market) {
   const fmtOpts = longRange
     ? { year:'2-digit', month:'short', day:'numeric' }
     : { month:'short', day:'numeric' };
+
+  // unix timestamp 변환 (Lightweight Charts용)
+  const toUnix = d => Math.floor(new Date(d).getTime() / 1000);
+
   return {
-    labels: raw.map(d=>new Date(d.date).toLocaleDateString('ko', fmtOpts)),
-    data:   raw.map(d=>d.close),
+    labels: raw.map(d => new Date(d.date).toLocaleDateString('ko', fmtOpts)),
+    data:   raw.map(d => d.close),
+    // OHLCV 지원 (캔들 차트용)
+    ohlcv:  raw.map(d => ({
+      time:   toUnix(d.date),
+      open:   d.open  ?? d.close,
+      high:   d.high  ?? d.close,
+      low:    d.low   ?? d.close,
+      close:  d.close,
+      volume: d.volume ?? 0,
+    })),
   };
 }
 
