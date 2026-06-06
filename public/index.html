@@ -310,9 +310,7 @@ if ('serviceWorker' in navigator) {
     backdrop-filter: blur(25px);
     -webkit-backdrop-filter: blur(25px);
   }
-  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
-  .chart-header-left { display: flex; align-items: center; gap: 12px; }
-  .chart-header-right { display: flex; align-items: center; gap: 8px; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
   .chart-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; }
   .chart-tabs { display: flex; gap: 4px; background: rgba(0, 0, 0, 0.03); border-radius: var(--radius-sm); padding: 3px; border: 1px solid var(--border); }
   .chart-tab {
@@ -323,34 +321,16 @@ if ('serviceWorker' in navigator) {
   .chart-tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 10px rgba(0, 102, 204, 0.25); }
   .chart-tab:not(.active):hover { color: var(--text); background: rgba(0, 0, 0, 0.02); }
 
-  /* Chart type toggle */
-  .chart-type-btns { display: flex; gap: 3px; background: rgba(0,0,0,0.03); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
-  .chart-type-btn {
-    padding: 5px 10px; font-size: 11px; font-weight: 700; border-radius: 5px;
-    cursor: pointer; border: none; background: transparent;
-    color: var(--text2); transition: all 0.2s;
-  }
-  .chart-type-btn.active { background: #fff; color: var(--text); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-
-  /* Trendline draw button */
-  .trendline-btn {
-    display: flex; align-items: center; gap: 5px;
-    padding: 5px 11px; font-size: 11px; font-weight: 700; border-radius: 7px;
-    cursor: pointer; border: 1.5px solid var(--border); background: transparent;
-    color: var(--text2); transition: all 0.2s;
-  }
-  .trendline-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(0,102,204,0.04); }
-  .trendline-btn.active { border-color: #ff6b00; color: #ff6b00; background: rgba(255,107,0,0.06); box-shadow: 0 0 0 2px rgba(255,107,0,0.15); }
-
-  /* Lightweight chart container */
-  #tvChartWrap { position: relative; width: 100%; height: 240px; border-radius: 10px; overflow: hidden; }
-  #tvChartContainer { width: 100%; height: 100%; }
-  #trendlineCanvas {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 100;
-    border-radius: 10px;
-  }
-  #trendlineCanvas.drawing-mode { pointer-events: all; cursor: crosshair; }
+  /* ── 캔들/추세선 추가 스타일 ── */
+  .chart-type-btns { display:flex; gap:3px; background:rgba(0,0,0,0.03); border-radius:8px; padding:3px; border:1px solid var(--border); }
+  .chart-type-btn { padding:5px 10px; font-size:11px; font-weight:700; border-radius:5px; cursor:pointer; border:none; background:transparent; color:var(--text2); transition:all 0.2s; }
+  .chart-type-btn.active { background:#fff; color:var(--text); box-shadow:0 2px 6px rgba(0,0,0,0.08); }
+  .trendline-btn { display:flex; align-items:center; gap:5px; padding:5px 11px; font-size:11px; font-weight:700; border-radius:7px; cursor:pointer; border:1.5px solid var(--border); background:transparent; color:var(--text2); transition:all 0.2s; }
+  .trendline-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .trendline-btn.active { border-color:#ff6b00; color:#ff6b00; background:rgba(255,107,0,0.06); box-shadow:0 0 0 2px rgba(255,107,0,0.15); }
+  .tv-chart-wrap { position:relative; width:100%; height:220px; border-radius:10px; overflow:hidden; }
+  .tv-chart-wrap canvas.tl-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:100; }
+  .tv-chart-wrap canvas.tl-canvas.draw-on { pointer-events:all; cursor:crosshair; }
 
   .indicators-table { width: 100%; border-collapse: collapse; }
   .indicators-table th {
@@ -943,20 +923,16 @@ let priceChart = null;
 let currentRange = '1mo';
 let autoRefreshTimer = null;
 
-// ── Lightweight Charts + 추세선 상태 ─────────────────────────────────────────
-let tvChart = null;           // LightweightCharts 인스턴스
-let tvCandleSeries = null;    // 캔들 시리즈
-let tvLineSeries = null;      // 라인 시리즈
-let tvVolSeries = null;       // 거래량 시리즈
-let currentChartType = 'candle'; // 'candle' | 'line'
-let currentChartRawData = null;  // 마지막으로 로드된 차트 원본 데이터
-
-// 추세선 상태
-let trendlines = JSON.parse(localStorage.getItem('trendlines') || '[]');
-let isDrawingMode = false;        // 추세선 그리기 모드 활성화 여부
-let isDrawingActive = false;      // 드래그 진행 중
-let trendlineStartPoint = null;   // { x, y }
-let trendlineEndPoint = null;     // { x, y }
+// Lightweight Charts + 추세선
+let tvChart = null;
+let tvSeries = null;
+let currentChartType = 'candle';
+let rawChartData = null;
+let tlLines = JSON.parse(localStorage.getItem('tl') || '[]');
+let tlMode = false;
+let tlDrag = false;
+let tlStart = null;
+let tlEnd = null;
 
 function STOCK_DEF(id) { return STOCK_DEFS.find(s => s.id === id); }
 
@@ -1562,29 +1538,27 @@ function renderMain(def, q, chart, news) {
     <div class="two-col">
       <div class="chart-card">
         <div class="chart-header">
-          <div class="chart-header-left">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span class="chart-title">주가 차트</span>
             <div class="chart-type-btns">
               <button class="chart-type-btn ${currentChartType==='candle'?'active':''}" onclick="switchChartType('candle',this.parentNode)">캔들</button>
               <button class="chart-type-btn ${currentChartType==='line'?'active':''}" onclick="switchChartType('line',this.parentNode)">선형</button>
             </div>
-            <button class="trendline-btn" id="trendlineDrawBtn" onclick="toggleTrendlineMode()">✏️ 추세선</button>
+            <button class="trendline-btn" id="tlBtn" onclick="toggleTl()">✏️ 추세선</button>
+            <span id="tlCount" style="font-size:11px;color:var(--muted)"></span>
           </div>
-          <div class="chart-header-right">
+          <div style="display:flex;align-items:center;gap:8px">
             <div class="chart-tabs">
               ${['1wk','1mo','3mo','6mo','1y'].map(r => `
                 <button class="chart-tab ${r===currentRange?'active':''}" onclick="changeRange('${r}',this)">${rangeLabel(r)}</button>
               `).join('')}
             </div>
+            <button onclick="clearTl()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 6px" title="추세선 삭제">✕</button>
           </div>
         </div>
-        <div id="tvChartWrap">
-          <div id="tvChartContainer"></div>
-          <canvas id="trendlineCanvas"></canvas>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
-          <button onclick="clearTrendlines()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;transition:all 0.2s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">추세선 전체 삭제</button>
-          <span id="trendlineCount" style="font-size:11px;color:var(--muted)"></span>
+        <div class="tv-chart-wrap" id="tvWrap">
+          <div id="tvCont"></div>
+          <canvas class="tl-canvas" id="tlCanvas"></canvas>
         </div>
       </div>
 
@@ -1706,8 +1680,6 @@ function renderMain(def, q, chart, news) {
   `;
 
   drawChart(chart, def.market === 'kr' ? '₩' : '$', up);
-  // 종목 전환 시 추세선 개수 표시 갱신
-  setTimeout(updateTrendlineCount, 100);
 }
 
 
@@ -2197,125 +2169,66 @@ function renderPriceBlock(def) {
   el.innerHTML = priceBlockHTML(q, q.changePct >= 0, sym);
 }
 
-// ── Lightweight Charts 기반 캔들/라인 차트 + 추세선 ────────────────────────────
-
-function buildTvChart(up) {
-  const container = document.getElementById('tvChartContainer');
-  if (!container) return;
+// ── 차트 (Lightweight Charts 기반 캔들/라인 + 추세선) ─────────────────────────
+function drawChart(chartData, sym, up) {
+  rawChartData = chartData;
+  const cont = document.getElementById('tvCont');
+  if (!cont) return;
 
   // 기존 차트 제거
-  if (tvChart) {
-    try { tvChart.remove(); } catch(e) {}
-    tvChart = null; tvCandleSeries = null; tvLineSeries = null;
-  }
-  container.innerHTML = '';
+  if (tvChart) { try { tvChart.remove(); } catch(e) {} tvChart = null; tvSeries = null; }
+  cont.innerHTML = '';
 
-  const upColor   = '#22c55e';
-  const downColor = '#ef4444';
-
-  tvChart = LightweightCharts.createChart(container, {
-    width: container.clientWidth,
-    height: 240,
-    layout: { background: { color: 'transparent' }, textColor: '#86868B', fontSize: 11, fontFamily: "'Noto Sans KR', sans-serif" },
+  const upC = '#22c55e', dnC = '#ef4444';
+  tvChart = LightweightCharts.createChart(cont, {
+    width: cont.clientWidth || cont.parentElement.clientWidth,
+    height: 220,
+    layout: { background: { color: 'transparent' }, textColor: '#86868B', fontSize: 11 },
     grid: { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
-    rightPriceScale: { borderColor: 'rgba(0,0,0,0.05)', scaleMargins: { top: 0.06, bottom: 0.06 } },
-    timeScale: { borderColor: 'rgba(0,0,0,0.05)', timeVisible: true, secondsVisible: false, rightOffset: 4 },
+    rightPriceScale: { borderColor: 'rgba(0,0,0,0.06)', scaleMargins: { top: 0.05, bottom: 0.05 } },
+    timeScale: { borderColor: 'rgba(0,0,0,0.06)', timeVisible: true, secondsVisible: false, rightOffset: 3 },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    handleScale: true,
-    handleScroll: true,
+    handleScale: true, handleScroll: true,
   });
-
-  // 반응형 리사이즈
-  const ro = new ResizeObserver(() => {
-    if (tvChart && container.clientWidth > 0) tvChart.applyOptions({ width: container.clientWidth });
-  });
-  ro.observe(container);
-
-  return { upColor, downColor };
-}
-
-function drawChart(chartData, sym, up) {
-  currentChartRawData = chartData;
-
-  const colors = buildTvChart(up);
-  if (!tvChart || !chartData) return;
+  new ResizeObserver(() => { if (tvChart && cont.clientWidth > 0) tvChart.applyOptions({ width: cont.clientWidth }); }).observe(cont);
 
   if (currentChartType === 'candle' && chartData.ohlcv) {
-    // ── 캔들스틱 ──────────────────────────────────────────────────
-    tvCandleSeries = tvChart.addCandlestickSeries({
-      upColor:        colors.upColor,
-      downColor:      colors.downColor,
-      borderUpColor:  colors.upColor,
-      borderDownColor:colors.downColor,
-      wickUpColor:    colors.upColor,
-      wickDownColor:  colors.downColor,
-    });
-    const ohlcData = chartData.ohlcv
-      .map(d => ({
-        time: d.time,
-        open: d.open, high: d.high, low: d.low, close: d.close,
-      }))
-      .filter(d => d.time && d.open != null && d.high != null && d.low != null && d.close != null)
-      .sort((a, b) => (a.time > b.time ? 1 : -1));
-    tvCandleSeries.setData(ohlcData);
-    tvLineSeries = null;
+    tvSeries = tvChart.addCandlestickSeries({ upColor:upC, downColor:dnC, borderUpColor:upC, borderDownColor:dnC, wickUpColor:upC, wickDownColor:dnC });
+    tvSeries.setData(chartData.ohlcv.filter(d=>d.open!=null).sort((a,b)=>a.time-b.time));
   } else {
-    // ── 라인 차트 (ohlcv 없을 때도 폴백) ─────────────────────────
-    const lineColor = up ? colors.upColor : colors.downColor;
-    tvLineSeries = tvChart.addAreaSeries({
-      lineColor,
-      topColor:    up ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)',
-      bottomColor: 'rgba(255,255,255,0)',
-      lineWidth: 2,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 4,
+    tvSeries = tvChart.addAreaSeries({
+      lineColor: up ? upC : dnC,
+      topColor:  up ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)',
+      bottomColor: 'rgba(255,255,255,0)', lineWidth: 2,
     });
-    // ohlcv 있으면 close 값, 없으면 data/labels
-    let lineData;
-    if (chartData.ohlcv) {
-      lineData = chartData.ohlcv
-        .filter(d => d.time && d.close != null)
-        .sort((a, b) => (a.time > b.time ? 1 : -1))
-        .map(d => ({ time: d.time, value: d.close }));
-    } else {
-      lineData = (chartData.labels || []).map((l, i) => ({
-        time: Math.floor(new Date(l).getTime() / 1000),
-        value: chartData.data[i],
-      })).filter(d => d.time && d.value != null);
-    }
-    tvLineSeries.setData(lineData);
-    tvCandleSeries = null;
+    const ld = chartData.ohlcv
+      ? chartData.ohlcv.filter(d=>d.close!=null).sort((a,b)=>a.time-b.time).map(d=>({time:d.time,value:d.close}))
+      : (chartData.labels||[]).map((l,i)=>({ time:Math.floor(new Date(l).getTime()/1000), value:chartData.data[i] })).filter(d=>d.value!=null);
+    tvSeries.setData(ld);
   }
-
   tvChart.timeScale().fitContent();
-  setupTrendlineCanvas();
-  renderTrendlineCanvas();
+  initTlCanvas();
+  renderTl();
 }
 
-// ── 차트 타입 전환 ─────────────────────────────────────────────────────────────
-function switchChartType(type, btnsContainer) {
+function switchChartType(type, wrap) {
   currentChartType = type;
-  btnsContainer.querySelectorAll('.chart-type-btn').forEach(b => b.classList.remove('active'));
-  btnsContainer.querySelector(`.chart-type-btn:nth-child(${type === 'candle' ? 1 : 2})`).classList.add('active');
-  if (currentChartRawData && currentDef) {
-    const q   = quoteCache[currentDef.id];
-    const sym = currentDef.market === 'kr' ? '₩' : '$';
-    drawChart(currentChartRawData, sym, q?.changePct >= 0);
+  wrap.querySelectorAll('.chart-type-btn').forEach(b=>b.classList.remove('active'));
+  wrap.querySelector(`.chart-type-btn:nth-child(${type==='candle'?1:2})`).classList.add('active');
+  if (rawChartData && currentDef) {
+    const q=quoteCache[currentDef.id]; const sym=currentDef.market==='kr'?'₩':'$';
+    drawChart(rawChartData, sym, q?.changePct>=0);
   }
 }
 
-// ── 범위 변경 ─────────────────────────────────────────────────────────────────
 async function changeRange(range, btn) {
   currentRange = range;
   document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   const cacheKey = `${currentDef.ticker}:${range}`;
-  const q   = quoteCache[currentDef.id];
+  const q = quoteCache[currentDef.id];
   const sym = currentDef.market === 'kr' ? '₩' : '$';
-  if (chartCache[cacheKey]) {
-    drawChart(chartCache[cacheKey], sym, q?.changePct >= 0);
-    return;
-  }
+  if (chartCache[cacheKey]) { drawChart(chartCache[cacheKey], sym, q?.changePct >= 0); return; }
   try {
     const chart = await api(`/api/chart?symbol=${currentDef.ticker}&range=${range}&market=${currentDef.market}`);
     chartCache[cacheKey] = chart;
@@ -2323,198 +2236,82 @@ async function changeRange(range, btn) {
   } catch(e) { console.error(e); }
 }
 
-function rangeLabel(r) {
-  return { '1wk':'1W', '1mo':'1M', '3mo':'3M', '6mo':'6M', '1y':'1Y' }[r] || r;
+function rangeLabel(r) { return { '1wk':'1W','1mo':'1M','3mo':'3M','6mo':'6M','1y':'1Y' }[r]||r; }
+
+// ── 추세선 ─────────────────────────────────────────────────────────────────────
+function toggleTl() {
+  tlMode = !tlMode;
+  const btn=document.getElementById('tlBtn'), cvs=document.getElementById('tlCanvas');
+  if (!btn||!cvs) return;
+  if (tlMode) { btn.classList.add('active'); btn.textContent='✏️ 그리는 중...'; cvs.classList.add('draw-on'); }
+  else { btn.classList.remove('active'); btn.textContent='✏️ 추세선'; cvs.classList.remove('draw-on'); tlDrag=false; tlStart=tlEnd=null; renderTl(); }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// ── 추세선 (Trendline) 기능 ─────────────────────────────────────────────────
-// ══════════════════════════════════════════════════════════════════════════════
-
-function toggleTrendlineMode() {
-  isDrawingMode = !isDrawingMode;
-  const btn    = document.getElementById('trendlineDrawBtn');
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!btn || !canvas) return;
-
-  if (isDrawingMode) {
-    btn.classList.add('active');
-    btn.textContent = '✏️ 그리는 중... (클릭해제)';
-    canvas.classList.add('drawing-mode');
-  } else {
-    btn.classList.remove('active');
-    btn.textContent = '✏️ 추세선';
-    canvas.classList.remove('drawing-mode');
-    isDrawingActive = false;
-    trendlineStartPoint = null;
-    trendlineEndPoint   = null;
-    renderTrendlineCanvas();
-  }
+function initTlCanvas() {
+  const wrap=document.getElementById('tvWrap'), cvs=document.getElementById('tlCanvas');
+  if (!wrap||!cvs) return;
+  cvs.width=wrap.clientWidth; cvs.height=wrap.clientHeight||220;
+  // 리스너 재등록 (clone)
+  const fresh=cvs.cloneNode(false);
+  if (tlMode) fresh.classList.add('draw-on');
+  wrap.replaceChild(fresh, cvs);
+  fresh.addEventListener('mousedown', e=>{ if(!tlMode)return; const p=xy(e,fresh); tlDrag=true; tlStart=p; tlEnd=p; });
+  fresh.addEventListener('mousemove', e=>{ if(!tlMode||!tlDrag)return; tlEnd=xy(e,fresh); renderTl(); });
+  fresh.addEventListener('mouseup',   e=>{ if(!tlMode||!tlDrag)return; tlDrag=false; tlEnd=xy(e,fresh); saveTl(fresh); });
+  fresh.addEventListener('mouseleave',()=>{ if(tlDrag){ tlDrag=false; tlStart=tlEnd=null; renderTl(); } });
+  fresh.addEventListener('touchstart',e=>{ e.preventDefault(); if(!tlMode)return; const p=xy(e.touches[0],fresh); tlDrag=true; tlStart=p; tlEnd=p; },{passive:false});
+  fresh.addEventListener('touchmove', e=>{ e.preventDefault(); if(!tlMode||!tlDrag)return; tlEnd=xy(e.touches[0],fresh); renderTl(); },{passive:false});
+  fresh.addEventListener('touchend',  e=>{ e.preventDefault(); if(!tlMode||!tlDrag)return; tlDrag=false; tlEnd=xy(e.changedTouches[0],fresh); saveTl(fresh); },{passive:false});
 }
 
-function setupTrendlineCanvas() {
-  const wrap   = document.getElementById('tvChartWrap');
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!wrap || !canvas) return;
-
-  // 캔버스 픽셀 크기를 wrap과 동일하게 맞춤
-  canvas.width  = wrap.clientWidth;
-  canvas.height = wrap.clientHeight || 240;
-
-  // 기존 리스너 제거 후 재등록 (클론 교체)
-  const fresh = canvas.cloneNode(false);
-  // drawing-mode 클래스 유지
-  if (isDrawingMode) fresh.classList.add('drawing-mode');
-  wrap.replaceChild(fresh, canvas);
-  setupTrendlineListeners(fresh);
+function xy(e, cvs) {
+  const r=cvs.getBoundingClientRect();
+  return { x:(e.clientX??e.pageX)-r.left, y:(e.clientY??e.pageY)-r.top };
 }
 
-function setupTrendlineListeners(canvas) {
-  canvas.addEventListener('mousedown', onTrendMouseDown);
-  canvas.addEventListener('mousemove', onTrendMouseMove);
-  canvas.addEventListener('mouseup',   onTrendMouseUp);
-  canvas.addEventListener('mouseleave',onTrendMouseLeave);
-  // 터치 지원
-  canvas.addEventListener('touchstart', e => { e.preventDefault(); onTrendMouseDown(e.touches[0]); }, { passive: false });
-  canvas.addEventListener('touchmove',  e => { e.preventDefault(); onTrendMouseMove(e.touches[0]); }, { passive: false });
-  canvas.addEventListener('touchend',   e => { e.preventDefault(); onTrendMouseUp(e.changedTouches[0]); }, { passive: false });
+function saveTl(cvs) {
+  if (!tlStart||!tlEnd) return;
+  const dx=tlEnd.x-tlStart.x, dy=tlEnd.y-tlStart.y;
+  if (Math.sqrt(dx*dx+dy*dy)<5) return;
+  tlLines.push({ ticker:currentDef?.ticker||'',
+    rx1:tlStart.x/cvs.width, ry1:tlStart.y/cvs.height,
+    rx2:tlEnd.x/cvs.width,   ry2:tlEnd.y/cvs.height });
+  localStorage.setItem('tl', JSON.stringify(tlLines));
+  tlStart=tlEnd=null;
+  renderTl();
+  updateTlCount();
 }
 
-function getCanvasXY(e) {
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!canvas) return { x: 0, y: 0 };
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: (e.clientX ?? e.pageX) - rect.left,
-    y: (e.clientY ?? e.pageY) - rect.top,
-  };
-}
-
-function onTrendMouseDown(e) {
-  if (!isDrawingMode) return;
-  const { x, y } = getCanvasXY(e);
-  isDrawingActive     = true;
-  trendlineStartPoint = { x, y };
-  trendlineEndPoint   = { x, y };
-}
-
-function onTrendMouseMove(e) {
-  if (!isDrawingMode || !isDrawingActive) return;
-  const { x, y } = getCanvasXY(e);
-  trendlineEndPoint = { x, y };
-  renderTrendlineCanvas();
-}
-
-function onTrendMouseUp(e) {
-  if (!isDrawingMode || !isDrawingActive) return;
-  isDrawingActive = false;
-  const { x, y } = getCanvasXY(e);
-  trendlineEndPoint = { x, y };
-
-  // 최소 5px 이상 드래그해야 저장
-  const dx = trendlineEndPoint.x - trendlineStartPoint.x;
-  const dy = trendlineEndPoint.y - trendlineStartPoint.y;
-  if (Math.sqrt(dx * dx + dy * dy) > 5) {
-    trendlines.push({
-      ticker: currentDef?.ticker || '',
-      x1: trendlineStartPoint.x, y1: trendlineStartPoint.y,
-      x2: trendlineEndPoint.x,   y2: trendlineEndPoint.y,
-      // 정규화 (전체 캔버스 대비 비율로 저장)
-      rx1: trendlineStartPoint.x / (document.getElementById('trendlineCanvas')?.width  || 1),
-      ry1: trendlineStartPoint.y / (document.getElementById('trendlineCanvas')?.height || 1),
-      rx2: trendlineEndPoint.x   / (document.getElementById('trendlineCanvas')?.width  || 1),
-      ry2: trendlineEndPoint.y   / (document.getElementById('trendlineCanvas')?.height || 1),
-    });
-    localStorage.setItem('trendlines', JSON.stringify(trendlines));
-    updateTrendlineCount();
-  }
-
-  trendlineStartPoint = null;
-  trendlineEndPoint   = null;
-  renderTrendlineCanvas();
-}
-
-function onTrendMouseLeave() {
-  if (!isDrawingActive) return;
-  // 마우스가 캔버스 밖으로 나가면 드래그 취소
-  isDrawingActive     = false;
-  trendlineStartPoint = null;
-  trendlineEndPoint   = null;
-  renderTrendlineCanvas();
-}
-
-function renderTrendlineCanvas() {
-  const canvas = document.getElementById('trendlineCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W   = canvas.width;
-  const H   = canvas.height;
-
-  ctx.clearRect(0, 0, W, H);
-
-  // 현재 종목에 해당하는 추세선만 그리기
-  const currentTicker = currentDef?.ticker || '';
-  const myLines = trendlines.filter(l => l.ticker === currentTicker || l.ticker === '');
-
-  myLines.forEach(line => {
-    // 비율 좌표 → 픽셀 좌표 변환
-    const x1 = (line.rx1 != null ? line.rx1 * W : line.x1);
-    const y1 = (line.ry1 != null ? line.ry1 * H : line.y1);
-    const x2 = (line.rx2 != null ? line.rx2 * W : line.x2);
-    const y2 = (line.ry2 != null ? line.ry2 * H : line.y2);
-    drawTrendlineOnCtx(ctx, x1, y1, x2, y2, '#ff6b00', 2, false);
+function renderTl() {
+  const cvs=document.getElementById('tlCanvas'); if(!cvs) return;
+  const ctx=cvs.getContext('2d'), W=cvs.width, H=cvs.height;
+  ctx.clearRect(0,0,W,H);
+  const tick=currentDef?.ticker||'';
+  tlLines.filter(l=>l.ticker===tick).forEach(l=>{
+    drawLine(ctx, l.rx1*W,l.ry1*H, l.rx2*W,l.ry2*H, '#ff6b00', 2, false);
   });
-
-  // 드래그 중 미리보기 (주황 점선)
-  if (isDrawingActive && trendlineStartPoint && trendlineEndPoint) {
-    drawTrendlineOnCtx(
-      ctx,
-      trendlineStartPoint.x, trendlineStartPoint.y,
-      trendlineEndPoint.x,   trendlineEndPoint.y,
-      '#ff6b00', 2, true
-    );
-  }
+  if (tlDrag&&tlStart&&tlEnd) drawLine(ctx, tlStart.x,tlStart.y, tlEnd.x,tlEnd.y, '#ff6b00', 2, true);
 }
 
-function drawTrendlineOnCtx(ctx, x1, y1, x2, y2, color, lineWidth, dashed) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.strokeStyle = color;
-  ctx.lineWidth   = lineWidth;
-  ctx.lineCap     = 'round';
-  if (dashed) ctx.setLineDash([6, 4]);
-  else        ctx.setLineDash([]);
-
-  // 양 끝 원형 핸들
-  ctx.arc(x1, y1, 3.5, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(x2, y2, 3.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 선 그리기
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
+function drawLine(ctx,x1,y1,x2,y2,color,lw,dashed) {
+  ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.lineCap='round';
+  ctx.setLineDash(dashed?[6,4]:[]);
+  [{ x:x1,y:y1 },{ x:x2,y:y2 }].forEach(p=>{ ctx.beginPath(); ctx.arc(p.x,p.y,3.5,0,Math.PI*2); ctx.fillStyle=color; ctx.fill(); });
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
   ctx.restore();
 }
 
-function clearTrendlines() {
-  const currentTicker = currentDef?.ticker || '';
-  trendlines = trendlines.filter(l => l.ticker !== currentTicker && l.ticker !== '');
-  localStorage.setItem('trendlines', JSON.stringify(trendlines));
-  updateTrendlineCount();
-  renderTrendlineCanvas();
+function clearTl() {
+  const tick=currentDef?.ticker||'';
+  tlLines=tlLines.filter(l=>l.ticker!==tick);
+  localStorage.setItem('tl',JSON.stringify(tlLines));
+  renderTl(); updateTlCount();
 }
 
-function updateTrendlineCount() {
-  const el = document.getElementById('trendlineCount');
-  if (!el) return;
-  const currentTicker = currentDef?.ticker || '';
-  const n = trendlines.filter(l => l.ticker === currentTicker || l.ticker === '').length;
-  el.textContent = n > 0 ? `추세선 ${n}개` : '';
+function updateTlCount() {
+  const el=document.getElementById('tlCount'); if(!el) return;
+  const n=tlLines.filter(l=>l.ticker===currentDef?.ticker).length;
+  el.textContent=n>0?`추세선 ${n}개`:'';
 }
 
 // ── 점수 계산 ─────────────────────────────────────────────────────────────────
