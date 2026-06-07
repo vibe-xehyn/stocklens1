@@ -31,10 +31,10 @@ if ('serviceWorker' in navigator) {
     --accent: #0066CC;
     --accent2: #0077ED;
     --accent-glow: rgba(0, 102, 204, 0.06);
-    --green: #34C759;
-    --green-bg: rgba(52, 199, 89, 0.08);
-    --red: #FF3B30;
-    --red-bg: rgba(255, 59, 48, 0.08);
+    --up-color: #F43F5E;
+    --up-bg: rgba(244, 63, 94, 0.08);
+    --down-color: #0284C7;
+    --down-bg: rgba(2, 132, 199, 0.08);
     --yellow: #FF9500;
     --radius: 18px;
     --radius-sm: 12px;
@@ -132,14 +132,14 @@ if ('serviceWorker' in navigator) {
   }
   .market-val small { font-size: 11px; margin-left: 2px; font-weight: 600; }
   
-  .up { color: var(--green) !important; } 
-  .down { color: var(--red) !important; }
+  .up { color: var(--up-color) !important; } 
+  .down { color: var(--down-color) !important; }
   
   .rate-item { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
   .rate-name { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; }
   
   .header-right { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
-  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--up-color); animation: pulse 2s infinite; }
   .market-status { 
     display: flex; align-items: center; gap: 10px; 
     background: rgba(255, 255, 255, 0.03); 
@@ -234,7 +234,7 @@ if ('serviceWorker' in navigator) {
   @keyframes shimmer { to { background-position: -200% 0; } }
   @keyframes indeterminate { 0% { left:-40%; width:40%; } 50% { left:30%; width:50%; } 100% { left:100%; width:40%; } }
   .progress-indet { position:relative; width:100%; height:4px; background:rgba(0,0,0,0.02); border-radius:99px; overflow:hidden; }
-  .progress-indet > span { position:absolute; top:0; bottom:0; background:linear-gradient(90deg, var(--accent), var(--green)); border-radius:99px; animation: indeterminate 1.4s ease-in-out infinite; }
+  .progress-indet > span { position:absolute; top:0; bottom:0; background:linear-gradient(90deg, var(--accent), var(--up-color)); border-radius:99px; animation: indeterminate 1.4s ease-in-out infinite; }
  
   main { padding: 28px; overflow-y: auto; background: var(--bg); }
  
@@ -343,9 +343,9 @@ if ('serviceWorker' in navigator) {
   .ind-val { font-weight: 700; text-align: right; }
   .ind-grade { text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
   
-  .grade-good { color: var(--green); } 
+  .grade-good { color: var(--up-color); } 
   .grade-neutral { color: var(--yellow); } 
-  .grade-bad { color: var(--red); }
+  .grade-bad { color: var(--down-color); }
 
   .news-item { padding: 16px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: all 0.2s; }
   .news-item:last-child { border-bottom: none; }
@@ -447,7 +447,7 @@ if ('serviceWorker' in navigator) {
   }
   .ai-card::before {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, var(--accent), var(--green));
+    background: linear-gradient(90deg, var(--accent), var(--up-color));
   }
   .ai-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; gap: 16px; flex-wrap: wrap; }
   .ai-title { font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
@@ -488,7 +488,7 @@ if ('serviceWorker' in navigator) {
 
   .error-box {
     background: rgba(244,63,94,0.06); border: 1px solid rgba(244,63,94,0.15);
-    border-radius: 12px; padding: 14px 20px; color: var(--red); font-size: 13.5px; margin-bottom: 20px;
+    border-radius: 12px; padding: 14px 20px; color: var(--down-color); font-size: 13.5px; margin-bottom: 20px;
   }
   .loading-overlay {
     display: flex; align-items: center; justify-content: center;
@@ -684,7 +684,7 @@ if ('serviceWorker' in navigator) {
     background: transparent; color: var(--text2);
   }
   .modal-seg-btn.active-buy { background: rgba(52,199,89,0.12); color: #34C759; border: 1px solid rgba(52,199,89,0.2); }
-  .modal-seg-btn.active-sell { background: rgba(255,59,48,0.12); color: var(--red); border: 1px solid rgba(255,59,48,0.2); }
+  .modal-seg-btn.active-sell { background: rgba(255,59,48,0.12); color: var(--down-color); border: 1px solid rgba(255,59,48,0.2); }
   .modal-price-tag {
     display: inline-block; padding: 5px 12px; background: rgba(0, 0, 0, 0.02);
     border-radius: var(--radius-sm); font-size: 13px; color: var(--text2); margin-top: 8px; border: 1px solid var(--border);
@@ -962,7 +962,7 @@ function renderRates() {
   if (!el || !ratesCache) return;
   const r = ratesCache;
   const fmt = (v, d=2) => v != null ? v.toFixed(d) : '-';
-  const chgColor = c => c > 0 ? 'var(--red)' : c < 0 ? 'var(--green)' : 'var(--muted)';
+  const chgColor = c => c > 0 ? 'var(--down-color)' : c < 0 ? 'var(--up-color)' : 'var(--muted)';
   el.innerHTML = [
     r.usdkrw ? `<span class="rate-item"><span class="rate-name">USD/KRW</span> <span style="font-weight:700">${fmt(r.usdkrw.value,0)}원</span> <span style="color:${chgColor(r.usdkrw.change)};font-size:10px">${r.usdkrw.change>0?'▲':'▼'}${Math.abs(r.usdkrw.change).toFixed(2)}%</span></span>` : '',
     r.dxy    ? `<span class="rate-item"><span class="rate-name">DXY</span> <span style="font-weight:700">${fmt(r.dxy.value)}</span> <span style="color:${chgColor(r.dxy.change)};font-size:10px">${r.dxy.change>0?'▲':'▼'}${Math.abs(r.dxy.change).toFixed(2)}%</span></span>` : '',
@@ -1148,12 +1148,12 @@ function updateTradingBadge() {
   const dotKr = document.getElementById('dotKr');
   const dotUs = document.getElementById('dotUs');
   if (dotKr) {
-    dotKr.style.background = krActive ? 'var(--green)' : 'var(--red)';
+    dotKr.style.background = krActive ? 'var(--up-color)' : 'var(--down-color)';
     dotKr.style.animation = krActive ? 'pulse 2s infinite' : 'none';
     dotKr.title = krActive ? '한국 장중' : '한국 장마감';
   }
   if (dotUs) {
-    dotUs.style.background = usActive ? 'var(--green)' : 'var(--red)';
+    dotUs.style.background = usActive ? 'var(--up-color)' : 'var(--down-color)';
     dotUs.style.animation = usActive ? 'pulse 2s infinite' : 'none';
     dotUs.title = usActive ? '미국 장중' : '미국 장마감';
   }
@@ -1302,7 +1302,7 @@ async function doSearch(q) {
     }
     el.innerHTML = html;
   } catch(e) {
-    el.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--red)">검색 오류: ${e.message}</div>`;
+    el.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--down-color)">검색 오류: ${e.message}</div>`;
   }
 }
 
@@ -1375,7 +1375,7 @@ async function loadAndRenderMain(def) {
         ${remaining ? `<div style="font-size:11px;margin-top:4px;opacity:0.7">대기: ${remaining}</div>` : ''}
       </div>
       <div style="width:100%;max-width:320px;height:6px;background:rgba(148,163,184,0.18);border-radius:3px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#3b82f6,#22c55e);transition:width 0.25s ease"></div>
+        <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#3b82f6,#F43F5E);transition:width 0.25s ease"></div>
       </div>`;
   };
   const tick = (key) => { done.add(key); paint(); };
@@ -1637,7 +1637,7 @@ function renderMain(def, q, chart, news) {
         <div style="margin-top:12px">
           <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--muted)">52주 가격 위치</div>
           <div style="position:relative;height:14px;background:var(--border);border-radius:7px;overflow:hidden">
-            <div style="position:absolute;left:0;top:0;height:100%;width:${range52pct(q)}%;background:linear-gradient(90deg,var(--accent),#22c55e);border-radius:7px"></div>
+            <div style="position:absolute;left:0;top:0;height:100%;width:${range52pct(q)}%;background:linear-gradient(90deg,var(--accent),#F43F5E);border-radius:7px"></div>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:3px">
             <span>${sym}${q.low52?.toLocaleString(undefined,{maximumFractionDigits:0})??'-'}</span>
@@ -1696,7 +1696,7 @@ function renderFactorHTML(breakdown, score, signal, reasons) {
     { key:'sentiment', label:'심리',   max:15, color:'#fb923c' },
     { key:'macro',     label:'매크로', max:15, color:'#94a3b8' },
   ];
-  const signalColor = signal?.includes('매수') ? 'var(--green)' : signal?.includes('매도') ? 'var(--red)' : 'var(--yellow)';
+  const signalColor = signal?.includes('매수') ? 'var(--up-color)' : signal?.includes('매도') ? 'var(--down-color)' : 'var(--yellow)';
 
   const bars = factors.map(f => {
     const v = breakdown[f.key] ?? 0;
@@ -1713,7 +1713,7 @@ function renderFactorHTML(breakdown, score, signal, reasons) {
           ${pos ? `<div style="height:10px;width:${pct}%;background:${f.color};border-radius:0 3px 3px 0;min-width:${pct>0?2:0}px"></div>` : ''}
         </div>
       </div>
-      <div style="width:36px;font-size:11px;font-weight:700;color:${pos?'var(--green)':'var(--red)'};text-align:left;flex-shrink:0">${pos?'+':''}${v}</div>
+      <div style="width:36px;font-size:11px;font-weight:700;color:${pos?'var(--up-color)':'var(--down-color)'};text-align:left;flex-shrink:0">${pos?'+':''}${v}</div>
     </div>`;
   }).join('');
 
@@ -1760,17 +1760,17 @@ function renderEarningsHTML(d, isKr, sym) {
       <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:10px">애널리스트 추천 (${total}명)</div>
       <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
         <div style="flex:1;background:var(--surface2);border-radius:6px;overflow:hidden;height:10px;display:flex">
-          <div style="width:${buyPct}%;background:var(--green)"></div>
+          <div style="width:${buyPct}%;background:var(--up-color)"></div>
           <div style="width:${holdPct}%;background:var(--yellow)"></div>
-          <div style="width:${sellPct}%;background:var(--red)"></div>
+          <div style="width:${sellPct}%;background:var(--down-color)"></div>
         </div>
       </div>
       <div style="display:flex;gap:16px;font-size:12px">
-        <span><span style="color:var(--green);font-weight:700">${d.recStrongBuy||0}</span> 강력매수</span>
-        <span><span style="color:var(--green)">${d.recBuy||0}</span> 매수</span>
+        <span><span style="color:var(--up-color);font-weight:700">${d.recStrongBuy||0}</span> 강력매수</span>
+        <span><span style="color:var(--up-color)">${d.recBuy||0}</span> 매수</span>
         <span><span style="color:var(--yellow)">${d.recHold||0}</span> 중립</span>
-        <span><span style="color:var(--red)">${d.recSell||0}</span> 매도</span>
-        <span><span style="color:var(--red);font-weight:700">${d.recStrongSell||0}</span> 강력매도</span>
+        <span><span style="color:var(--down-color)">${d.recSell||0}</span> 매도</span>
+        <span><span style="color:var(--down-color);font-weight:700">${d.recStrongSell||0}</span> 강력매도</span>
       </div>
     </div>`;
   }
@@ -1782,10 +1782,10 @@ function renderEarningsHTML(d, isKr, sym) {
     html += `<div>
       <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:10px">목표주가 분포</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap">
-        <div style="text-align:center"><div style="font-size:10px;color:var(--muted)">최저</div><div style="font-weight:700;color:var(--red)">${sym}${(d.targetLow||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--muted)">최저</div><div style="font-weight:700;color:var(--down-color)">${sym}${(d.targetLow||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
         <div style="text-align:center"><div style="font-size:10px;color:var(--muted)">평균</div><div style="font-weight:700;color:var(--accent);font-size:16px">${sym}${(d.targetMean||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--muted)">최고</div><div style="font-weight:700;color:var(--green)">${sym}${(d.targetHigh||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
-        ${upside ? `<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">상승여력</div><div style="font-weight:700;color:${parseFloat(upside)>0?'var(--green)':'var(--red)'}">${upside}%</div></div>` : ''}
+        <div style="text-align:center"><div style="font-size:10px;color:var(--muted)">최고</div><div style="font-weight:700;color:var(--up-color)">${sym}${(d.targetHigh||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+        ${upside ? `<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">상승여력</div><div style="font-weight:700;color:${parseFloat(upside)>0?'var(--up-color)':'var(--down-color)'}">${upside}%</div></div>` : ''}
       </div>
     </div>`;
   }
@@ -1800,7 +1800,7 @@ function renderEarningsHTML(d, isKr, sym) {
       </div>` : ''}
       ${d.dividendDate && d.dividendDate !== 'None' ? `<div style="background:var(--surface2);border-radius:8px;padding:10px 14px">
         <div style="font-size:10px;color:var(--muted);font-weight:700">배당지급일 / 배당락일</div>
-        <div style="font-weight:700;margin-top:4px;color:var(--green)">${d.dividendDate}</div>
+        <div style="font-weight:700;margin-top:4px;color:var(--up-color)">${d.dividendDate}</div>
         ${d.exDividendDate ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">배당락: ${d.exDividendDate}</div>` : ''}
       </div>` : ''}
     </div>`;
@@ -1815,8 +1815,8 @@ function renderEarningsHTML(d, isKr, sym) {
           const beat = e.surprise > 0;
           const barH = Math.min(100, Math.abs(e.surprise * 3) + 20);
           return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
-            <div style="font-size:9px;color:${beat?'var(--green)':'var(--red)'};font-weight:700">${e.surprise>0?'+':''}${e.surprise?.toFixed(1)}%</div>
-            <div style="width:100%;height:${barH}px;background:${beat?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'};border-radius:3px;border-bottom:2px solid ${beat?'var(--green)':'var(--red)'}"></div>
+            <div style="font-size:9px;color:${beat?'var(--up-color)':'var(--down-color)'};font-weight:700">${e.surprise>0?'+':''}${e.surprise?.toFixed(1)}%</div>
+            <div style="width:100%;height:${barH}px;background:${beat?'rgba(244,63,94,0.3)':'rgba(2,132,199,0.3)'};border-radius:3px;border-bottom:2px solid ${beat?'var(--up-color)':'var(--down-color)'}"></div>
             <div style="font-size:9px;color:var(--muted);white-space:nowrap">${(e.date||'').slice(0,7)}</div>
           </div>`;
         }).join('')}
@@ -1857,7 +1857,7 @@ function renderPeersHTML(d, sym) {
         if (v === null) return '';
         const pct = Math.min(100, Math.abs(v) / maxAbs * 100);
         const good = isGoodHigh ? v > 0 : v < 0;
-        const color = p.isMain ? 'var(--accent)' : (good ? 'var(--green)' : 'var(--red)');
+        const color = p.isMain ? 'var(--accent)' : (good ? 'var(--up-color)' : 'var(--down-color)');
         return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
           <div style="width:52px;font-size:10px;${p.isMain?'font-weight:700;color:var(--text)':'color:var(--muted)'};text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">${peerLabel(p)}</div>
           <div style="flex:1;background:var(--surface2);border-radius:3px;height:10px">
@@ -1899,11 +1899,11 @@ function renderPeersHTML(d, sym) {
                 <div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px">${isKr ? (p.name||p.ticker) : p.ticker}</div>
                 <div style="font-size:10px;color:var(--muted)">${isKr ? p.ticker : p.name}</div>
               </td>
-              <td style="text-align:right;padding:8px;color:${up?'var(--green)':'var(--red)'};font-weight:700">${up?'+':''}${fmt(p.changePct)}%</td>
-              <td style="text-align:right;padding:8px">${p.per ? fmt(p.per)+'x' : p.forwardPer ? `<span style="color:var(--muted)">${fmt(p.forwardPer)}x<sup style="font-size:8px">선행</sup></span>` : (p.profitMargin != null && p.profitMargin < 0 ? '<span style="color:var(--red)">적자</span>' : 'N/A')}</td>
+              <td style="text-align:right;padding:8px;color:${up?'var(--up-color)':'var(--down-color)'};font-weight:700">${up?'+':''}${fmt(p.changePct)}%</td>
+              <td style="text-align:right;padding:8px">${p.per ? fmt(p.per)+'x' : p.forwardPer ? `<span style="color:var(--muted)">${fmt(p.forwardPer)}x<sup style="font-size:8px">선행</sup></span>` : (p.profitMargin != null && p.profitMargin < 0 ? '<span style="color:var(--down-color)">적자</span>' : 'N/A')}</td>
               <td style="text-align:right;padding:8px">${p.pbr ? fmt(p.pbr)+'x' : 'N/A'}</td>
-              <td style="text-align:right;padding:8px;color:${(p.roe||0)>15?'var(--green)':'var(--text)'}">${p.roe ? fmt(p.roe)+'%' : 'N/A'}</td>
-              <td style="text-align:right;padding:8px;color:${(p.revenueGrowth||0)>0?'var(--green)':'var(--red)'}">${p.revenueGrowth ? (p.revenueGrowth>0?'+':'')+fmt(p.revenueGrowth)+'%' : 'N/A'}</td>
+              <td style="text-align:right;padding:8px;color:${(p.roe||0)>15?'var(--up-color)':'var(--text)'}">${p.roe ? fmt(p.roe)+'%' : 'N/A'}</td>
+              <td style="text-align:right;padding:8px;color:${(p.revenueGrowth||0)>0?'var(--up-color)':'var(--down-color)'}">${p.revenueGrowth ? (p.revenueGrowth>0?'+':'')+fmt(p.revenueGrowth)+'%' : 'N/A'}</td>
               <td style="text-align:right;padding:8px">${p.profitMargin ? fmt(p.profitMargin)+'%' : 'N/A'}</td>
               <td style="text-align:right;padding:8px;color:var(--muted)">${fmtCap(p.marketCap)}</td>
             </tr>`;
@@ -1942,7 +1942,7 @@ function renderFlowHTML(d, isUs) {
       </div>` : ''}
       ${isUs && d.shortPct != null ? `<div style="display:flex;justify-content:space-between;font-size:13px">
         <span style="color:var(--muted)">공매도 비율</span>
-        <span style="font-weight:700;color:${d.shortPct > 5 ? 'var(--red)' : 'var(--text)'}">${pct(d.shortPct)}</span>
+        <span style="font-weight:700;color:${d.shortPct > 5 ? 'var(--down-color)' : 'var(--text)'}">${pct(d.shortPct)}</span>
       </div>` : ''}
       ${isUs && d.shortRatio != null ? `<div style="display:flex;justify-content:space-between;font-size:13px">
         <span style="color:var(--muted)">공매도 일수</span>
@@ -1957,7 +1957,7 @@ function renderFlowHTML(d, isUs) {
       <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px;text-transform:uppercase">주요 기관투자자</div>
       <div style="display:flex;flex-direction:column;gap:5px">
         ${d.topHolders.map(h => {
-          const chgColor = h.chg > 0 ? 'var(--green)' : h.chg < 0 ? 'var(--red)' : 'var(--muted)';
+          const chgColor = h.chg > 0 ? 'var(--up-color)' : h.chg < 0 ? 'var(--down-color)' : 'var(--muted)';
           const chgArrow = h.chg > 0 ? '▲' : h.chg < 0 ? '▼' : '─';
           return `<div style="font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px">
             <span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${h.name}">${h.name}</span>
@@ -1976,7 +1976,7 @@ function renderFlowHTML(d, isUs) {
       <div style="display:flex;flex-direction:column;gap:6px">
         ${d.insiderTx.map(tx => {
           const isSell = (tx.type || '').toLowerCase().includes('sell') || (tx.type || '').includes('매도');
-          const color = isSell ? 'var(--red)' : 'var(--green)';
+          const color = isSell ? 'var(--down-color)' : 'var(--up-color)';
           return `<div style="font-size:12px;border-left:2px solid ${color};padding-left:8px">
             <div style="font-weight:600;color:var(--text)">${tx.name}</div>
             <div style="color:var(--muted);font-size:11px">${tx.title}</div>
@@ -1994,22 +1994,22 @@ function renderFlowHTML(d, isUs) {
   if (isUs && d.options) {
     const o = d.options;
     const pcRatio = o.putCallRatio;
-    const pcColor = pcRatio > 1.2 ? 'var(--red)' : pcRatio < 0.7 ? 'var(--green)' : 'var(--yellow)';
+    const pcColor = pcRatio > 1.2 ? 'var(--down-color)' : pcRatio < 0.7 ? 'var(--up-color)' : 'var(--yellow)';
     const totalOI = (o.callOI || 0) + (o.putOI || 0);
     const callPct = totalOI > 0 ? Math.round(o.callOI / totalOI * 100) : 50;
     html += `<div>
       <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px;text-transform:uppercase">옵션 현황 (${o.expiry})</div>
       <div style="display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;justify-content:space-between;font-size:13px">
-          <span style="color:var(--green)">콜 OI</span>
+          <span style="color:var(--up-color)">콜 OI</span>
           <span style="font-weight:700">${num(o.callOI)}</span>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:13px">
-          <span style="color:var(--red)">풋 OI</span>
+          <span style="color:var(--down-color)">풋 OI</span>
           <span style="font-weight:700">${num(o.putOI)}</span>
         </div>
         <div style="background:var(--surface2);border-radius:4px;overflow:hidden;height:6px;margin:2px 0">
-          <div style="width:${callPct}%;background:var(--green);height:100%"></div>
+          <div style="width:${callPct}%;background:var(--up-color);height:100%"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:13px">
           <span style="color:var(--muted)">풋/콜 비율</span>
@@ -2022,11 +2022,11 @@ function renderFlowHTML(d, isUs) {
         ${o.maxCallStrike != null ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
           <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px">최대 OI 행사가</div>
           <div style="display:flex;justify-content:space-between;font-size:12px">
-            <span style="color:var(--green)">콜 $${o.maxCallStrike.toLocaleString()}</span>
+            <span style="color:var(--up-color)">콜 $${o.maxCallStrike.toLocaleString()}</span>
             <span style="color:var(--muted)">${(o.maxCallOI||0).toLocaleString()}계약</span>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:3px">
-            <span style="color:var(--red)">풋 $${o.maxPutStrike.toLocaleString()}</span>
+            <span style="color:var(--down-color)">풋 $${o.maxPutStrike.toLocaleString()}</span>
             <span style="color:var(--muted)">${(o.maxPutOI||0).toLocaleString()}계약</span>
           </div>
         </div>` : ''}
@@ -2052,7 +2052,7 @@ function _aiCardSignalHTML(data, up) {
     '약매도': '소폭 매도 우위 — 신규 진입 자제', '매도': '매도 우위 — 비중 축소 고려',
     '강력매도': '강한 매도 신호 — 손절/매도 고려'
   }[data.signal] || '관망';
-  const confColor = data.confidence >= 70 ? '#22c55e' : data.confidence >= 50 ? '#f59e0b' : '#ef4444';
+  const confColor = data.confidence >= 70 ? '#F43F5E' : data.confidence >= 50 ? '#f59e0b' : '#0284C7';
   return `
     <div class="ai-header">
       <div class="ai-title">투자 의견 <span class="ai-badge">AI 분석</span></div>
@@ -2069,9 +2069,9 @@ function _aiCardSignalHTML(data, up) {
     </div>
     ${data.price_move ? `
     <div style="padding:10px 14px;border-radius:8px;margin-bottom:12px;line-height:1.65;
-      background:${up?'rgba(34,197,94,0.07)':'rgba(239,68,68,0.07)'};font-size:14px;
-      border-left:3px solid ${up?'var(--green)':'var(--red)'};color:var(--text)">
-      <span style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'▲ 상승':'▼ 하락'} 원인</span>&nbsp;${data.price_move}
+      background:${up?'rgba(244,63,94,0.07)':'rgba(2,132,199,0.07)'};font-size:14px;
+      border-left:3px solid ${up?'var(--up-color)':'var(--down-color)'};color:var(--text)">
+      <span style="font-weight:700;color:${up?'var(--up-color)':'var(--down-color)'}">${up?'▲ 상승':'▼ 하락'} 원인</span>&nbsp;${data.price_move}
     </div>` : ''}`;
 }
 
@@ -2179,7 +2179,7 @@ function drawChart(chartData, sym, up) {
   if (tvChart) { try { tvChart.remove(); } catch(e) {} tvChart = null; tvSeries = null; }
   cont.innerHTML = '';
 
-  const upC = '#22c55e', dnC = '#ef4444';
+  const upC = '#F43F5E', dnC = '#0284C7';
   tvChart = LightweightCharts.createChart(cont, {
     width: cont.clientWidth || cont.parentElement.clientWidth,
     height: 220,
@@ -2198,7 +2198,7 @@ function drawChart(chartData, sym, up) {
   } else {
     tvSeries = tvChart.addAreaSeries({
       lineColor: up ? upC : dnC,
-      topColor:  up ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)',
+      topColor:  up ? 'rgba(244,63,94,0.18)' : 'rgba(2,132,199,0.18)',
       bottomColor: 'rgba(255,255,255,0)', lineWidth: 2,
     });
     const ld = chartData.ohlcv
@@ -2358,7 +2358,7 @@ function scoreHTML(score) {
 }
 
 function scoreColor(s) {
-  return s >= 70 ? '#22c55e' : s >= 50 ? '#f59e0b' : '#ef4444';
+  return s >= 70 ? '#F43F5E' : s >= 50 ? '#f59e0b' : '#0284C7';
 }
 
 // ── 관심종목 ──────────────────────────────────────────────────────────────────
@@ -2414,7 +2414,7 @@ function range52pct(q) {
 
 function metricCard(label, val, sub, cls, raw, min, max) {
   const pct = raw != null ? Math.min(100, Math.max(0, ((raw - min) / (max - min)) * 100)) : 50;
-  const color = cls === 'grade-good' ? 'var(--green)' : cls === 'grade-neutral' ? 'var(--yellow)' : cls === 'grade-bad' ? 'var(--red)' : 'var(--text)';
+  const color = cls === 'grade-good' ? 'var(--up-color)' : cls === 'grade-neutral' ? 'var(--yellow)' : cls === 'grade-bad' ? 'var(--down-color)' : 'var(--text)';
   return `<div class="card">
     <div class="card-label">${label}</div>
     <div class="card-value" style="color:${color}">${val ?? 'N/A'}</div>
@@ -2470,8 +2470,8 @@ async function renderIndexDetail(m, range) {
           <div style="color:var(--muted);font-size:13px;margin-top:4px">${isKr?'한국 시장 지수':'미국 시장 지수'}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:36px;font-weight:800;color:${up?'var(--green)':'var(--red)'}">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-          <div style="font-size:16px;font-weight:600;color:${up?'var(--green)':'var(--red)'}">
+          <div style="font-size:36px;font-weight:800;color:${up?'var(--up-color)':'var(--down-color)'}">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+          <div style="font-size:16px;font-weight:600;color:${up?'var(--up-color)':'var(--down-color)'}">
             ${up?'▲':'▼'} ${Math.abs(m.change).toFixed(2)}%
           </div>
         </div>
@@ -2504,9 +2504,9 @@ async function renderIndexDetail(m, range) {
     wrap.innerHTML = '<canvas id="idxChart" height="200"></canvas>';
     if (indexChart) indexChart.destroy();
     const ctx = document.getElementById('idxChart').getContext('2d');
-    const color = up ? '#22c55e' : '#ef4444';
+    const color = up ? '#F43F5E' : '#0284C7';
     const gradient = ctx.createLinearGradient(0,0,0,260);
-    gradient.addColorStop(0, up?'rgba(34,197,94,0.2)':'rgba(239,68,68,0.2)');
+    gradient.addColorStop(0, up?'rgba(244,63,94,0.2)':'rgba(2,132,199,0.2)');
     gradient.addColorStop(1,'rgba(255,255,255,0)');
     indexChart = new Chart(ctx, {
       type:'line',
@@ -2567,9 +2567,9 @@ async function changeIndexRange(range, btn) {
     if (indexChart) indexChart.destroy();
     const up = currentIndexData.change >= 0;
     const ctx = document.getElementById('idxChart').getContext('2d');
-    const color = up ? '#22c55e' : '#ef4444';
+    const color = up ? '#F43F5E' : '#0284C7';
     const gradient = ctx.createLinearGradient(0,0,0,260);
-    gradient.addColorStop(0, up?'rgba(34,197,94,0.2)':'rgba(239,68,68,0.2)');
+    gradient.addColorStop(0, up?'rgba(244,63,94,0.2)':'rgba(2,132,199,0.2)');
     gradient.addColorStop(1,'rgba(255,255,255,0)');
     indexChart = new Chart(ctx, {
       type:'line',
@@ -2590,7 +2590,7 @@ function chunkArray(arr, size) {
 }
 
 function recColor(r) {
-  return { 'strongBuy':'#22c55e','buy':'#86efac','hold':'#f59e0b','underperform':'#f97316','sell':'#ef4444' }[r] || 'var(--muted)';
+  return { 'strongBuy':'#F43F5E','buy':'#86efac','hold':'#f59e0b','underperform':'#f97316','sell':'#0284C7' }[r] || 'var(--muted)';
 }
 function recLabel(r) {
   return { 'strongBuy':'강력 매수','buy':'매수','hold':'보유','underperform':'시장하회','sell':'매도' }[r] || r;
@@ -2673,14 +2673,15 @@ async function renderHome(opts = {}) {
   // 항상 즉시 렌더 — 데이터 없으면 빈 상태로 표시
   // 백그라운드에서 데이터 갱신 후 해당 영역만 업데이트
   if (!opts.skipFetch) {
-    Promise.all([api('/api/indices'), api('/api/macro')]).then(([ni, nm]) => {
-      if (ni?.length) indicesCache = ni;
-      if (nm && Object.keys(nm).length) macroCache = nm;
+    Promise.allSettled([api('/api/indices'), api('/api/macro')]).then(results => {
+      const idxRes = results[0], macroRes = results[1];
+      if (idxRes.status === 'fulfilled' && idxRes.value?.length) indicesCache = idxRes.value;
+      if (macroRes.status === 'fulfilled' && macroRes.value && Object.keys(macroRes.value).length) macroCache = macroRes.value;
       const idxEl = document.getElementById('homeIndices');
       if (idxEl) idxEl.innerHTML = buildIdxHTML(indicesCache);
       const macroEl = document.getElementById('homeMacro');
       if (macroEl) macroEl.innerHTML = renderMacroDashboard(macroCache);
-    }).catch(() => {});
+    });
   }
 
   const all = STOCK_DEFS.map(d => ({ ...d, ...(sidebarCache[d.id] || {}) })).filter(d => d.price);
@@ -2807,11 +2808,16 @@ async function renderHome(opts = {}) {
 }
 
 function renderMacroDashboard(m) {
-  if (!m || !Object.keys(m).length) return '';
+  if (!m || !Object.keys(m).length) {
+    return `<div class="card" style="margin-bottom:24px">
+      <div class="home-section-title" style="margin-bottom:12px">글로벌 매크로 대시보드</div>
+      <div style="padding:20px;text-align:center;color:var(--muted);font-size:14px">데이터를 불러오는 중입니다...</div>
+    </div>`;
+  }
   const item = (label, key, isRate=false, prefix='', suffix='') => {
     const d = m[key]; if (!d) return '';
     const up = d.change >= 0;
-    const chgColor = isRate ? (up?'var(--red)':'var(--green)') : (up?'var(--green)':'var(--red)');
+    const chgColor = isRate ? (up?'var(--down-color)':'var(--up-color)') : (up?'var(--up-color)':'var(--down-color)');
     return `<div style="background:var(--surface2);border-radius:8px;padding:10px 12px">
       <div style="font-size:10px;color:var(--muted);font-weight:700">${label}</div>
       <div style="font-weight:700;font-size:14px;margin-top:4px">${prefix}${d.value.toLocaleString(undefined,{maximumFractionDigits:2})}${suffix}</div>
@@ -2819,7 +2825,7 @@ function renderMacroDashboard(m) {
     </div>`;
   };
   const vix = m.vix;
-  const vixLevel = vix ? (vix.value < 15 ? {label:'극도 탐욕',color:'var(--green)'} : vix.value < 20 ? {label:'탐욕',color:'#86efac'} : vix.value < 30 ? {label:'중립',color:'var(--yellow)'} : vix.value < 40 ? {label:'공포',color:'var(--red)'} : {label:'극도 공포',color:'#ef4444'}) : null;
+  const vixLevel = vix ? (vix.value < 15 ? {label:'극도 탐욕',color:'var(--up-color)'} : vix.value < 20 ? {label:'탐욕',color:'#86efac'} : vix.value < 30 ? {label:'중립',color:'var(--yellow)'} : vix.value < 40 ? {label:'공포',color:'var(--down-color)'} : {label:'극도 공포',color:'#0284C7'}) : null;
 
   return `<div class="card" style="margin-bottom:24px">
     <div class="home-section-title" style="margin-bottom:12px">글로벌 매크로 대시보드</div>
@@ -2970,7 +2976,7 @@ function renderYieldCurve(m) {
   const vals = pts.map(p => m[p.key].value);
   const spread = m.us10y && m.us3m ? (m.us10y.value - m.us3m.value).toFixed(2) : null;
   const inverted = spread !== null && parseFloat(spread) < 0;
-  const color = inverted ? 'var(--red)' : 'var(--green)';
+  const color = inverted ? 'var(--down-color)' : 'var(--up-color)';
   const spreadSpan = spread !== null
     ? '<span style="margin-left:8px;color:' + color + '">' + (inverted ? '⚠ 역전됨 ' : '') + '10Y-3M 스프레드 ' + (spread > 0 ? '+' : '') + spread + '%p</span>'
     : '';
@@ -3007,9 +3013,9 @@ function renderPortfolioCard(allStocks) {
         <div style="font-size:11px;color:var(--muted)">${p.name}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${pnl.toLocaleString(undefined,{maximumFractionDigits:0})} (${pnlPct.toFixed(1)}%)</div>
+        <div style="font-weight:700;color:${up?'var(--up-color)':'var(--down-color)'}">${up?'+':''}${pnl.toLocaleString(undefined,{maximumFractionDigits:0})} (${pnlPct.toFixed(1)}%)</div>
         ${p.market==='us' ? `<div style="font-size:10px;color:var(--muted)">≈ ₩${pnlKrw.toLocaleString(undefined,{maximumFractionDigits:0})}</div>` : ''}
-        <button onclick="removeFromPortfolio(${i})" style="font-size:10px;color:var(--red);background:none;border:none;cursor:pointer;padding:0">삭제</button>
+        <button onclick="removeFromPortfolio(${i})" style="font-size:10px;color:var(--down-color);background:none;border:none;cursor:pointer;padding:0">삭제</button>
       </div>
     </div>`;
   });
@@ -3026,7 +3032,7 @@ function renderPortfolioCard(allStocks) {
     ${portfolio.length ? `
       <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:12px">
         <div style="font-size:11px;color:var(--muted)">총 손익 (원화 환산)</div>
-        <div style="font-size:20px;font-weight:800;color:${totalKrw>=0?'var(--green)':'var(--red)'}">₩${totalKrw.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div style="font-size:20px;font-weight:800;color:${totalKrw>=0?'var(--up-color)':'var(--down-color)'}">₩${totalKrw.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
       </div>
       ${rows.join('')}
     ` : '<div style="color:var(--muted);font-size:13px;padding:8px 0">종목 상세에서 포트폴리오에 추가하세요</div>'}
@@ -3042,12 +3048,12 @@ function renderAlertsCard(allStocks) {
     const hit = cur && (a.type==='above' ? cur >= a.targetPrice : cur <= a.targetPrice);
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
       <div>
-        <div style="font-weight:700;font-size:13px">${a.ticker} <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${a.type==='above'?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)'};color:${a.type==='above'?'var(--green)':'var(--red)'}">${a.type==='above'?'목표가':'손절가'}</span></div>
+        <div style="font-weight:700;font-size:13px">${a.ticker} <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${a.type==='above'?'rgba(244,63,94,0.15)':'rgba(2,132,199,0.15)'};color:${a.type==='above'?'var(--up-color)':'var(--down-color)'}">${a.type==='above'?'목표가':'손절가'}</span></div>
         <div style="font-size:11px;color:var(--muted)">${sym(a)}${a.targetPrice.toLocaleString()} | 현재 ${cur ? sym(a)+cur.toLocaleString(undefined,{maximumFractionDigits:2}) : '로딩'}</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        ${hit ? '<span style="font-size:11px;color:var(--green);font-weight:700">달성!</span>' : ''}
-        <button onclick="removeAlert(${i})" style="font-size:10px;color:var(--red);background:none;border:none;cursor:pointer">삭제</button>
+        ${hit ? '<span style="font-size:11px;color:var(--up-color);font-weight:700">달성!</span>' : ''}
+        <button onclick="removeAlert(${i})" style="font-size:10px;color:var(--down-color);background:none;border:none;cursor:pointer">삭제</button>
       </div>
     </div>`;
   });
@@ -3068,10 +3074,10 @@ let _loadingBuySignals = false;
 
 const SIG_STYLE = {
   '강력매수': { border:'rgba(22,163,74,0.5)',  bg:'rgba(22,163,74,0.08)',  color:'#16a34a', icon:'▲▲' },
-  '매수':     { border:'rgba(34,197,94,0.3)',  bg:'rgba(34,197,94,0.05)',  color:'#22c55e', icon:'▲' },
+  '매수':     { border:'rgba(244,63,94,0.3)',  bg:'rgba(244,63,94,0.05)',  color:'#F43F5E', icon:'▲' },
   '약매수':   { border:'rgba(134,239,172,0.3)',bg:'rgba(134,239,172,0.04)',color:'#86efac', icon:'△' },
   '강력매도': { border:'rgba(220,38,38,0.5)',  bg:'rgba(220,38,38,0.08)',  color:'#dc2626', icon:'▼▼' },
-  '매도':     { border:'rgba(239,68,68,0.3)',  bg:'rgba(239,68,68,0.05)',  color:'#ef4444', icon:'▼' },
+  '매도':     { border:'rgba(2,132,199,0.3)',  bg:'rgba(2,132,199,0.05)',  color:'#0284C7', icon:'▼' },
   '약매도':   { border:'rgba(252,165,165,0.3)',bg:'rgba(252,165,165,0.04)',color:'#fca5a5', icon:'▽' },
 };
 
@@ -3152,7 +3158,7 @@ function renderBuySignalsCard(data) {
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-weight:700;font-size:13px">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
-        <div style="font-size:11px;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%</div>
+        <div style="font-size:11px;color:${up?'var(--up-color)':'var(--down-color)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%</div>
         ${krwLine}
       </div>
       <div style="flex-shrink:0;text-align:right;min-width:52px">
@@ -3171,7 +3177,7 @@ function renderBuySignalsCard(data) {
       <div style="display:flex;align-items:center;gap:6px">
         <div style="display:flex;gap:2px;background:var(--surface2);border-radius:6px;padding:2px">
           <button onclick="switchBuyMode('buy')" style="padding:4px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:none;transition:all 0.15s;background:${!isSell?'rgba(22,163,74,0.2)':'transparent'};color:${!isSell?'#16a34a':'var(--muted)'}">매수</button>
-          <button onclick="switchBuyMode('sell')" style="padding:4px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:none;transition:all 0.15s;background:${isSell?'rgba(220,38,38,0.2)':'transparent'};color:${isSell?'#ef4444':'var(--muted)'}">매도</button>
+          <button onclick="switchBuyMode('sell')" style="padding:4px 12px;font-size:11px;font-weight:700;border-radius:5px;cursor:pointer;border:none;transition:all 0.15s;background:${isSell?'rgba(220,38,38,0.2)':'transparent'};color:${isSell?'#0284C7':'var(--muted)'}">매도</button>
         </div>
         <button onclick="loadBuySignals(true)" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer" title="새로고침">↻</button>
       </div>
@@ -3338,7 +3344,7 @@ async function applyScreener(idx) {
   try {
     data = await _getScreenerData();
   } catch(e) {
-    el.innerHTML = '<div style="color:var(--red)">데이터 로딩 실패</div>';
+    el.innerHTML = '<div style="color:var(--down-color)">데이터 로딩 실패</div>';
     return;
   }
 
@@ -3386,8 +3392,8 @@ async function applyScreener(idx) {
         <div style="font-size:10px;color:var(--muted)">${subLabel}${metaParts ? ' · '+metaParts : ''}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
-        <div style="font-size:11px;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%${krwHint}</div>
+        <div style="font-weight:700;color:${up?'var(--up-color)':'var(--down-color)'}">${sym}${(d.price||0).toLocaleString(undefined,{maximumFractionDigits:isUs?2:0})}</div>
+        <div style="font-size:11px;color:${up?'var(--up-color)':'var(--down-color)'}">${up?'+':''}${(d.changePct||0).toFixed(2)}%${krwHint}</div>
       </div>
     </div>`;
   }).join('')}</div>`;
@@ -3432,13 +3438,13 @@ function confirmPortfolioAdd() {
   const qty = parseFloat(document.getElementById('portfolioQty').value);
   if (isNaN(price) || price <= 0) {
     document.getElementById('portfolioPrice').focus();
-    document.getElementById('portfolioPrice').style.borderColor = 'var(--red)';
+    document.getElementById('portfolioPrice').style.borderColor = 'var(--down-color)';
     setTimeout(() => document.getElementById('portfolioPrice').style.borderColor = '', 1500);
     return;
   }
   if (isNaN(qty) || qty <= 0) {
     document.getElementById('portfolioQty').focus();
-    document.getElementById('portfolioQty').style.borderColor = 'var(--red)';
+    document.getElementById('portfolioQty').style.borderColor = 'var(--down-color)';
     setTimeout(() => document.getElementById('portfolioQty').style.borderColor = '', 1500);
     return;
   }
@@ -3482,7 +3488,7 @@ function setAlertType(type) {
 function confirmAlertAdd() {
   const price = parseFloat(document.getElementById('alertPrice').value);
   if (isNaN(price) || price <= 0) {
-    document.getElementById('alertPrice').style.borderColor = 'var(--red)';
+    document.getElementById('alertPrice').style.borderColor = 'var(--down-color)';
     setTimeout(() => document.getElementById('alertPrice').style.borderColor = '', 1500);
     return;
   }
@@ -3609,7 +3615,7 @@ function renderMobileStockList() {
   if (!list.length) { el.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">로딩 중...</div>'; return; }
   el.innerHTML = list.map(s => {
     const chg = s.changePct ?? 0;
-    const color = chg > 0 ? 'var(--green)' : chg < 0 ? 'var(--red)' : 'var(--muted)';
+    const color = chg > 0 ? 'var(--up-color)' : chg < 0 ? 'var(--down-color)' : 'var(--muted)';
     const sign = chg > 0 ? '+' : '';
     const price = s.market === 'kr' ? `₩${(s.price||0).toLocaleString()}` : `$${(s.price||0).toFixed(2)}`;
     return `<div class="stock-item" onclick="mobileSelectStock('${s.id||s.ticker}')">
@@ -3661,7 +3667,7 @@ async function doMobileSearch(q) {
       </div>`;
     }).join('');
   } catch(e) {
-    res.innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px">오류: ${e.message}</div>`;
+    res.innerHTML = `<div style="padding:20px;color:var(--down-color);font-size:13px">오류: ${e.message}</div>`;
   }
 }
 
