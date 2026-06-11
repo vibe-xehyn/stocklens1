@@ -3,7 +3,8 @@ import compression from 'compression';
 import { execFile, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import crypto from 'crypto';
 
 // Load .env file if present
 try {
@@ -195,6 +196,204 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
 
   return { signal, confidence, score, breakdown: bk, reasons, summary, technical, fundamental, flow: flowStr, sentiment, risk, price_move };
 }
+
+// ── Premium User Authentication & Data Store ────────────────────────────────
+const dataDir = join(__dirname, 'data');
+if (!existsSync(dataDir)) {
+  mkdirSync(dataDir, { recursive: true });
+}
+const USERS_FILE = join(dataDir, 'users.json');
+const USERDATA_FILE = join(dataDir, 'userdata.json');
+
+if (!existsSync(USERS_FILE)) writeFileSync(USERS_FILE, '{}', 'utf-8');
+if (!existsSync(USERDATA_FILE)) writeFileSync(USERDATA_FILE, '{}', 'utf-8');
+
+function readJSONFile(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch (e) {
+    return {};
+  }
+}
+
+function writeJSONFile(filePath, data) {
+  writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+const sessions = new Map(); // token -> { id, username }
+
+function getCookie(req, name) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  const cookie = cookies.find(c => c.startsWith(name + '='));
+  return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+}
+
+// Auth Middleware
+function requireAuth(req, res, next) {
+  let token = getCookie(req, 'sessionToken');
+  if (!token && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1];
+    }
+  }
+  
+  if (token) {
+    const session = sessions.get(token);
+    if (session) {
+      req.user = session;
+      return next();
+    }
+  }
+  
+  res.status(401).json({ error: '로그인이 필요합니다.' });
+}
+
+app.use(express.json());
+
+app.post('/api/auth/register', (req, res) => {
+  const { email, username, password } = req.body;
+  const identifier = email || username;
+  if (!identifier || !password) {
+    return res.status(400).json({ error: '이메일(아이디)과 비밀번호를 입력해주세요.' });
+  }
+  const users = readJSONFile(USERS_FILE);
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  if (users[normalizedIdentifier]) {
+    return res.status(400).json({ error: '이미 존재하는 계정입니다.' });
+  }
+  
+  const id = 'user_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex');
+  const nameVal = username || identifier.split('@')[0];
+  users[normalizedIdentifier] = {
+    id,
+    username: nameVal,
+    email: email ? email.trim() : identifier,
+    passwordHash: hashPassword(password)
+  };
+  writeJSONFile(USERS_FILE, users);
+  
+  // Create Session
+  const token = crypto.randomBytes(32).toString('hex');
+  const sessionUser = { id, username: nameVal, email: email ? email.trim() : identifier };
+  sessions.set(token, sessionUser);
+  
+  res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+  res.json({ ok: true, user: sessionUser, token });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { email, username, password } = req.body;
+  const identifier = email || username;
+  if (!identifier || !password) {
+    return res.status(400).json({ error: '이메일(아이디)과 비밀번호를 입력해주세요.' });
+  }
+  const users = readJSONFile(USERS_FILE);
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const user = users[normalizedIdentifier];
+  
+  if (!user || (user.passwordHash && user.passwordHash !== hashPassword(password))) {
+    return res.status(400).json({ error: '아이디 또는 비밀번호가 일치하지 않습니다.' });
+  }
+  
+  // Create Session
+  const token = crypto.randomBytes(32).toString('hex');
+  const sessionUser = { id: user.id, username: user.username, email: user.email };
+  sessions.set(token, sessionUser);
+  
+  res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+  res.json({ ok: true, user: sessionUser, token });
+});
+
+app.post('/api/auth/social', (req, res) => {
+  const { email, name, provider } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: '이메일 정보가 누락되었습니다.' });
+  }
+  const users = readJSONFile(USERS_FILE);
+  const normalizedEmail = email.trim().toLowerCase();
+  let user = users[normalizedEmail];
+  
+  if (!user) {
+    const id = 'user_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex');
+    user = {
+      id,
+      username: name || email.split('@')[0],
+      email: email.trim(),
+      provider: provider || 'google'
+    };
+    users[normalizedEmail] = user;
+    writeJSONFile(USERS_FILE, users);
+  }
+  
+  // Create Session
+  const token = crypto.randomBytes(32).toString('hex');
+  const sessionUser = { id: user.id, username: user.username, email: user.email };
+  sessions.set(token, sessionUser);
+  
+  res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+  res.json({ ok: true, user: sessionUser, token });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  let token = getCookie(req, 'sessionToken');
+  if (!token && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1];
+    }
+  }
+  if (token) {
+    sessions.delete(token);
+  }
+  res.setHeader('Set-Cookie', 'sessionToken=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+  res.json({ ok: true });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  let token = getCookie(req, 'sessionToken');
+  if (!token && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1];
+    }
+  }
+  if (token) {
+    const session = sessions.get(token);
+    if (session) {
+      return res.json({ loggedIn: true, user: session });
+    }
+  }
+  res.json({ loggedIn: false });
+});
+
+app.get('/api/user/data', requireAuth, (req, res) => {
+  const userdata = readJSONFile(USERDATA_FILE);
+  const data = userdata[req.user.id] || { watchlist: [], portfolio: [], priceAlerts: [], trendlines: [] };
+  data.tl = data.trendlines || [];
+  res.json(data);
+});
+
+app.post('/api/user/data', requireAuth, (req, res) => {
+  const userdata = readJSONFile(USERDATA_FILE);
+  const current = userdata[req.user.id] || { watchlist: [], portfolio: [], priceAlerts: [], trendlines: [] };
+  
+  if (req.body.watchlist !== undefined) current.watchlist = req.body.watchlist;
+  if (req.body.portfolio !== undefined) current.portfolio = req.body.portfolio;
+  if (req.body.priceAlerts !== undefined) current.priceAlerts = req.body.priceAlerts;
+  if (req.body.trendlines !== undefined) current.trendlines = req.body.trendlines;
+  if (req.body.tl !== undefined) current.trendlines = req.body.tl;
+  
+  userdata[req.user.id] = current;
+  writeJSONFile(USERDATA_FILE, userdata);
+  res.json({ ok: true });
+});
 
 app.use(compression({ level: 6 })); // gzip 압축
 app.use(express.static(join(__dirname, 'public'), {
