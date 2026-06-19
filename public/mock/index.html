@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 
@@ -74,6 +75,25 @@
         </div>
       </div>
 
+      <!-- 포트폴리오 비중 시각화 카드 (Toss style) -->
+      <div class="portfolio-chart-card" id="portfolioChartCard" style="display: none;">
+        <h4 class="card-title">내 자산 비중</h4>
+        <div class="portfolio-chart-wrap">
+          <div class="pie-container">
+            <svg id="portfolioPie" viewBox="0 0 100 100">
+              <!-- JS로 동적 패스 주입 -->
+            </svg>
+            <div class="pie-center">
+              <span class="center-label">주식 비중</span>
+              <span class="center-val" id="portfolioPieRatio">0%</span>
+            </div>
+          </div>
+          <div class="portfolio-legend" id="portfolioLegend">
+            <!-- JS 범례 주입 -->
+          </div>
+        </div>
+      </div>
+
       <div class="section-title-wrap">
         <h3 class="section-title">보유 주식</h3>
       </div>
@@ -127,6 +147,91 @@
       </div>
     </section>
   </main>
+
+  <!-- 4. 종목 상세 화면 (Toss style SPA Layer) -->
+  <div class="detail-screen" id="stockDetailScreen">
+    <div class="detail-header">
+      <button class="detail-back-btn" onclick="closeStockDetail()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        이전
+      </button>
+      <div class="detail-title-area">
+        <h2 id="detailStockName">삼성전자</h2>
+        <span id="detailStockTicker">005930</span>
+      </div>
+      <div style="width: 48px;"></div> <!-- Alignment placeholder -->
+    </div>
+
+    <div class="detail-body">
+      <!-- 4-1. 시세 요약 정보 -->
+      <div class="detail-price-section">
+        <div class="price-row">
+          <h1 id="detailCurrentPrice">₩0</h1>
+          <span id="detailCurrentChange" class="current-change">0.00%</span>
+        </div>
+        <span id="detailExchangeRateHint" class="price-sub"></span>
+      </div>
+
+      <!-- 4-2. 실시간 차트 영역 (Lightweight Charts) -->
+      <div class="detail-chart-card">
+        <div class="chart-range-tabs">
+          <button class="range-btn active" onclick="changeDetailChartRange('1d', this)">1일</button>
+          <button class="range-btn" onclick="changeDetailChartRange('1w', this)">1주</button>
+          <button class="range-btn" onclick="changeDetailChartRange('1m', this)">1달</button>
+          <button class="range-btn" onclick="changeDetailChartRange('1y', this)">1년</button>
+        </div>
+        <div class="chart-container-wrap">
+          <div id="detailChart"></div>
+        </div>
+      </div>
+
+      <!-- 4-3. 실시간 호가 영역 (Toss style Order Book) -->
+      <div class="detail-orderbook-card">
+        <h3 class="card-sub-title">실시간 호가</h3>
+        <div class="orderbook-table" id="detailOrderBook">
+          <!-- JS dynamic generation -->
+          <div class="loading-state">호가를 불러오는 중...</div>
+        </div>
+      </div>
+
+      <!-- 4-4. 종목 정보 / 주요 지표 영역 -->
+      <div class="detail-metrics-card">
+        <h3 class="card-sub-title">종목 정보</h3>
+        <div class="metrics-grid">
+          <div class="metric-item">
+            <span class="label">시가</span>
+            <span class="val" id="metricOpen">₩0</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">고가</span>
+            <span class="val" id="metricHigh">₩0</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">저가</span>
+            <span class="val" id="metricLow">₩0</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">거래량</span>
+            <span class="val" id="metricVolume">0</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">52주 최고</span>
+            <span class="val" id="metric52High">₩0</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">52주 최저</span>
+            <span class="val" id="metric52Low">₩0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 하단 고정 거래 실행 바 -->
+    <div class="detail-bottom-bar">
+      <button class="btn btn-buy-action" onclick="openOrderDrawerFromDetail('buy')">사기</button>
+      <button class="btn btn-sell-action" onclick="openOrderDrawerFromDetail('sell')">팔기</button>
+    </div>
+  </div>
 
   <!-- 초기 투자금 선택 모달 -->
   <div class="modal-overlay" id="capitalModal">

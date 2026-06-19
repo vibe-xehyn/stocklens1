@@ -64,6 +64,14 @@ let activeShoppingMarket = 'kr';
 let liveQuotes = {}; // id -> { price, changePct }
 let usdKrwRate = 1350; // 기본 환율 fallback
 
+// 상세 화면 및 차트/호가 시뮬레이션 상태
+let activeDetailDef = null;
+let currentDetailChart = null;
+let currentDetailSeries = null;
+let detailChartRange = '1d';
+let orderBookInterval = null;
+const LEGEND_COLORS = ['#3182F6', '#FF4D5D', '#00D27A', '#FF9500', '#8E94A0', '#9B51E0', '#2D9CDB', '#27AE60'];
+
 // 주문(Drawer) 전용 상태
 let activeDef = null;
 let activeOrderMode = 'buy'; // 'buy' | 'sell'
@@ -120,11 +128,12 @@ async function checkSession() {
 
 // 이벤트 리스너 세팅
 function setupEventListeners() {
-  // ESC로 모달 및 드로어 닫기
+  // ESC로 모달, 드로어, 상세 화면 닫기
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeCapitalModal();
       closeOrderDrawer();
+      closeStockDetail();
     }
   });
 
@@ -265,6 +274,9 @@ function startLivePriceUpdates() {
 
       // 3. UI 갱신
       updateUI();
+      if (activeDetailDef) {
+        updateStockDetailPrices();
+      }
 
     } catch (e) {
       console.warn("Error fetching live quotes, using simulated/cached prices:", e);
@@ -278,6 +290,9 @@ function startLivePriceUpdates() {
         }
       });
       updateUI();
+      if (activeDetailDef) {
+        updateStockDetailPrices();
+      }
     }
   };
 
@@ -305,8 +320,10 @@ function renderAssets() {
   let totalStockEval = 0; // 주식 평가금 합산 (원화)
 
   const holdingsListEl = document.getElementById('holdingsList');
+  const chartCard = document.getElementById('portfolioChartCard');
   
   if (portfolio.length === 0) {
+    if (chartCard) chartCard.style.display = 'none';
     holdingsListEl.innerHTML = `
       <div class="empty-state">
         <span class="icon">📈</span>
@@ -347,7 +364,7 @@ function renderAssets() {
     const priceSymbol = isUs ? '$' : '₩';
     
     return `
-      <div class="holding-item" onclick="openOrderDrawer('${holding.id}')">
+      <div class="holding-item" onclick="openStockDetail('${holding.id}')">
         <div class="holding-left">
           <div class="holding-name">
             ${holding.name}
@@ -385,6 +402,12 @@ function renderAssets() {
     <span class="pct">${returnSign}${netReturnPct.toFixed(2)}%</span>
     <span class="amt">(${returnSign}₩${Math.round(netProfit).toLocaleString()})</span>
   `;
+
+  // 포트폴리오 도넛 차트 드로잉
+  if (chartCard) {
+    chartCard.style.display = 'block';
+    renderPortfolioPie(cash, totalStockEval, portfolio);
+  }
 }
 
 // 2. 주식 쇼핑 목록 렌더링
@@ -418,7 +441,7 @@ function renderShoppingStocks() {
     const sign = change > 0 ? '+' : '';
 
     return `
-      <div class="stock-row-item" onclick="openOrderDrawer('${stock.id}')">
+      <div class="stock-row-item" onclick="openStockDetail('${stock.id}')">
         <div class="info-col">
           <span class="rank-num">${index + 1}</span>
           <div class="name-meta">
@@ -528,7 +551,7 @@ function handleSearch(query) {
     const sign = change > 0 ? '+' : '';
 
     return `
-      <div class="search-item" onclick="openOrderDrawer('${stock.id}')">
+      <div class="search-item" onclick="openStockDetail('${stock.id}')">
         <div class="stock-info">
           <div class="stock-name">
             ${stock.name}
@@ -814,4 +837,421 @@ function showToast(msg) {
   setTimeout(() => {
     toast.classList.remove('show');
   }, 3000);
+}
+
+// ── Toss-style SVG Portfolio Donut Chart Rendering ──
+function renderPortfolioPie(cash, totalStockEval, portfolio) {
+  const totalAssets = cash + totalStockEval;
+  if (totalAssets <= 0) return;
+
+  const svg = document.getElementById('portfolioPie');
+  const legend = document.getElementById('portfolioLegend');
+  if (!svg || !legend) return;
+
+  const items = [];
+  
+  // 1. Cash portion
+  if (cash > 0) {
+    items.push({
+      name: '보유 예수금',
+      value: cash,
+      pct: cash / totalAssets,
+      color: '#8E94A0'
+    });
+  }
+
+  // 2. Stock holdings
+  portfolio.forEach((stock, idx) => {
+    const quote = liveQuotes[stock.id] || { price: stock.avgPrice };
+    const isUs = stock.market === 'us';
+    const curPriceKrw = isUs ? quote.price * usdKrwRate : quote.price;
+    const evalKrw = curPriceKrw * stock.qty;
+    
+    if (evalKrw > 0) {
+      items.push({
+        name: stock.name,
+        value: evalKrw,
+        pct: evalKrw / totalAssets,
+        color: LEGEND_COLORS[idx % LEGEND_COLORS.length]
+      });
+    }
+  });
+
+  // Sort by asset valuation descending
+  items.sort((a, b) => b.value - a.value);
+
+  // SVG Circle stroke dash math
+  let accumPercent = 0;
+  let paths = '';
+  const R = 38;
+  const CX = 50, CY = 50;
+  const circumference = 2 * Math.PI * R; // ~238.76
+
+  items.forEach(item => {
+    const strokeDash = `${item.pct * circumference} ${circumference}`;
+    const strokeOffset = -accumPercent * circumference;
+    accumPercent += item.pct;
+
+    paths += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="transparent" stroke="${item.color}" stroke-width="10" stroke-dasharray="${strokeDash}" stroke-dashoffset="${strokeOffset}"></circle>`;
+  });
+
+  svg.innerHTML = paths;
+
+  // Render stock ratio percent
+  const stockRatio = (totalStockEval / totalAssets) * 100;
+  document.getElementById('portfolioPieRatio').textContent = `${stockRatio.toFixed(0)}%`;
+
+  // Draw legend list
+  legend.innerHTML = items.map(item => {
+    return `
+      <div class="legend-item">
+        <div class="legend-left">
+          <span class="legend-dot" style="background-color: ${item.color}"></span>
+          <span>${item.name}</span>
+        </div>
+        <div class="legend-right">
+          <span>${(item.pct * 100).toFixed(1)}%</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Toss-style Stock Detail Screen Routing & Managers ──
+function openStockDetail(stockId) {
+  const stock = STOCK_DEFS.find(s => s.id === stockId);
+  if (!stock) return;
+
+  activeDetailDef = stock;
+  
+  // Set detailed titles
+  document.getElementById('detailStockName').textContent = stock.name;
+  document.getElementById('detailStockTicker').textContent = stock.displayTicker;
+
+  // Immediately draw price metrics
+  updateStockDetailPrices();
+
+  // Run dynamic order book fluctuation loop
+  startOrderBookSimulation(stock);
+
+  // Initialize TradingView area chart
+  detailChartRange = '1d';
+  const rangeBtns = document.querySelectorAll('.range-btn');
+  rangeBtns.forEach(btn => btn.classList.toggle('active', btn.textContent === '1일'));
+  initDetailChart(stock);
+
+  // Open layer overlay
+  document.getElementById('stockDetailScreen').classList.add('open');
+}
+
+function closeStockDetail() {
+  document.getElementById('stockDetailScreen').classList.remove('open');
+  activeDetailDef = null;
+
+  // Tear down simulation updates
+  if (orderBookInterval) {
+    clearInterval(orderBookInterval);
+    orderBookInterval = null;
+  }
+
+  // Destroy lightweight-chart instance
+  if (currentDetailChart) {
+    currentDetailChart.remove();
+    currentDetailChart = null;
+    currentDetailSeries = null;
+  }
+}
+
+function updateStockDetailPrices() {
+  if (!activeDetailDef) return;
+
+  const quote = liveQuotes[activeDetailDef.id] || { price: 0, changePct: 0 };
+  const isUs = activeDetailDef.market === 'us';
+  const priceSymbol = isUs ? '$' : '₩';
+
+  // Format Current Price
+  const priceEl = document.getElementById('detailCurrentPrice');
+  priceEl.textContent = `${priceSymbol}${quote.price.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}`;
+
+  // Format Change Rate
+  const changeEl = document.getElementById('detailCurrentChange');
+  const change = quote.changePct;
+  const colorClass = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
+  const sign = change > 0 ? '+' : '';
+  changeEl.className = `current-change ${colorClass}`;
+  changeEl.textContent = `${sign}${change.toFixed(2)}%`;
+
+  // Exchange rate helper details
+  const rateHintEl = document.getElementById('detailExchangeRateHint');
+  if (isUs) {
+    rateHintEl.textContent = `적용 환율: $1 = ₩${Math.round(usdKrwRate).toLocaleString()} (원화 환산 ₩${Math.round(quote.price * usdKrwRate).toLocaleString()})`;
+  } else {
+    rateHintEl.textContent = '';
+  }
+
+  // Append realtime tick to lightweight charts
+  if (currentDetailSeries && detailChartRange === '1d' && quote.price > 0) {
+    try {
+      const nowSec = Math.floor(Date.now() / 1000);
+      currentDetailSeries.update({
+        time: nowSec,
+        value: quote.price
+      });
+    } catch(e) {}
+  }
+}
+
+// ── TradingView Lightweight Charts Plotter ──
+async function initDetailChart(stock) {
+  const chartContainer = document.getElementById('detailChart');
+  if (!chartContainer) return;
+
+  // Clean old widgets
+  if (currentDetailChart) {
+    currentDetailChart.remove();
+    currentDetailChart = null;
+    currentDetailSeries = null;
+  }
+
+  // Create lightweight-chart with sleek glass design config
+  currentDetailChart = LightweightCharts.createChart(chartContainer, {
+    layout: {
+      background: { type: 'solid', color: 'transparent' },
+      textColor: '#86868B',
+      fontSize: 10,
+      fontFamily: 'Noto Sans KR, -apple-system, sans-serif'
+    },
+    grid: {
+      vertLines: { visible: false },
+      horzLines: { visible: false }
+    },
+    rightPriceScale: {
+      visible: true,
+      borderVisible: false
+    },
+    timeScale: {
+      borderVisible: false,
+      timeVisible: true,
+      secondsVisible: false
+    },
+    crosshair: {
+      horzLine: { visible: false },
+      vertLine: {
+        color: 'rgba(0, 102, 204, 0.12)',
+        width: 1,
+        style: 0
+      }
+    },
+    handleScale: false,
+    handleScroll: false
+  });
+
+  // Areaseries with faded fill gradients matching Toss style
+  const isUp = (liveQuotes[stock.id]?.changePct || 0) >= 0;
+  const mainColor = isUp ? '#F04452' : '#3182F6';
+  const fillColor = isUp ? 'rgba(240, 68, 82, 0.04)' : 'rgba(49, 130, 246, 0.04)';
+
+  currentDetailSeries = currentDetailChart.addAreaSeries({
+    topColor: fillColor,
+    bottomColor: 'rgba(255, 255, 255, 0)',
+    lineColor: mainColor,
+    lineWidth: 2.5,
+    crosshairMarkerVisible: true
+  });
+
+  try {
+    let intervalParam = '';
+    if (detailChartRange === '1d') intervalParam = '&interval=5m';
+    else if (detailChartRange === '1w') intervalParam = '&interval=30m';
+    
+    const res = await fetch(`/api/chart?symbol=${stock.ticker}&range=${detailChartRange}${intervalParam}&market=${stock.market}`);
+    if (res.ok) {
+      const chartData = await res.json();
+      if (chartData && chartData.length > 0) {
+        const formatted = chartData.map(pt => {
+          let timeVal = pt.time;
+          if (typeof timeVal === 'string') {
+            timeVal = Math.floor(new Date(timeVal).getTime() / 1000);
+          }
+          return {
+            time: timeVal,
+            value: pt.close || pt.value
+          };
+        }).filter(pt => !isNaN(pt.time) && !isNaN(pt.value));
+
+        formatted.sort((a, b) => a.time - b.time);
+
+        if (formatted.length > 0) {
+          currentDetailSeries.setData(formatted);
+          currentDetailChart.timeScale().fitContent();
+          
+          updateDetailMetrics(chartData, stock);
+          return;
+        }
+      }
+    }
+    throw new Error("API chart failed");
+
+  } catch (e) {
+    console.warn("Chart API fail, fallback to mock random walk:", e);
+    // Safe fallback generator to guarantee charts work under all network conditions
+    const formatted = [];
+    const quote = liveQuotes[stock.id] || { price: stock.market === 'kr' ? 70000 : 150 };
+    let curVal = quote.price;
+    const pointsCount = detailChartRange === '1d' ? 78 : (detailChartRange === '1w' ? 100 : 150);
+    const timeStep = detailChartRange === '1d' ? 300 : (detailChartRange === '1w' ? 3600 : 86400);
+    let nowSec = Math.floor(Date.now() / 1000) - (pointsCount * timeStep);
+
+    for (let i = 0; i < pointsCount; i++) {
+      curVal = curVal * (1 + (Math.random() * 0.008 - 0.0039));
+      formatted.push({
+        time: nowSec + (i * timeStep),
+        value: curVal
+      });
+    }
+
+    currentDetailSeries.setData(formatted);
+    currentDetailChart.timeScale().fitContent();
+
+    updateDetailMetrics([], stock);
+  }
+}
+
+function changeDetailChartRange(range, btnElement) {
+  detailChartRange = range;
+  
+  const btns = document.querySelectorAll('.range-btn');
+  btns.forEach(btn => btn.classList.remove('active'));
+  btnElement.classList.add('active');
+
+  if (activeDetailDef) {
+    initDetailChart(activeDetailDef);
+  }
+}
+
+function updateDetailMetrics(apiData, stock) {
+  const quote = liveQuotes[stock.id] || { price: 0 };
+  const open = quote.price * (1 - (quote.changePct || 0)/100);
+  
+  const isUs = stock.market === 'us';
+  const prefix = isUs ? '$' : '₩';
+
+  let h = quote.price * 1.02;
+  let l = quote.price * 0.98;
+  let vol = Math.floor(100000 + Math.random() * 9000000);
+
+  if (apiData && apiData.length > 0) {
+    const closes = apiData.map(d => d.close || d.value);
+    h = Math.max(...closes);
+    l = Math.min(...closes);
+  }
+
+  document.getElementById('metricOpen').textContent = `${prefix}${Math.round(open).toLocaleString()}`;
+  document.getElementById('metricHigh').textContent = `${prefix}${Math.round(h).toLocaleString()}`;
+  document.getElementById('metricLow').textContent = `${prefix}${Math.round(l).toLocaleString()}`;
+  document.getElementById('metricVolume').textContent = vol.toLocaleString();
+  document.getElementById('metric52High').textContent = `${prefix}${Math.round(quote.price * 1.35).toLocaleString()}`;
+  document.getElementById('metric52Low').textContent = `${prefix}${Math.round(quote.price * 0.72).toLocaleString()}`;
+}
+
+// ── Toss-style Simulated Live Order Book (호가창) ──
+function startOrderBookSimulation(stock) {
+  if (orderBookInterval) {
+    clearInterval(orderBookInterval);
+  }
+
+  const renderOB = () => {
+    const quote = liveQuotes[stock.id] || { price: stock.market === 'kr' ? 70000 : 150, changePct: 0 };
+    const price = quote.price;
+    const isUs = stock.market === 'us';
+    const priceSymbol = isUs ? '$' : '₩';
+    
+    let tickSize = 1;
+    if (stock.market === 'kr') {
+      if (price >= 500000) tickSize = 1000;
+      else if (price >= 100000) tickSize = 500;
+      else if (price >= 50000) tickSize = 100;
+      else if (price >= 10000) tickSize = 50;
+      else tickSize = 10;
+    } else {
+      tickSize = 0.05;
+    }
+
+    const bids = [];
+    const asks = [];
+    const maxQty = 40000;
+
+    // Asks (5 sells - above)
+    for (let i = 5; i >= 1; i--) {
+      const askPrice = price + (i * tickSize);
+      const askChg = quote.changePct + (i * tickSize / price * 100);
+      const vol = Math.floor(500 + Math.random() * maxQty);
+      asks.push({ price: askPrice, change: askChg, vol: vol });
+    }
+
+    // Bids (5 buys - below)
+    for (let i = 1; i <= 5; i++) {
+      const bidPrice = price - (i * tickSize);
+      const bidChg = quote.changePct - (i * tickSize / price * 100);
+      const vol = Math.floor(500 + Math.random() * maxQty);
+      bids.push({ price: bidPrice, change: bidChg, vol: vol });
+    }
+
+    const allVols = [...asks, ...bids].map(x => x.vol);
+    const peakVol = Math.max(...allVols);
+
+    const obContainer = document.getElementById('detailOrderBook');
+    if (!obContainer) return;
+
+    let html = '';
+
+    // Asks list
+    asks.forEach(ask => {
+      const barWidth = (ask.vol / peakVol) * 100;
+      html += `
+        <div class="ob-row ask">
+          <div class="ob-price">${priceSymbol}${ask.price.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}</div>
+          <div class="ob-change">${ask.change > 0 ? '+' : ''}${ask.change.toFixed(2)}%</div>
+          <div class="ob-volume-container">
+            <div class="ob-vol-bar" style="width: ${barWidth}%"></div>
+            <span class="ob-vol-num">${ask.vol.toLocaleString()}</span>
+          </div>
+        </div>
+      `;
+    });
+
+    // Spread midpoint
+    html += `
+      <div class="ob-row spread-separator">
+        <span>현재가 ₩${Math.round(isUs ? price * usdKrwRate : price).toLocaleString()}</span>
+      </div>
+    `;
+
+    // Bids list
+    bids.forEach(bid => {
+      const barWidth = (bid.vol / peakVol) * 100;
+      html += `
+        <div class="ob-row bid">
+          <div class="ob-price">${priceSymbol}${bid.price.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}</div>
+          <div class="ob-change">${bid.change > 0 ? '+' : ''}${bid.change.toFixed(2)}%</div>
+          <div class="ob-volume-container">
+            <div class="ob-vol-bar" style="width: ${barWidth}%"></div>
+            <span class="ob-vol-num">${bid.vol.toLocaleString()}</span>
+          </div>
+        </div>
+      `;
+    });
+
+    obContainer.innerHTML = html;
+  };
+
+  renderOB();
+  orderBookInterval = setInterval(renderOB, 2000);
+}
+
+// ── Sticky Actions bar listeners ──
+function openOrderDrawerFromDetail(mode) {
+  if (!activeDetailDef) return;
+  openOrderDrawer(activeDetailDef.id);
+  setOrderMode(mode);
 }
