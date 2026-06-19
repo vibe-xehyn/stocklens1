@@ -862,10 +862,11 @@ function renderPortfolioPie(cash, totalStockEval, portfolio) {
 
   // 2. Stock holdings
   portfolio.forEach((stock, idx) => {
-    const quote = liveQuotes[stock.id] || { price: stock.avgPrice };
+    const quote = liveQuotes[stock.id] || {};
+    const curPrice = quote.price || stock.avgPrice || 0;
     const isUs = stock.market === 'us';
-    const curPriceKrw = isUs ? quote.price * usdKrwRate : quote.price;
-    const evalKrw = curPriceKrw * stock.qty;
+    const curPriceKrw = isUs ? curPrice * usdKrwRate : curPrice;
+    const evalKrw = curPriceKrw * stock.qty || 0;
     
     if (evalKrw > 0) {
       items.push({
@@ -934,11 +935,16 @@ function openStockDetail(stockId) {
   // Run dynamic order book fluctuation loop
   startOrderBookSimulation(stock);
 
-  // Initialize TradingView area chart
+  // Initialize TradingView area chart (with delay to ensure container sizing is ready)
   detailChartRange = '1d';
   const rangeBtns = document.querySelectorAll('.range-btn');
   rangeBtns.forEach(btn => btn.classList.toggle('active', btn.textContent === '1일'));
-  initDetailChart(stock);
+  
+  setTimeout(() => {
+    if (activeDetailDef === stock) {
+      initDetailChart(stock);
+    }
+  }, 150);
 
   // Open layer overlay
   document.getElementById('stockDetailScreen').classList.add('open');
@@ -965,17 +971,19 @@ function closeStockDetail() {
 function updateStockDetailPrices() {
   if (!activeDetailDef) return;
 
-  const quote = liveQuotes[activeDetailDef.id] || { price: 0, changePct: 0 };
+  const rawQuote = liveQuotes[activeDetailDef.id] || {};
+  const price = rawQuote.price || activeDetailDef.price || 0;
+  const change = rawQuote.changePct || 0;
+  
   const isUs = activeDetailDef.market === 'us';
   const priceSymbol = isUs ? '$' : '₩';
 
   // Format Current Price
   const priceEl = document.getElementById('detailCurrentPrice');
-  priceEl.textContent = `${priceSymbol}${quote.price.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}`;
+  priceEl.textContent = `${priceSymbol}${price.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}`;
 
   // Format Change Rate
   const changeEl = document.getElementById('detailCurrentChange');
-  const change = quote.changePct;
   const colorClass = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
   const sign = change > 0 ? '+' : '';
   changeEl.className = `current-change ${colorClass}`;
@@ -984,18 +992,18 @@ function updateStockDetailPrices() {
   // Exchange rate helper details
   const rateHintEl = document.getElementById('detailExchangeRateHint');
   if (isUs) {
-    rateHintEl.textContent = `적용 환율: $1 = ₩${Math.round(usdKrwRate).toLocaleString()} (원화 환산 ₩${Math.round(quote.price * usdKrwRate).toLocaleString()})`;
+    rateHintEl.textContent = `적용 환율: $1 = ₩${Math.round(usdKrwRate).toLocaleString()} (원화 환산 ₩${Math.round(price * usdKrwRate).toLocaleString()})`;
   } else {
     rateHintEl.textContent = '';
   }
 
   // Append realtime tick to lightweight charts
-  if (currentDetailSeries && detailChartRange === '1d' && quote.price > 0) {
+  if (currentDetailSeries && detailChartRange === '1d' && price > 0) {
     try {
       const nowSec = Math.floor(Date.now() / 1000);
       currentDetailSeries.update({
         time: nowSec,
-        value: quote.price
+        value: price
       });
     } catch(e) {}
   }
@@ -1005,6 +1013,13 @@ function updateStockDetailPrices() {
 async function initDetailChart(stock) {
   const chartContainer = document.getElementById('detailChart');
   if (!chartContainer) return;
+
+  // LightweightCharts 로드 예외 처리
+  if (typeof LightweightCharts === 'undefined') {
+    console.warn("LightweightCharts library is not loaded yet.");
+    chartContainer.innerHTML = `<div style="color:var(--text-muted); font-size:12.5px; display:flex; align-items:center; justify-content:center; height:100%;">차트 라이브러리를 불러오는 중...</div>`;
+    return;
+  }
 
   // Clean old widgets
   if (currentDetailChart) {
@@ -1161,8 +1176,10 @@ function startOrderBookSimulation(stock) {
   }
 
   const renderOB = () => {
-    const quote = liveQuotes[stock.id] || { price: stock.market === 'kr' ? 70000 : 150, changePct: 0 };
-    const price = quote.price;
+    const rawQuote = liveQuotes[stock.id] || {};
+    const price = rawQuote.price || (stock.market === 'kr' ? 70000 : 150);
+    const change = rawQuote.changePct || 0;
+    
     const isUs = stock.market === 'us';
     const priceSymbol = isUs ? '$' : '₩';
     
