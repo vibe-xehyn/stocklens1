@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>토스증권 모의투자 - StockLens</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- 메인 네비게이션 헤더 -->
+  <header class="toss-header">
+    <div class="header-inner">
+      <div class="header-left">
+        <a href="/" class="back-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          대시보드
+        </a>
+        <span class="logo-divider"></span>
+        <h1 class="toss-logo">토스증권 <span>모의투자</span></h1>
+      </div>
+      <div class="header-center">
+        <div class="search-wrapper">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="tossSearch" placeholder="브랜드, 주식 검색..." autocomplete="off">
+          <div class="search-results-dropdown" id="searchResults"></div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="user-profile-badge" id="headerProfile">
+          <div class="avatar" id="avatarLetter">G</div>
+          <div class="user-info">
+            <span class="username" id="profileName">게스트</span>
+            <span class="cash-hint" id="profileCash">₩0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 메인 컨텐츠 영역 -->
+  <main class="toss-container">
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('assets')">내 자산</button>
+      <button class="tab-btn" onclick="switchTab('shopping')">주식 쇼핑</button>
+      <button class="tab-btn" onclick="switchTab('history')">거래 내역</button>
+    </div>
+
+    <!-- 1. 내 자산 탭 -->
+    <section id="tab-assets" class="tab-content active">
+      <div class="assets-summary-card">
+        <div class="summary-left">
+          <span class="summary-label">내 계좌 평가금액</span>
+          <h2 class="summary-val" id="totalAssetVal">₩0</h2>
+          <div class="summary-return" id="totalAssetReturn">
+            <span class="pct">0.00%</span>
+            <span class="amt">(₩0)</span>
+          </div>
+        </div>
+        <div class="summary-right">
+          <div class="cash-info">
+            <div class="cash-row">
+              <span class="label">보유 예수금</span>
+              <span class="val" id="assetCash">₩0</span>
+            </div>
+            <div class="cash-row">
+              <span class="label">주식 평가금</span>
+              <span class="val" id="assetStocks">₩0</span>
+            </div>
+          </div>
+          <button class="btn btn-secondary reset-btn" onclick="openCapitalModal(true)">투자금 초기화</button>
+        </div>
+      </div>
+
+      <div class="section-title-wrap">
+        <h3 class="section-title">보유 주식</h3>
+      </div>
+      <div class="holdings-list" id="holdingsList">
+        <!-- JS로 동적 주입 -->
+        <div class="empty-state">
+          <span class="icon">📈</span>
+          <p>보유 주식이 없습니다. 주식 쇼핑 탭에서 첫 주식을 사보세요!</p>
+          <button class="btn btn-primary" onclick="switchTab('shopping')" style="margin-top: 12px; padding: 10px 20px;">주식 사러 가기</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 주식 쇼핑 탭 -->
+    <section id="tab-shopping" class="tab-content">
+      <div class="shopping-layout">
+        <div class="market-selector">
+          <button class="mkt-btn active" id="mkt-kr" onclick="filterMarket('kr')">한국 주식</button>
+          <button class="mkt-btn" id="mkt-us" onclick="filterMarket('us')">미국 주식</button>
+        </div>
+        
+        <div class="shopping-stocks-card">
+          <div class="stocks-table-header">
+            <span>종목</span>
+            <span class="txt-right">현재가</span>
+            <span class="txt-right">대비</span>
+            <span class="txt-center">거래</span>
+          </div>
+          <div class="stocks-table-list" id="shoppingStockList">
+            <!-- JS 동적 주입 -->
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <span>실시간 시세 로드 중...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 거래 내역 탭 -->
+    <section id="tab-history" class="tab-content">
+      <div class="section-title-wrap">
+        <h3 class="section-title">거래 내역</h3>
+      </div>
+      <div class="history-list" id="historyList">
+        <!-- JS 동적 주입 -->
+        <div class="empty-state">
+          <span class="icon">📝</span>
+          <p>아직 거래 내역이 없습니다.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 초기 투자금 선택 모달 -->
+  <div class="modal-overlay" id="capitalModal">
+    <div class="modal-box">
+      <h2 class="modal-title">모의투자를 시작해볼까요?</h2>
+      <p class="modal-desc">초기 투자금을 선택해주세요.<br>선택한 금액으로 모의투자가 시작되며, 언제든 초기화할 수 있습니다.</p>
+      
+      <div class="capital-options">
+        <button class="capital-opt-btn" onclick="initAccount(1000000)">
+          <span class="opt-title">실속 시작</span>
+          <span class="opt-val">₩100만</span>
+        </button>
+        <button class="capital-opt-btn" onclick="initAccount(10000000)">
+          <span class="opt-title">기본형</span>
+          <span class="opt-val">₩1,000만</span>
+        </button>
+        <button class="capital-opt-btn active" onclick="initAccount(100000000)">
+          <span class="opt-title">추천</span>
+          <span class="opt-val">₩1억</span>
+        </button>
+        <button class="capital-opt-btn" onclick="initAccount(1000000000)">
+          <span class="opt-title">대형 자산가</span>
+          <span class="opt-val">₩10억</span>
+        </button>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 24px;">
+        <button class="btn btn-primary" onclick="confirmCapitalSelection()" style="width: 100%; padding: 14px;">계좌 개설하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toss style 슬라이딩 거래 패널 (Drawer) -->
+  <div class="drawer-overlay" id="tossDrawerOverlay" onclick="closeOrderDrawer()">
+    <div class="order-drawer" id="orderDrawer" onclick="event.stopPropagation()">
+      <div class="drawer-header">
+        <div class="stock-title-area">
+          <h3 id="drawerStockName">삼성전자</h3>
+          <span id="drawerStockTicker">005930</span>
+        </div>
+        <button class="close-drawer-btn" onclick="closeOrderDrawer()">&times;</button>
+      </div>
+
+      <div class="drawer-body">
+        <div class="drawer-price-info">
+          <span class="price-label">현재가</span>
+          <div class="price-row">
+            <span class="current-price" id="drawerCurrentPrice">₩0</span>
+            <span class="current-change" id="drawerCurrentChange">0.00%</span>
+          </div>
+          <span class="price-sub" id="drawerExchangeRateHint"></span>
+        </div>
+
+        <div class="order-type-tabs">
+          <button class="order-type-btn active" id="order-buy" onclick="setOrderMode('buy')">주식 사기</button>
+          <button class="order-type-btn" id="order-sell" onclick="setOrderMode('sell')">주식 팔기</button>
+        </div>
+
+        <div class="order-inputs">
+          <div class="input-group">
+            <label for="orderQty" class="input-label">주문 수량</label>
+            <div class="input-wrapper">
+              <input type="number" id="orderQty" min="1" placeholder="0" oninput="calculateTotalCost()">
+              <span class="unit">주</span>
+            </div>
+          </div>
+
+          <div class="quick-percentage-buttons">
+            <button class="quick-pct-btn" onclick="applyQuickPct(0.1)">10%</button>
+            <button class="quick-pct-btn" onclick="applyQuickPct(0.25)">25%</button>
+            <button class="quick-pct-btn" onclick="applyQuickPct(0.5)">50%</button>
+            <button class="quick-pct-btn" onclick="applyQuickPct(1.0)">최대</button>
+          </div>
+
+          <div class="account-summary-row">
+            <span class="label" id="drawerAvailableLabel">주문 가능 금액</span>
+            <span class="val" id="drawerAvailableVal">₩0</span>
+          </div>
+          
+          <div class="total-cost-row">
+            <span class="label">예상 총 금액</span>
+            <span class="val" id="drawerTotalCost">₩0</span>
+          </div>
+        </div>
+
+        <div class="drawer-actions">
+          <button class="btn btn-buy" id="drawerActionBtn" onclick="executeOrder()">사기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toss-style 토스트 성공 메시지 -->
+  <div class="toss-toast" id="tossToast">
+    <div class="toast-content">
+      <span class="icon">✅</span>
+      <span class="message" id="toastMessage">주문이 성공적으로 체결되었습니다.</span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
