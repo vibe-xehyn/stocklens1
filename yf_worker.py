@@ -6,8 +6,9 @@
   요청  (한 줄): {"id": "<rid>", "script": "<python source>"}
   응답  : <json>\n__END__\n
 """
-import sys, json, io, traceback, warnings
+import sys, json, io, traceback, warnings, socket
 warnings.filterwarnings('ignore')
+socket.setdefaulttimeout(2.5)
 
 # Preload heavy imports
 import yfinance as yf
