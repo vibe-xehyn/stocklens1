@@ -75,6 +75,23 @@ const LEGEND_COLORS = ['#3182F6', '#FF4D5D', '#00D27A', '#FF9500', '#8E94A0', '#
 // 주문(Drawer) 전용 상태
 let activeDef = null;
 let activeOrderMode = 'buy'; // 'buy' | 'sell'
+let selectedOrderPrice = null; // 호가창 선택 가격 잠금
+let whaleInterval = null; // 고래 추적 인터벌
+
+// 배당률 매핑 (고배당 정렬용)
+const DIVIDEND_RATES = {
+  // 한국 주식
+  'samsung': 2.15, 'sk-hynix': 0.85, 'lg-energy': 0.35, 'samsung-bio': 0.0,
+  'hyundai': 4.60, 'kia': 5.10, 'posco': 3.20, 'naver': 0.95, 'kakao': 0.35, 'celltrion': 0.20,
+  'kb-finance': 5.80, 'shinhan': 5.40, 'hana': 6.10, 'lg-elec': 1.80, 'samsung-sdcl': 1.10,
+  'hanwha-aero': 0.70, 'samsung-sds': 2.30, 'krafton': 0.0, 'kakaobank': 1.20, 'ktng': 6.80,
+  'kepco': 0.0, 'sk-inn': 0.0, 'ecopro-bm': 0.10, 'posco-future': 0.15, 'doosan-enbl': 0.0,
+  // 미국 주식
+  'nvidia': 0.12, 'apple': 0.52, 'microsoft': 0.71, 'alphabet': 0.45, 'amazon': 0.0, 'meta': 0.48, 'tesla': 0.0, 'netflix': 0.0,
+  'amd': 0.0, 'broadcom': 1.35, 'qualcomm': 1.95, 'tsm': 1.25, 'intel': 1.65,
+  'jpmorgan': 2.45, 'berkshire': 0.0, 'visa': 0.75, 'mastercard': 0.58,
+  'eli-lilly': 0.58, 'unitedhealth': 1.45, 'palantir': 0.0, 'salesforce': 0.38, 'oracle': 0.92, 'exxon': 3.15, 'walmart': 1.35
+};
 
 // 유저별 스코핑 키 도우미
 function getStorageKey(baseKey) {
@@ -98,6 +115,7 @@ function setStorageItem(key, val) {
 
 // 초기화 확인 및 로딩
 document.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
   await checkSession();
   setupEventListeners();
   startLivePriceUpdates();
@@ -134,6 +152,8 @@ function setupEventListeners() {
       closeCapitalModal();
       closeOrderDrawer();
       closeStockDetail();
+      closeCashModal();
+      closeTargetModal();
     }
   });
 
@@ -143,11 +163,17 @@ function setupEventListeners() {
     handleSearch(e.target.value.trim());
   });
 
+  searchInput.addEventListener('focus', () => {
+    if (!searchInput.value.trim()) {
+      showSearchLanding();
+    }
+  });
+
   // 인풋 포커스 아웃 시 서서히 닫히게 (결과 클릭 가능하도록 딜레이 제공)
   searchInput.addEventListener('blur', () => {
     setTimeout(() => {
       document.getElementById('searchResults').classList.remove('show');
-    }, 200);
+    }, 250);
   });
 }
 
@@ -305,6 +331,7 @@ function updateUI() {
   renderAssets();
   renderShoppingStocks();
   renderHistory();
+  updateTargetReturnUI();
   
   // 헤더 프로필 영역 실시간 동기화
   const cash = getStorageItem('mock_cash', 0);
@@ -427,6 +454,27 @@ function renderShoppingStocks() {
     return;
   }
 
+  // 카테고리 필터 정렬 적용 (Toss Securities style)
+  if (activeShoppingCategory === 'gainers') {
+    targets.sort((a, b) => {
+      const qA = liveQuotes[a.id] || { changePct: 0 };
+      const qB = liveQuotes[b.id] || { changePct: 0 };
+      return qB.changePct - qA.changePct;
+    });
+  } else if (activeShoppingCategory === 'losers') {
+    targets.sort((a, b) => {
+      const qA = liveQuotes[a.id] || { changePct: 0 };
+      const qB = liveQuotes[b.id] || { changePct: 0 };
+      return qA.changePct - qB.changePct;
+    });
+  } else if (activeShoppingCategory === 'dividend') {
+    targets.sort((a, b) => {
+      const divA = DIVIDEND_RATES[a.id] || 0;
+      const divB = DIVIDEND_RATES[b.id] || 0;
+      return divB - divA;
+    });
+  }
+
   const rows = targets.map((stock, index) => {
     const quote = liveQuotes[stock.id] || { price: 0, changePct: 0 };
     const priceSymbol = stock.market === 'us' ? '$' : '₩';
@@ -439,6 +487,14 @@ function renderShoppingStocks() {
     const change = quote.changePct;
     const colorClass = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
     const sign = change > 0 ? '+' : '';
+
+    let rightColContent = '';
+    if (activeShoppingCategory === 'dividend') {
+      const divYield = DIVIDEND_RATES[stock.id] || 0;
+      rightColContent = `<span style="font-size:11px; font-weight:700; color:var(--green); background:rgba(0,210,122,0.06); padding:2px 6px; border-radius:4px; display:inline-block; margin-top:2px;">연 ${divYield.toFixed(2)}%</span>`;
+    } else {
+      rightColContent = `<span class="${colorClass}">${sign}${change.toFixed(2)}%</span>`;
+    }
 
     return `
       <div class="stock-row-item" onclick="openStockDetail('${stock.id}')">
@@ -453,8 +509,8 @@ function renderShoppingStocks() {
           ${priceSymbol}${quote.price.toLocaleString(undefined, {maximumFractionDigits: stock.market === 'us' ? 2 : 0})}
           ${krwHint}
         </div>
-        <div class="change-col txt-right ${colorClass}">
-          ${sign}${change.toFixed(2)}%
+        <div class="change-col txt-right">
+          ${rightColContent}
         </div>
         <div class="action-col">
           <button class="trade-mini-btn">거래</button>
@@ -527,7 +583,7 @@ function handleSearch(query) {
   const dropdown = document.getElementById('searchResults');
   
   if (!query) {
-    dropdown.classList.remove('show');
+    showSearchLanding();
     return;
   }
 
@@ -582,23 +638,8 @@ function openOrderDrawer(stockId) {
   document.getElementById('drawerStockName').textContent = stock.name;
   document.getElementById('drawerStockTicker').textContent = stock.displayTicker;
   
-  const quote = liveQuotes[stock.id] || { price: 0, changePct: 0 };
-  const priceSymbol = stock.market === 'us' ? '$' : '₩';
-  document.getElementById('drawerCurrentPrice').textContent = `${priceSymbol}${quote.price.toLocaleString(undefined, {maximumFractionDigits: stock.market === 'us' ? 2 : 0})}`;
-  
-  const change = quote.changePct;
-  const colorClass = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
-  const sign = change > 0 ? '+' : '';
-  document.getElementById('drawerCurrentChange').className = `current-change ${colorClass}`;
-  document.getElementById('drawerCurrentChange').textContent = `${sign}${change.toFixed(2)}%`;
-
-  // 환율 힌트 제공
-  const rateHintEl = document.getElementById('drawerExchangeRateHint');
-  if (stock.market === 'us') {
-    rateHintEl.textContent = `적용 환율: $1 = ₩${Math.round(usdKrwRate).toLocaleString()} (원화 환산 ₩${Math.round(quote.price * usdKrwRate).toLocaleString()})`;
-  } else {
-    rateHintEl.textContent = '';
-  }
+  // 가격 및 라벨 갱신 (시장가 vs 지정가 판단)
+  updateOrderDrawerPrice();
 
   // 인풋 초기화
   document.getElementById('orderQty').value = '';
@@ -614,6 +655,7 @@ function openOrderDrawer(stockId) {
 function closeOrderDrawer() {
   document.getElementById('tossDrawerOverlay').classList.remove('open');
   activeDef = null;
+  selectedOrderPrice = null; // 호가 지정가 리셋
 }
 
 // 사기/팔기 모드 변경
@@ -646,73 +688,63 @@ function setOrderMode(mode) {
   calculateTotalCost();
 }
 
-// 실시간 총 비용 연동
-function calculateTotalCost() {
-  const qtyInput = document.getElementById('orderQty');
-  const qty = parseInt(qtyInput.value) || 0;
-  
-  const quote = liveQuotes[activeDef.id] || { price: 0 };
-  const price = quote.price;
 
-  // 원화 환산
-  const isUs = activeDef.market === 'us';
-  const priceKrw = isUs ? price * usdKrwRate : price;
-  const totalCostKrw = priceKrw * qty;
-
-  document.getElementById('drawerTotalCost').textContent = `₩${Math.round(totalCostKrw).toLocaleString()}`;
-}
 
 // 퀵 퍼센테이지 주문 적용 (최대 대비 비율)
 function applyQuickPct(pct) {
   const quote = liveQuotes[activeDef.id] || { price: 0 };
-  const price = quote.price;
+  const price = selectedOrderPrice !== null ? selectedOrderPrice : (quote.price || activeDef.price || 0);
   if (price === 0) return;
 
   const isUs = activeDef.market === 'us';
   const priceKrw = isUs ? price * usdKrwRate : price;
+  const cash = getStorageItem('mock_cash', 0);
   
-  let targetQty = 0;
-
-  if (activeOrderMode === 'buy') {
-    const cash = getStorageItem('mock_cash', 0);
-    const maxAffordable = Math.floor(cash / priceKrw);
-    targetQty = Math.floor(maxAffordable * pct);
-  } else {
-    const portfolio = getStorageItem('mock_portfolio', []);
-    const holding = portfolio.find(p => p.id === activeDef.id);
-    const holdingQty = holding ? holding.qty : 0;
-    targetQty = Math.floor(holdingQty * pct);
-  }
-
-  // 최소 1주 보장
-  if (pct > 0 && targetQty === 0) {
+  if (activeOrderMethod === 'qty') {
+    let targetQty = 0;
     if (activeOrderMode === 'buy') {
-      const cash = getStorageItem('mock_cash', 0);
-      if (cash >= priceKrw) targetQty = 1;
+      const maxAffordable = Math.floor(cash / priceKrw);
+      targetQty = Math.floor(maxAffordable * pct);
     } else {
       const portfolio = getStorageItem('mock_portfolio', []);
       const holding = portfolio.find(p => p.id === activeDef.id);
-      if (holding && holding.qty > 0) targetQty = 1;
+      const holdingQty = holding ? holding.qty : 0;
+      targetQty = isUs ? parseFloat((holdingQty * pct).toFixed(4)) : Math.floor(holdingQty * pct);
     }
+    
+    if (pct > 0 && targetQty === 0) {
+      if (activeOrderMode === 'buy' && cash >= priceKrw) targetQty = 1;
+      else if (activeOrderMode === 'sell') {
+        const portfolio = getStorageItem('mock_portfolio', []);
+        const holding = portfolio.find(p => p.id === activeDef.id);
+        if (holding && holding.qty > 0) targetQty = isUs ? parseFloat(holding.qty.toFixed(4)) : 1;
+      }
+    }
+    
+    orderQtyString = targetQty.toString();
+    document.getElementById('orderQty').value = targetQty.toLocaleString();
+  } else {
+    let targetAmount = 0;
+    if (activeOrderMode === 'buy') {
+      targetAmount = Math.floor(cash * pct);
+    } else {
+      const portfolio = getStorageItem('mock_portfolio', []);
+      const holding = portfolio.find(p => p.id === activeDef.id);
+      const holdingQty = holding ? holding.qty : 0;
+      targetAmount = Math.floor(holdingQty * priceKrw * pct);
+    }
+    
+    orderAmountString = targetAmount.toString();
+    document.getElementById('orderQty').value = targetAmount.toLocaleString();
   }
 
-  document.getElementById('orderQty').value = targetQty;
   calculateTotalCost();
 }
 
 // 거래 체결
 function executeOrder() {
-  const qtyInput = document.getElementById('orderQty');
-  const qty = parseInt(qtyInput.value) || 0;
-  
-  if (qty <= 0) {
-    alert("수량을 1주 이상 입력해주세요.");
-    qtyInput.focus();
-    return;
-  }
-
   const quote = liveQuotes[activeDef.id] || { price: 0 };
-  const price = quote.price;
+  const price = selectedOrderPrice !== null ? selectedOrderPrice : (quote.price || activeDef.price || 0);
   if (price === 0) {
     alert("현재 가격을 불러올 수 없어 거래를 완료할 수 없습니다.");
     return;
@@ -720,8 +752,33 @@ function executeOrder() {
 
   const isUs = activeDef.market === 'us';
   const priceKrw = isUs ? price * usdKrwRate : price;
-  const totalCostKrw = priceKrw * qty;
-  const totalCostUsd = price * qty;
+  
+  let qty = 0;
+  let totalCostKrw = 0;
+  
+  if (activeOrderMethod === 'qty') {
+    qty = parseInt(orderQtyString) || 0;
+    if (qty <= 0) {
+      alert("수량을 1주 이상 입력해주세요.");
+      return;
+    }
+    totalCostKrw = priceKrw * qty;
+  } else {
+    totalCostKrw = parseInt(orderAmountString) || 0;
+    if (totalCostKrw <= 0) {
+      alert("금액을 입력해주세요.");
+      return;
+    }
+    const estQty = totalCostKrw / priceKrw;
+    qty = isUs ? parseFloat(estQty.toFixed(4)) : Math.floor(estQty);
+    
+    if (qty <= 0) {
+      alert(isUs ? "금액이 너무 적어 소수점 최소 수량(0.0001주)을 살 수 없습니다." : "금액이 주가보다 적어 1주를 살 수 없습니다.");
+      return;
+    }
+  }
+
+  const totalCostUsd = isUs ? totalCostKrw / usdKrwRate : totalCostKrw;
   
   let cash = getStorageItem('mock_cash', 0);
   let portfolio = getStorageItem('mock_portfolio', []);
@@ -772,12 +829,13 @@ function executeOrder() {
       date: getFormattedDate()
     });
 
-    showToast(`${activeDef.name} ${qty}주를 샀습니다.`);
+    const displayQty = isUs ? qty.toFixed(4) : qty;
+    showToast(`${activeDef.name} ${parseFloat(displayQty).toLocaleString()}주를 샀습니다.`);
 
   } else {
     // 2. 매도 (팔기)
     const index = portfolio.findIndex(p => p.id === activeDef.id);
-    if (index === -1 || portfolio[index].qty < qty) {
+    if (index === -1 || portfolio[index].qty < qty - 0.00001) {
       alert("보유 수량이 부족하여 매도할 수 없습니다.");
       return;
     }
@@ -786,10 +844,10 @@ function executeOrder() {
     cash += totalCostKrw;
 
     // 포트폴리오 차감
-    portfolio[index].qty -= qty;
+    portfolio[index].qty = parseFloat((portfolio[index].qty - qty).toFixed(4));
     
-    // 수량 0이면 완전히 제거
-    if (portfolio[index].qty === 0) {
+    // 수량 0이면 완전히 제거 (소수점 감안해서 0.0001 미만이면 제거)
+    if (portfolio[index].qty < 0.0001) {
       portfolio.splice(index, 1);
     }
 
@@ -807,7 +865,8 @@ function executeOrder() {
       date: getFormattedDate()
     });
 
-    showToast(`${activeDef.name} ${qty}주를 팔았습니다.`);
+    const displayQty = isUs ? qty.toFixed(4) : qty;
+    showToast(`${activeDef.name} ${parseFloat(displayQty).toLocaleString()}주를 팔았습니다.`);
   }
 
   // 로컬 영구 저장
@@ -888,12 +947,12 @@ function renderPortfolioPie(cash, totalStockEval, portfolio) {
   const CX = 50, CY = 50;
   const circumference = 2 * Math.PI * R; // ~238.76
 
-  items.forEach(item => {
+  items.forEach((item, idx) => {
     const strokeDash = `${item.pct * circumference} ${circumference}`;
     const strokeOffset = -accumPercent * circumference;
     accumPercent += item.pct;
 
-    paths += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="transparent" stroke="${item.color}" stroke-width="10" stroke-dasharray="${strokeDash}" stroke-dashoffset="${strokeOffset}"></circle>`;
+    paths += `<circle class="pie-slice" data-idx="${idx}" cx="${CX}" cy="${CY}" r="${R}" fill="transparent" stroke="${item.color}" stroke-width="10" stroke-dasharray="${strokeDash}" stroke-dashoffset="${strokeOffset}" style="cursor:pointer; transition: stroke-width 0.2s;" onmouseover="highlightSlice(${idx}, '${item.name}', '${item.pct * 100}', '${item.value}')" onmouseout="resetSliceHighlight()"></circle>`;
   });
 
   svg.innerHTML = paths;
@@ -901,6 +960,7 @@ function renderPortfolioPie(cash, totalStockEval, portfolio) {
   // Render stock ratio percent
   const stockRatio = (totalStockEval / totalAssets) * 100;
   document.getElementById('portfolioPieRatio').textContent = `${stockRatio.toFixed(0)}%`;
+  document.getElementById('portfolioPieVal').textContent = `(₩${Math.round(totalStockEval).toLocaleString()})`;
 
   // Draw legend list
   legend.innerHTML = items.map(item => {
@@ -934,6 +994,9 @@ function openStockDetail(stockId) {
 
   // Run dynamic order book fluctuation loop
   startOrderBookSimulation(stock);
+  
+  // 실시간 고래 거래 시뮬레이션 동작 트리거 (Toss style)
+  startWhaleTradesSimulation(stock);
 
   // Initialize TradingView area chart (with delay to ensure container sizing is ready)
   detailChartRange = '1d';
@@ -959,6 +1022,9 @@ function closeStockDetail() {
     clearInterval(orderBookInterval);
     orderBookInterval = null;
   }
+
+  // 고래 추적 중단
+  stopWhaleTradesSimulation();
 
   // Destroy lightweight-chart instance
   if (currentDetailChart) {
@@ -1101,6 +1167,9 @@ async function initDetailChart(stock) {
           currentDetailChart.timeScale().fitContent();
           
           updateDetailMetrics(chartData, stock);
+          drawAveragePriceLine(stock);
+          drawPreviousCloseLine(stock); // 전일종가 기준 점선 그리기
+          setupChartCrosshairTracker(stock); // 십자선 마우스 이동 트래커 바인딩
           return;
         }
       }
@@ -1129,6 +1198,9 @@ async function initDetailChart(stock) {
     currentDetailChart.timeScale().fitContent();
 
     updateDetailMetrics([], stock);
+    drawAveragePriceLine(stock);
+    drawPreviousCloseLine(stock); // 전일종가 기준 점선 그리기
+    setupChartCrosshairTracker(stock); // 십자선 마우스 이동 트래커 바인딩
   }
 }
 
@@ -1201,7 +1273,7 @@ function startOrderBookSimulation(stock) {
     // Asks (5 sells - above)
     for (let i = 5; i >= 1; i--) {
       const askPrice = price + (i * tickSize);
-      const askChg = quote.changePct + (i * tickSize / price * 100);
+      const askChg = change + (i * tickSize / price * 100);
       const vol = Math.floor(500 + Math.random() * maxQty);
       asks.push({ price: askPrice, change: askChg, vol: vol });
     }
@@ -1209,7 +1281,7 @@ function startOrderBookSimulation(stock) {
     // Bids (5 buys - below)
     for (let i = 1; i <= 5; i++) {
       const bidPrice = price - (i * tickSize);
-      const bidChg = quote.changePct - (i * tickSize / price * 100);
+      const bidChg = change - (i * tickSize / price * 100);
       const vol = Math.floor(500 + Math.random() * maxQty);
       bids.push({ price: bidPrice, change: bidChg, vol: vol });
     }
@@ -1226,7 +1298,7 @@ function startOrderBookSimulation(stock) {
     asks.forEach(ask => {
       const barWidth = (ask.vol / peakVol) * 100;
       html += `
-        <div class="ob-row ask">
+        <div class="ob-row ask" onclick="fillOrderPrice(${ask.price})" style="cursor:pointer;">
           <div class="ob-price">${priceSymbol}${ask.price.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}</div>
           <div class="ob-change">${ask.change > 0 ? '+' : ''}${ask.change.toFixed(2)}%</div>
           <div class="ob-volume-container">
@@ -1248,7 +1320,7 @@ function startOrderBookSimulation(stock) {
     bids.forEach(bid => {
       const barWidth = (bid.vol / peakVol) * 100;
       html += `
-        <div class="ob-row bid">
+        <div class="ob-row bid" onclick="fillOrderPrice(${bid.price})" style="cursor:pointer;">
           <div class="ob-price">${priceSymbol}${bid.price.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}</div>
           <div class="ob-change">${bid.change > 0 ? '+' : ''}${bid.change.toFixed(2)}%</div>
           <div class="ob-volume-container">
@@ -1269,6 +1341,756 @@ function startOrderBookSimulation(stock) {
 // ── Sticky Actions bar listeners ──
 function openOrderDrawerFromDetail(mode) {
   if (!activeDetailDef) return;
+  selectedOrderPrice = null; // 대시보드 사기/팔기 버튼은 시장가 기본
   openOrderDrawer(activeDetailDef.id);
   setOrderMode(mode);
+}
+
+// ── 테마 토글 및 초기화 ──
+function initTheme() {
+  const savedTheme = localStorage.getItem('mock_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  setTheme(savedTheme);
+}
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('mock_theme', theme);
+  
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) {
+    if (theme === 'dark') {
+      btn.innerHTML = `<svg class="theme-icon" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+    } else {
+      btn.innerHTML = `<svg class="theme-icon" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+    }
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const target = current === 'dark' ? 'light' : 'dark';
+  setTheme(target);
+}
+
+// ── 예수금 입출금 모달 제어 ──
+let cashModalMode = 'deposit'; // 'deposit' | 'withdraw'
+let cashModalAmountStr = '';
+
+function openCashModal(mode) {
+  cashModalMode = mode;
+  cashModalAmountStr = '';
+  document.getElementById('cashAmountInput').value = '0';
+  
+  const title = document.getElementById('cashModalTitle');
+  const desc = document.getElementById('cashModalDesc');
+  const actionBtn = document.getElementById('cashModalActionBtn');
+  
+  if (mode === 'deposit') {
+    title.textContent = '예수금 입금';
+    desc.textContent = '모의 투자 계좌에 예수금을 입금합니다.';
+    actionBtn.textContent = '입금하기';
+    actionBtn.className = 'btn btn-primary';
+  } else {
+    title.textContent = '예수금 출금';
+    desc.textContent = '모의 투자 계좌에서 예수금을 출금합니다.';
+    actionBtn.textContent = '출금하기';
+    actionBtn.className = 'btn btn-secondary';
+  }
+  
+  document.getElementById('cashModal').classList.add('open');
+}
+
+function closeCashModal() {
+  document.getElementById('cashModal').classList.remove('open');
+}
+
+function pressCashKey(key) {
+  const input = document.getElementById('cashAmountInput');
+  if (key === 'backspace') {
+    cashModalAmountStr = cashModalAmountStr.slice(0, -1);
+  } else {
+    if (cashModalAmountStr.length >= 11) return;
+    cashModalAmountStr += key;
+  }
+  const val = parseInt(cashModalAmountStr) || 0;
+  input.value = val.toLocaleString();
+}
+
+function addQuickCash(amount) {
+  const currentVal = parseInt(cashModalAmountStr) || 0;
+  const newVal = currentVal + amount;
+  if (newVal > 10000000000) return;
+  cashModalAmountStr = newVal.toString();
+  document.getElementById('cashAmountInput').value = newVal.toLocaleString();
+}
+
+function clearCashInput() {
+  cashModalAmountStr = '';
+  document.getElementById('cashAmountInput').value = '0';
+}
+
+function executeCashTransaction() {
+  const amount = parseInt(cashModalAmountStr) || 0;
+  if (amount <= 0) {
+    alert('금액을 입력해주세요.');
+    return;
+  }
+  
+  let cash = getStorageItem('mock_cash', 0);
+  let capital = getStorageItem('mock_capital', 0);
+  let history = getStorageItem('mock_history', []);
+  
+  if (cashModalMode === 'deposit') {
+    cash += amount;
+    capital += amount;
+    setStorageItem('mock_cash', cash);
+    setStorageItem('mock_capital', capital);
+    
+    history.push({
+      type: 'buy',
+      name: '예수금 입금',
+      ticker: 'DEPOSIT',
+      market: 'kr',
+      qty: 1,
+      price: amount,
+      total: amount,
+      totalKrw: amount,
+      date: getFormattedDate()
+    });
+    
+    showToast(`₩${amount.toLocaleString()}이 입금되었습니다.`);
+  } else {
+    if (cash < amount) {
+      alert('보유 예수금이 부족합니다.');
+      return;
+    }
+    cash -= amount;
+    capital = Math.max(0, capital - amount);
+    setStorageItem('mock_cash', cash);
+    setStorageItem('mock_capital', capital);
+    
+    history.push({
+      type: 'sell',
+      name: '예수금 출금',
+      ticker: 'WITHDRAW',
+      market: 'kr',
+      qty: 1,
+      price: amount,
+      total: amount,
+      totalKrw: amount,
+      date: getFormattedDate()
+    });
+    
+    showToast(`₩${amount.toLocaleString()}이 출금되었습니다.`);
+  }
+  
+  setStorageItem('mock_history', history);
+  closeCashModal();
+  updateUI();
+}
+
+// ── 목표 자산 설정 모달 제어 ──
+let targetModalAmountStr = '';
+
+function openTargetModal() {
+  targetModalAmountStr = '';
+  const currentGoal = getStorageItem('mock_target_goal', 200000000);
+  document.getElementById('targetAmountInput').value = currentGoal.toLocaleString();
+  targetModalAmountStr = currentGoal.toString();
+  document.getElementById('targetModal').classList.add('open');
+}
+
+function closeTargetModal() {
+  document.getElementById('targetModal').classList.remove('open');
+}
+
+function pressTargetKey(key) {
+  const input = document.getElementById('targetAmountInput');
+  if (key === 'backspace') {
+    targetModalAmountStr = targetModalAmountStr.slice(0, -1);
+  } else {
+    if (targetModalAmountStr.length >= 12) return;
+    targetModalAmountStr += key;
+  }
+  const val = parseInt(targetModalAmountStr) || 0;
+  input.value = val.toLocaleString();
+}
+
+function addTargetCash(amount) {
+  const currentVal = parseInt(targetModalAmountStr) || 0;
+  const newVal = currentVal + amount;
+  if (newVal > 100000000000) return;
+  targetModalAmountStr = newVal.toString();
+  document.getElementById('targetAmountInput').value = newVal.toLocaleString();
+}
+
+function clearTargetInput() {
+  targetModalAmountStr = '';
+  document.getElementById('targetAmountInput').value = '0';
+}
+
+function confirmTargetGoal() {
+  const val = parseInt(targetModalAmountStr) || 0;
+  if (val <= 0) {
+    alert('목표 자산을 입력해주세요.');
+    return;
+  }
+  setStorageItem('mock_target_goal', val);
+  closeTargetModal();
+  updateUI();
+  showToast(`목표 자산이 ₩${val.toLocaleString()}으로 변경되었습니다.`);
+}
+
+function updateTargetReturnUI() {
+  const goal = getStorageItem('mock_target_goal', 200000000);
+  const goalLabel = document.getElementById('targetGoalLabel');
+  if (goalLabel) goalLabel.textContent = `목표 ₩${Math.round(goal).toLocaleString()}`;
+  
+  const cash = getStorageItem('mock_cash', 0);
+  const portfolio = getStorageItem('mock_portfolio', []);
+  let totalStockEval = 0;
+  portfolio.forEach(holding => {
+    const quote = liveQuotes[holding.id] || { price: holding.avgPrice };
+    const price = quote.price;
+    const isUs = holding.market === 'us';
+    const evalPriceKrw = isUs ? price * usdKrwRate : price;
+    totalStockEval += evalPriceKrw * holding.qty;
+  });
+  
+  const totalAssets = cash + totalStockEval;
+  const progressPct = Math.min(100, Math.max(0, (totalAssets / goal) * 100));
+  
+  const bar = document.getElementById('targetProgressBar');
+  if (bar) bar.style.width = `${progressPct.toFixed(1)}%`;
+  
+  const pctText = document.getElementById('targetProgressPct');
+  if (pctText) pctText.textContent = `${progressPct.toFixed(1)}% 달성`;
+  
+  const reportBox = document.getElementById('portfolioAnalysisReport');
+  if (reportBox) {
+    const capital = getStorageItem('mock_capital', 0);
+    const netProfit = totalAssets - capital;
+    const netReturnPct = capital > 0 ? (netProfit / capital) * 100 : 0;
+    
+    let reportText = '';
+    if (portfolio.length === 0) {
+      reportText = `💡 <strong>첫 주식을 사보세요!</strong> 현재 보유 주식이 없습니다. 예수금을 입금하거나 주식 쇼핑 탭에서 인기 주식을 골라보세요.`;
+    } else {
+      let bestHolding = null;
+      let bestReturn = -Infinity;
+      portfolio.forEach(holding => {
+        const quote = liveQuotes[holding.id] || { price: holding.avgPrice };
+        const returnPct = ((quote.price - holding.avgPrice) / holding.avgPrice) * 100;
+        if (returnPct > bestReturn) {
+          bestReturn = returnPct;
+          bestHolding = holding;
+        }
+      });
+      
+      if (netProfit > 0) {
+        reportText = `🔥 <strong>순조로운 투자 중!</strong> 누적 수익 <strong>+₩${Math.round(netProfit).toLocaleString()} (${netReturnPct.toFixed(2)}%)</strong>를 기록하고 있습니다. 특히 <strong>${bestHolding.name}</strong> 종목이 <strong>+${bestReturn.toFixed(1)}%</strong>의 최고 수익률을 내며 자산 성장을 리드하고 있네요!`;
+      } else if (netProfit < 0) {
+        reportText = `📉 <strong>인내심이 필요한 시기!</strong> 현재 누적 손실률은 <strong>${netReturnPct.toFixed(2)}%</strong>입니다. 손실이 큰 종목은 분할 매수로 단가를 낮추는 방안을 검토하거나, AI 투자 신호가 '강력매수'인 우량 자산 비중을 늘려 방어력을 높여보세요.`;
+      } else {
+        reportText = `😐 <strong>투자의 첫 걸음!</strong> 현재 원금 상태를 유지하고 있습니다. 투자 자산 비중이 늘어남에 따라 실시간 주가 상승률에 의해 자산이 더욱 변동하게 될 것입니다.`;
+      }
+    }
+    reportBox.innerHTML = reportText;
+  }
+}
+
+// ── 주문 방식 변경 및 키패드 입력 ──
+let orderQtyString = '';
+let orderAmountString = '';
+let activeOrderMethod = 'qty'; // 'qty' | 'amount'
+
+function switchOrderMethod(method) {
+  activeOrderMethod = method;
+  document.getElementById('method-qty').classList.toggle('active', method === 'qty');
+  document.getElementById('method-amount').classList.toggle('active', method === 'amount');
+  
+  const label = document.getElementById('inputLabel');
+  const unit = document.getElementById('inputUnit');
+  
+  if (method === 'qty') {
+    label.textContent = '주문 수량';
+    unit.textContent = '주';
+    orderQtyString = '';
+    document.getElementById('orderQty').value = '0';
+  } else {
+    label.textContent = '주문 금액';
+    unit.textContent = '원';
+    orderAmountString = '';
+    document.getElementById('orderQty').value = '0';
+  }
+  
+  calculateTotalCost();
+}
+
+function pressKey(key) {
+  const input = document.getElementById('orderQty');
+  if (activeOrderMethod === 'qty') {
+    if (key === 'backspace') {
+      orderQtyString = orderQtyString.slice(0, -1);
+    } else {
+      if (orderQtyString.length >= 7) return;
+      orderQtyString += key;
+    }
+    const val = parseInt(orderQtyString) || 0;
+    input.value = val.toLocaleString();
+  } else {
+    if (key === 'backspace') {
+      orderAmountString = orderAmountString.slice(0, -1);
+    } else {
+      if (orderAmountString.length >= 11) return;
+      orderAmountString += key;
+    }
+    const val = parseInt(orderAmountString) || 0;
+    input.value = val.toLocaleString();
+  }
+  
+  calculateTotalCost();
+}
+
+function calculateTotalCost() {
+  if (!activeDef) return;
+  const quote = liveQuotes[activeDef.id] || { price: 0 };
+  const price = selectedOrderPrice !== null ? selectedOrderPrice : (quote.price || activeDef.price || 0);
+  const isUs = activeDef.market === 'us';
+  const priceKrw = isUs ? price * usdKrwRate : price;
+  
+  const costLabel = document.getElementById('drawerTotalCostLabel');
+  const costVal = document.getElementById('drawerTotalCost');
+  
+  if (activeOrderMethod === 'qty') {
+    const qty = parseInt(orderQtyString) || 0;
+    const totalCostKrw = priceKrw * qty;
+    costLabel.textContent = '예상 총 금액';
+    costVal.textContent = `₩${Math.round(totalCostKrw).toLocaleString()}`;
+  } else {
+    const amount = parseInt(orderAmountString) || 0;
+    const estQty = priceKrw > 0 ? (amount / priceKrw) : 0;
+    const finalQty = isUs ? estQty.toFixed(4) : Math.floor(estQty);
+    
+    costLabel.textContent = `예상 주문 수량: ${parseFloat(finalQty).toLocaleString()}주`;
+    costVal.textContent = `₩${amount.toLocaleString()}`;
+  }
+}
+
+// ── 최근 검색어 및 실시간 인기 주식 ──
+const POPULAR_STOCKS = [
+  { id: 'nvidia', name: 'NVIDIA', ticker: 'NVDA', rank: 1, up: true },
+  { id: 'tesla', name: 'Tesla', ticker: 'TSLA', rank: 2, up: true },
+  { id: 'samsung', name: '삼성전자', ticker: '005930', rank: 3, up: false },
+  { id: 'apple', name: 'Apple', ticker: 'AAPL', rank: 4, up: true },
+  { id: 'sk-hynix', name: 'SK하이닉스', ticker: '000660', rank: 5, up: false }
+];
+
+function showSearchLanding() {
+  const dropdown = document.getElementById('searchResults');
+  const recent = getStorageItem('recent_searches', []);
+  
+  let html = '';
+  
+  html += `<div class="search-section" style="padding:14px 16px; border-bottom:1px solid var(--border);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <span style="font-size:12px; font-weight:700; color:var(--text-muted);">최근 검색어</span>
+      ${recent.length > 0 ? `<button onclick="clearRecentSearches(event)" style="font-size:11px; color:var(--text-muted); background:none; border:none; cursor:pointer;">모두 지우기</button>` : ''}
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+      ${recent.length > 0 ? recent.map((item, idx) => {
+        return `<span class="recent-keyword" onclick="selectSearchKeyword('${item}', event)" style="font-size:12px; font-weight:600; padding:6px 12px; background:var(--surface2); border-radius:16px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--text);">
+          ${item}
+          <span onclick="deleteRecentSearch(${idx}, event)" style="font-weight:800; opacity:0.6; cursor:pointer; padding:0 2px;">&times;</span>
+        </span>`;
+      }).join('') : `<span style="font-size:12px; color:var(--text-muted);">최근 검색한 주식이 없습니다.</span>`}
+    </div>
+  </div>`;
+  
+  html += `<div class="search-section" style="padding:14px 16px;">
+    <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:12px;">실시간 인기 주식</div>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      ${POPULAR_STOCKS.map(s => {
+        const quote = liveQuotes[s.id] || { price: 0, changePct: 0 };
+        const change = quote.changePct;
+        const colorClass = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
+        const sign = change > 0 ? '+' : '';
+        const badgeColor = s.rank <= 3 ? 'var(--accent)' : 'var(--text-muted)';
+        
+        return `<div class="popular-item" onclick="openStockDetail('${s.id}')" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:4px 0;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span style="font-size:13px; font-weight:800; color:${badgeColor}; width:16px; text-align:center;">${s.rank}</span>
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <span style="font-size:13.5px; font-weight:700; color:var(--text);">${s.name}</span>
+              <span style="font-size:10px; color:var(--text-muted);">${s.ticker}</span>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <span style="font-size:11px; font-weight:700;" class="${colorClass}">${sign}${change.toFixed(2)}%</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+  
+  dropdown.innerHTML = html;
+  dropdown.classList.add('show');
+}
+
+function saveSearchKeyword(keyword) {
+  let recent = getStorageItem('recent_searches', []);
+  recent = recent.filter(item => item !== keyword);
+  recent.unshift(keyword);
+  if (recent.length > 8) recent = recent.slice(0, 8);
+  setStorageItem('recent_searches', recent);
+}
+
+function deleteRecentSearch(idx, event) {
+  event.stopPropagation();
+  let recent = getStorageItem('recent_searches', []);
+  recent.splice(idx, 1);
+  setStorageItem('recent_searches', recent);
+  showSearchLanding();
+}
+
+function clearRecentSearches(event) {
+  event.stopPropagation();
+  setStorageItem('recent_searches', []);
+  showSearchLanding();
+}
+
+function selectSearchKeyword(keyword, event) {
+  event.stopPropagation();
+  document.getElementById('tossSearch').value = keyword;
+  handleSearch(keyword);
+}
+
+// ── 카테고리 필터 정렬 ──
+let activeShoppingCategory = 'popular';
+
+function switchCategory(category) {
+  activeShoppingCategory = category;
+  
+  const selector = document.querySelector('.category-selector');
+  if (selector) {
+    const btns = selector.querySelectorAll('.mkt-btn');
+    btns.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('onclick').includes(category));
+    });
+  }
+  
+  renderShoppingStocks();
+}
+
+// ── 도넛 차트 Hover 상호작용 ──
+function highlightSlice(idx, name, pct, val) {
+  const slices = document.querySelectorAll('.pie-slice');
+  slices.forEach((s, i) => {
+    if (i === idx) {
+      s.setAttribute('stroke-width', '13');
+    } else {
+      s.setAttribute('stroke-width', '8');
+    }
+  });
+  
+  document.getElementById('portfolioPieRatio').textContent = `${parseFloat(pct).toFixed(1)}%`;
+  document.getElementById('portfolioPieRatio').style.fontSize = '13.5px';
+  document.getElementById('portfolioPieRatio').style.color = slices[idx].getAttribute('stroke');
+  document.querySelector('.pie-center .center-label').textContent = name;
+  document.getElementById('portfolioPieVal').textContent = `₩${Math.round(parseFloat(val)).toLocaleString()}`;
+}
+
+function resetSliceHighlight() {
+  const slices = document.querySelectorAll('.pie-slice');
+  slices.forEach(s => {
+    s.setAttribute('stroke-width', '10');
+  });
+  
+  const cash = getStorageItem('mock_cash', 0);
+  const portfolio = getStorageItem('mock_portfolio', []);
+  let totalStockEval = 0;
+  portfolio.forEach(holding => {
+    const quote = liveQuotes[holding.id] || { price: holding.avgPrice };
+    const isUs = holding.market === 'us';
+    const evalPriceKrw = isUs ? quote.price * usdKrwRate : quote.price;
+    totalStockEval += evalPriceKrw * holding.qty;
+  });
+  
+  const totalAssets = cash + totalStockEval;
+  const stockRatio = totalAssets > 0 ? (totalStockEval / totalAssets) * 100 : 0;
+  
+  document.getElementById('portfolioPieRatio').textContent = `${stockRatio.toFixed(0)}%`;
+  document.getElementById('portfolioPieRatio').style.fontSize = '15px';
+  document.getElementById('portfolioPieRatio').style.color = 'var(--text)';
+  document.querySelector('.pie-center .center-label').textContent = '주식 비중';
+  document.getElementById('portfolioPieVal').textContent = `(₩${Math.round(totalStockEval).toLocaleString()})`;
+}
+
+// ── 평단가 라인 그리기 ──
+function drawAveragePriceLine(stock) {
+  if (!currentDetailSeries) return;
+  const portfolio = getStorageItem('mock_portfolio', []);
+  const holding = portfolio.find(p => p.id === stock.id);
+  if (holding && holding.qty > 0) {
+    currentDetailSeries.createPriceLine({
+      price: holding.avgPrice,
+      color: '#E03947',
+      lineWidth: 1.5,
+      lineStyle: 1, // Dashed
+      axisLabelVisible: true,
+      title: '내 평단가'
+    });
+  }
+}
+
+// ── 호가창 클릭 피드백 ──
+function fillOrderPrice(price) {
+  if (!activeDetailDef) return;
+  selectedOrderPrice = price; // 호가 지정가 선택 잠금
+  openOrderDrawer(activeDetailDef.id);
+  
+  // 수량 주문 모드라면 1주 입력, 금액 주문 모드라면 가격만큼 1주치 입력
+  if (activeOrderMethod === 'qty') {
+    orderQtyString = '1';
+    document.getElementById('orderQty').value = '1';
+  } else {
+    const isUs = activeDetailDef.market === 'us';
+    const priceKrw = isUs ? Math.round(price * usdKrwRate) : price;
+    orderAmountString = Math.round(priceKrw).toString();
+    document.getElementById('orderQty').value = Math.round(priceKrw).toLocaleString();
+  }
+  calculateTotalCost();
+}
+
+// ── 호가 지정가 UI 갱신 도우미 ──
+function updateOrderDrawerPrice() {
+  if (!activeDef) return;
+  const quote = liveQuotes[activeDef.id] || { price: 0, changePct: 0 };
+  const priceSymbol = activeDef.market === 'us' ? '$' : '₩';
+  const labelEl = document.querySelector('.price-label');
+  const priceEl = document.getElementById('drawerCurrentPrice');
+  const changeEl = document.getElementById('drawerCurrentChange');
+  const rateHintEl = document.getElementById('drawerExchangeRateHint');
+
+  if (selectedOrderPrice !== null) {
+    labelEl.innerHTML = `지정가 주문 <span class="limit-badge">지정가</span><span class="clear-limit-btn" onclick="clearSelectedOrderPrice(event)">시장가로 변경</span>`;
+    priceEl.textContent = `${priceSymbol}${selectedOrderPrice.toLocaleString(undefined, {maximumFractionDigits: activeDef.market === 'us' ? 2 : 0})}`;
+    
+    const change = quote.changePct || 0;
+    const prevClose = quote.price / (1 + change/100);
+    const limitChg = prevClose > 0 ? ((selectedOrderPrice - prevClose) / prevClose) * 100 : 0;
+    const colorClass = limitChg > 0 ? 'up' : (limitChg < 0 ? 'down' : 'flat');
+    const sign = limitChg > 0 ? '+' : '';
+    changeEl.className = `current-change ${colorClass}`;
+    changeEl.textContent = `${sign}${limitChg.toFixed(2)}%`;
+
+    if (activeDef.market === 'us') {
+      rateHintEl.textContent = `적용 환율: $1 = ₩${Math.round(usdKrwRate).toLocaleString()} (원화 환산 ₩${Math.round(selectedOrderPrice * usdKrwRate).toLocaleString()})`;
+    } else {
+      rateHintEl.textContent = '';
+    }
+  } else {
+    labelEl.textContent = '현재가';
+    priceEl.textContent = `${priceSymbol}${quote.price.toLocaleString(undefined, {maximumFractionDigits: activeDef.market === 'us' ? 2 : 0})}`;
+    
+    const change = quote.changePct || 0;
+    const colorClass = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
+    const sign = change > 0 ? '+' : '';
+    changeEl.className = `current-change ${colorClass}`;
+    changeEl.textContent = `${sign}${change.toFixed(2)}%`;
+
+    if (activeDef.market === 'us') {
+      rateHintEl.textContent = `적용 환율: $1 = ₩${Math.round(usdKrwRate).toLocaleString()} (원화 환산 ₩${Math.round(quote.price * usdKrwRate).toLocaleString()})`;
+    } else {
+      rateHintEl.textContent = '';
+    }
+  }
+}
+
+// ── 지정가 해제 ──
+function clearSelectedOrderPrice(event) {
+  if (event) event.stopPropagation();
+  selectedOrderPrice = null;
+  updateOrderDrawerPrice();
+  calculateTotalCost();
+}
+
+// ── 전일 종가 기준 점선 그리기 ──
+function drawPreviousCloseLine(stock) {
+  if (!currentDetailSeries || detailChartRange !== '1d') return;
+  const quote = liveQuotes[stock.id] || { price: 0, changePct: 0 };
+  const price = quote.price || stock.price || 0;
+  const change = quote.changePct || 0;
+  const prevClose = price / (1 + change/100);
+
+  if (prevClose > 0) {
+    currentDetailSeries.createPriceLine({
+      price: prevClose,
+      color: 'rgba(142, 148, 160, 0.45)', // 투명도 있는 중립 회색 점선
+      lineWidth: 1,
+      lineStyle: 2, // Dashed
+      axisLabelVisible: true,
+      title: '전일 종가'
+    });
+  }
+}
+
+// ── 십자선 마우스 이동 트래커 바인딩 (Toss style) ──
+function setupChartCrosshairTracker(stock) {
+  if (!currentDetailChart || !currentDetailSeries) return;
+  
+  currentDetailChart.subscribeCrosshairMove(param => {
+    const priceEl = document.getElementById('detailCurrentPrice');
+    const changeEl = document.getElementById('detailCurrentChange');
+    const subEl = document.getElementById('detailExchangeRateHint');
+
+    const quote = liveQuotes[stock.id] || { price: 0, changePct: 0 };
+    const curPrice = quote.price || stock.price || 0;
+    const curChange = quote.changePct || 0;
+    const isUs = stock.market === 'us';
+    const priceSymbol = isUs ? '$' : '₩';
+    const prevClose = curPrice / (1 + curChange/100);
+
+    if (!param.time || param.point === undefined || !param.seriesData.get(currentDetailSeries)) {
+      // 마우스가 떠났을 때 원본 시세로 복구
+      priceEl.textContent = `${priceSymbol}${curPrice.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}`;
+      const colorClass = curChange > 0 ? 'up' : (curChange < 0 ? 'down' : 'flat');
+      const sign = curChange > 0 ? '+' : '';
+      changeEl.className = `current-change ${colorClass}`;
+      changeEl.textContent = `${sign}${curChange.toFixed(2)}%`;
+      if (isUs) {
+        subEl.textContent = `적용 환율: $1 = ₩${Math.round(usdKrwRate).toLocaleString()} (원화 환산 ₩${Math.round(curPrice * usdKrwRate).toLocaleString()})`;
+      } else {
+        subEl.textContent = '';
+      }
+      return;
+    }
+
+    const data = param.seriesData.get(currentDetailSeries);
+    if (data) {
+      const val = data.value !== undefined ? data.value : data.close;
+      const chg = prevClose > 0 ? ((val - prevClose) / prevClose) * 100 : 0;
+      const colorClass = chg > 0 ? 'up' : (chg < 0 ? 'down' : 'flat');
+      const sign = chg > 0 ? '+' : '';
+
+      priceEl.textContent = `${priceSymbol}${val.toLocaleString(undefined, {maximumFractionDigits: isUs ? 2 : 0})}`;
+      changeEl.className = `current-change ${colorClass}`;
+      changeEl.textContent = `${sign}${chg.toFixed(2)}%`;
+
+      let timeString = '';
+      const timeVal = param.time;
+      if (typeof timeVal === 'number') {
+        const date = new Date(timeVal * 1000);
+        const pad = (n) => n.toString().padStart(2, '0');
+        if (detailChartRange === '1d') {
+          timeString = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        } else {
+          timeString = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        }
+      } else if (typeof timeVal === 'object') {
+        timeString = `${timeVal.year}-${String(timeVal.month).padStart(2, '0')}-${String(timeVal.day).padStart(2, '0')}`;
+      } else {
+        timeString = String(timeVal);
+      }
+
+      if (isUs) {
+        subEl.innerHTML = `<span style="color:var(--accent); font-weight:700;">[조회 시점: ${timeString}]</span> · 원화 환산 ₩${Math.round(val * usdKrwRate).toLocaleString()}`;
+      } else {
+        subEl.innerHTML = `<span style="color:var(--accent); font-weight:700;">[조회 시점: ${timeString}]</span>`;
+      }
+    }
+  });
+}
+
+// ── 실시간 고래 거래 (Whale Alerts) 시뮬레이터 ──
+let whaleAlerts = [];
+
+function startWhaleTradesSimulation(stock) {
+  stopWhaleTradesSimulation();
+  
+  const container = document.getElementById('whaleAlertStream');
+  if (!container) return;
+  container.innerHTML = '';
+  whaleAlerts = [];
+  
+  // 오늘의 매집 지수 랜덤 생성
+  const buyAccumulation = 55 + Math.floor(Math.random() * 40); // 55% ~ 95%
+  document.getElementById('detailWhaleIndex').textContent = `매집 지수: ${buyAccumulation}%`;
+  
+  const isUs = stock.market === 'us';
+  const quote = liveQuotes[stock.id] || { price: stock.market === 'kr' ? 70000 : 150 };
+  const basePrice = quote.price;
+
+  // 3개 초기 고래 알림 준비
+  for (let i = 0; i < 3; i++) {
+    whaleAlerts.push(generateFakeWhaleTrade(stock, basePrice, isUs));
+  }
+  renderWhaleAlerts();
+
+  // 6초 간격으로 신규 알림 추가하고 스크롤
+  whaleInterval = setInterval(() => {
+    const nextAlert = generateFakeWhaleTrade(stock, basePrice, isUs);
+    whaleAlerts.push(nextAlert);
+    if (whaleAlerts.length > 3) {
+      whaleAlerts.shift(); // 3개 유지
+    }
+    renderWhaleAlerts(true);
+  }, 6000);
+}
+
+function generateFakeWhaleTrade(stock, basePrice, isUs) {
+  const pad = (n) => n.toString().padStart(2, '0');
+  const now = new Date();
+  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  
+  const isBuy = Math.random() > 0.45; // 55% buy chance
+  const typeText = isBuy ? '매수체결' : '매도체결';
+  const typeClass = isBuy ? 'up' : 'down';
+  
+  let shares = 0;
+  let valKrw = 0;
+  if (stock.market === 'kr') {
+    shares = (10 + Math.floor(Math.random() * 90)) * 500; // 5k to 50k shares
+    valKrw = shares * basePrice;
+  } else {
+    shares = (1 + Math.floor(Math.random() * 19)) * 500; // 500 to 10k shares
+    valKrw = shares * basePrice * usdKrwRate;
+  }
+  
+  const valText = valKrw >= 100000000
+    ? `₩${(valKrw / 100000000).toFixed(1)}억`
+    : `₩${Math.round(valKrw / 10000).toLocaleString()}만`;
+
+  return {
+    time: timeStr,
+    shares: shares.toLocaleString(),
+    valText: valText,
+    typeText: typeText,
+    typeClass: typeClass
+  };
+}
+
+function renderWhaleAlerts(animate = false) {
+  const container = document.getElementById('whaleAlertStream');
+  if (!container) return;
+  
+  const rowsHtml = whaleAlerts.map((alert, idx) => {
+    const animClass = (animate && idx === whaleAlerts.length - 1) ? 'whale-row' : 'whale-row';
+    return `
+      <div class="${animClass}">
+        <span style="color:var(--text-muted); font-size:10.5px;">${alert.time}</span>
+        <span style="color:var(--text); flex:1; margin-left:10px;">${alert.shares}주 (${alert.valText})</span>
+        <span class="${alert.typeClass}">${alert.typeText} 🐳</span>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = rowsHtml;
+}
+
+function stopWhaleTradesSimulation() {
+  if (whaleInterval) {
+    clearInterval(whaleInterval);
+    whaleInterval = null;
+  }
 }

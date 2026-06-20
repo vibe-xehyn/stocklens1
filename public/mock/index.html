@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>StockLens 모의투자</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Pretendard Variable webfont -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -29,7 +29,10 @@
           <div class="search-results-dropdown" id="searchResults"></div>
         </div>
       </div>
-      <div class="header-right">
+      <div class="header-right" style="display:flex;align-items:center;gap:12px;">
+        <button id="themeToggleBtn" onclick="toggleTheme()" class="theme-toggle-btn" title="테마 변경" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text);transition:var(--transition);padding:0;">
+          <svg class="theme-icon" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
         <div class="user-profile-badge" id="headerProfile">
           <div class="avatar" id="avatarLetter">G</div>
           <div class="user-info">
@@ -71,7 +74,11 @@
               <span class="val" id="assetStocks">₩0</span>
             </div>
           </div>
-          <button class="btn btn-secondary reset-btn" onclick="openCapitalModal(true)">투자금 초기화</button>
+          <div style="display:flex;gap:6px;width:100%;margin-top:6px;">
+            <button class="btn btn-primary deposit-btn" onclick="openCashModal('deposit')" style="flex:1;padding:8px;font-size:11.5px;">입금</button>
+            <button class="btn btn-secondary withdraw-btn" onclick="openCashModal('withdraw')" style="flex:1;padding:8px;font-size:11.5px;">출금</button>
+            <button class="btn btn-secondary reset-btn" onclick="openCapitalModal(true)" style="padding:8px;font-size:11.5px;display:flex;align-items:center;justify-content:center;" title="투자금 초기화">↻</button>
+          </div>
         </div>
       </div>
 
@@ -86,10 +93,35 @@
             <div class="pie-center">
               <span class="center-label">주식 비중</span>
               <span class="center-val" id="portfolioPieRatio">0%</span>
+              <span class="center-sub-val" id="portfolioPieVal" style="font-size: 10px; color: var(--text-muted); margin-top: 2px; font-weight: 600;"></span>
             </div>
           </div>
           <div class="portfolio-legend" id="portfolioLegend">
             <!-- JS 범례 주입 -->
+          </div>
+        </div>
+      </div>
+
+      </div>
+
+      <!-- 목표 수익률 & 수익 현황 카드 -->
+      <div class="target-return-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:var(--shadow);">
+        <div class="target-header" style="display:flex;align-items:center;margin-bottom:12px;width:100%;justify-content:space-between;">
+          <span class="target-title" style="font-size:14px;font-weight:800;">나의 투자 목표</span>
+          <button class="btn btn-secondary edit-target-btn" onclick="openTargetModal()" style="padding:4px 10px;font-size:11px;border-radius:6px;">목표 설정</button>
+        </div>
+        <div class="target-body">
+          <div class="progress-wrap" style="margin-bottom:12px;">
+            <div class="progress-bar-bg" style="width:100%;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:6px;">
+              <div class="progress-bar-fill" id="targetProgressBar" style="width: 0%;height:100%;background:var(--accent);border-radius:3px;transition:width 0.3s ease;"></div>
+            </div>
+            <div class="progress-labels" style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;">
+              <span class="progress-pct" id="targetProgressPct" style="color:var(--accent);">0% 달성</span>
+              <span class="target-goal-val" id="targetGoalLabel" style="color:var(--text-muted);">목표 ₩0</span>
+            </div>
+          </div>
+          <div class="analysis-status-box" id="portfolioAnalysisReport" style="font-size:11.5px;line-height:1.5;color:var(--text-desc);background:var(--surface2);padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);">
+            자산 상태 분석 중...
           </div>
         </div>
       </div>
@@ -110,9 +142,17 @@
     <!-- 2. 주식 쇼핑 탭 -->
     <section id="tab-shopping" class="tab-content">
       <div class="shopping-layout">
-        <div class="market-selector">
-          <button class="mkt-btn active" id="mkt-kr" onclick="filterMarket('kr')">한국 주식</button>
-          <button class="mkt-btn" id="mkt-us" onclick="filterMarket('us')">미국 주식</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 8px;">
+          <div class="market-selector">
+            <button class="mkt-btn active" id="mkt-kr" onclick="filterMarket('kr')">한국 주식</button>
+            <button class="mkt-btn" id="mkt-us" onclick="filterMarket('us')">미국 주식</button>
+          </div>
+          <div class="category-selector" style="display:flex;gap:4px;background:var(--surface2);padding:3px;border-radius:var(--radius-md);border:1px solid var(--border);">
+            <button class="mkt-btn active" id="cat-popular" onclick="switchCategory('popular')" style="padding:6px 12px; font-size:12px;">인기순</button>
+            <button class="mkt-btn" id="cat-gainers" onclick="switchCategory('gainers')" style="padding:6px 12px; font-size:12px;">급상승</button>
+            <button class="mkt-btn" id="cat-losers" onclick="switchCategory('losers')" style="padding:6px 12px; font-size:12px;">급하락</button>
+            <button class="mkt-btn" id="cat-dividend" onclick="switchCategory('dividend')" style="padding:6px 12px; font-size:12px;">고배당</button>
+          </div>
         </div>
         
         <div class="shopping-stocks-card">
@@ -191,6 +231,19 @@
         <div class="orderbook-table" id="detailOrderBook">
           <!-- JS dynamic generation -->
           <div class="loading-state">호가를 불러오는 중...</div>
+        </div>
+      </div>
+
+      <!-- 4-3.5 실시간 고래 추적기 -->
+      <div class="detail-whale-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:var(--shadow);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;width:100%;">
+          <h3 class="card-sub-title" style="margin:0;">실시간 대형 거래 (고래 체결)</h3>
+          <span id="detailWhaleIndex" style="font-size:11px;font-weight:700;color:var(--red);background:var(--red-bg);padding:2px 8px;border-radius:12px;">매집 지수: 82%</span>
+        </div>
+        <div class="whale-stream-container" style="position:relative;height:90px;overflow:hidden;">
+          <div id="whaleAlertStream" style="display:flex;flex-direction:column;gap:8px;position:absolute;width:100%;transition:transform 0.4s ease;">
+            <!-- JS dynamic rows -->
+          </div>
         </div>
       </div>
 
@@ -291,11 +344,16 @@
         </div>
 
         <div class="order-inputs">
+          <div class="order-method-selector" style="display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:2.5px;border:1px solid var(--border);margin-bottom:8px;">
+            <button class="order-type-btn active" id="method-qty" onclick="switchOrderMethod('qty')" style="padding:6px;font-size:11.5px;font-weight:700;border:none;background:transparent;cursor:pointer;border-radius:4px;">수량 주문 (주)</button>
+            <button class="order-type-btn" id="method-amount" onclick="switchOrderMethod('amount')" style="padding:6px;font-size:11.5px;font-weight:700;border:none;background:transparent;cursor:pointer;border-radius:4px;">금액 주문 (원)</button>
+          </div>
+
           <div class="input-group">
-            <label for="orderQty" class="input-label">주문 수량</label>
+            <label for="orderQty" class="input-label" id="inputLabel">주문 수량</label>
             <div class="input-wrapper">
-              <input type="number" id="orderQty" min="1" placeholder="0" oninput="calculateTotalCost()">
-              <span class="unit">주</span>
+              <input type="text" id="orderQty" placeholder="0" readonly style="caret-color:transparent;">
+              <span class="unit" id="inputUnit">주</span>
             </div>
           </div>
 
@@ -312,14 +370,128 @@
           </div>
           
           <div class="total-cost-row">
-            <span class="label">예상 총 금액</span>
+            <span class="label" id="drawerTotalCostLabel">예상 총 금액</span>
             <span class="val" id="drawerTotalCost">₩0</span>
+          </div>
+        </div>
+
+        <!-- Custom Numeric Keypad -->
+        <div class="keypad-container" style="margin-bottom: 20px;">
+          <div class="keypad-grid" style="display:grid;grid-template-columns: repeat(3, 1fr);gap:8px;">
+            <button class="keypad-btn" onclick="pressKey('1')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">1</button>
+            <button class="keypad-btn" onclick="pressKey('2')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">2</button>
+            <button class="keypad-btn" onclick="pressKey('3')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">3</button>
+            <button class="keypad-btn" onclick="pressKey('4')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">4</button>
+            <button class="keypad-btn" onclick="pressKey('5')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">5</button>
+            <button class="keypad-btn" onclick="pressKey('6')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">6</button>
+            <button class="keypad-btn" onclick="pressKey('7')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">7</button>
+            <button class="keypad-btn" onclick="pressKey('8')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">8</button>
+            <button class="keypad-btn" onclick="pressKey('9')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">9</button>
+            <button class="keypad-btn" onclick="pressKey('00')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:15px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">00</button>
+            <button class="keypad-btn" onclick="pressKey('0')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">0</button>
+            <button class="keypad-btn delete-btn" onclick="pressKey('backspace')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);display:flex;align-items:center;justify-content:center;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px;"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+            </button>
           </div>
         </div>
 
         <div class="drawer-actions">
           <button class="btn btn-buy" id="drawerActionBtn" onclick="executeOrder()">사기</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 예수금 입출금 모달 -->
+  <div class="modal-overlay" id="cashModal">
+    <div class="modal-box" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:100%;max-width:380px;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);box-shadow:0 20px 50px rgba(0,0,0,0.15);">
+      <h2 class="modal-title" id="cashModalTitle" style="font-size:18px;font-weight:800;text-align:center;margin-bottom:8px;">예수금 입금</h2>
+      <p class="modal-desc" id="cashModalDesc" style="font-size:12px;color:var(--text-muted);text-align:center;margin-bottom:20px;">입금할 금액을 입력해주세요.</p>
+      
+      <div class="input-group" style="margin-bottom: 16px;">
+        <div class="input-wrapper" style="display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 16px;">
+          <input type="text" id="cashAmountInput" placeholder="0" readonly style="flex:1;background:transparent;border:none;outline:none;font-size:18px;font-weight:800;color:var(--text);caret-color:transparent;text-align:right;">
+          <span class="unit" style="font-size:14px;font-weight:700;color:var(--text-muted);margin-left:8px;">원</span>
+        </div>
+      </div>
+
+      <!-- Quick Amount Buttons -->
+      <div class="quick-cash-buttons" style="display:flex;gap:6px;margin-bottom:16px;">
+        <button class="btn btn-secondary" onclick="addQuickCash(1000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+100만</button>
+        <button class="btn btn-secondary" onclick="addQuickCash(10000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+1,000만</button>
+        <button class="btn btn-secondary" onclick="addQuickCash(50000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+5,000만</button>
+        <button class="btn btn-secondary" onclick="clearCashInput()" style="padding:8px 10px;font-size:11px;border-radius:6px;">초기화</button>
+      </div>
+
+      <!-- Keypad for Cash Modal -->
+      <div class="keypad-container" style="margin-bottom: 20px;">
+        <div class="keypad-grid" style="display:grid;grid-template-columns: repeat(3, 1fr);gap:6px;">
+          <button class="keypad-btn" onclick="pressCashKey('1')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">1</button>
+          <button class="keypad-btn" onclick="pressCashKey('2')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">2</button>
+          <button class="keypad-btn" onclick="pressCashKey('3')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">3</button>
+          <button class="keypad-btn" onclick="pressCashKey('4')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">4</button>
+          <button class="keypad-btn" onclick="pressCashKey('5')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">5</button>
+          <button class="keypad-btn" onclick="pressCashKey('6')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">6</button>
+          <button class="keypad-btn" onclick="pressCashKey('7')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">7</button>
+          <button class="keypad-btn" onclick="pressCashKey('8')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">8</button>
+          <button class="keypad-btn" onclick="pressCashKey('9')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">9</button>
+          <button class="keypad-btn" onclick="pressCashKey('00')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:800;cursor:pointer;color:var(--text);">00</button>
+          <button class="keypad-btn" onclick="pressCashKey('0')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">0</button>
+          <button class="keypad-btn delete-btn" onclick="pressCashKey('backspace')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="display:flex;gap:10px;">
+        <button class="btn btn-secondary" onclick="closeCashModal()" style="flex:1;padding:12px;border-radius:10px;font-size:13px;">취소</button>
+        <button class="btn btn-primary" id="cashModalActionBtn" onclick="executeCashTransaction()" style="flex:2;padding:12px;border-radius:10px;font-size:13px;">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 목표 자산 설정 모달 -->
+  <div class="modal-overlay" id="targetModal">
+    <div class="modal-box" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:100%;max-width:380px;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);box-shadow:0 20px 50px rgba(0,0,0,0.15);">
+      <h2 class="modal-title" style="font-size:18px;font-weight:800;text-align:center;margin-bottom:8px;">목표 자산 설정</h2>
+      <p class="modal-desc" style="font-size:12px;color:var(--text-muted);text-align:center;margin-bottom:20px;">모의투자 목표 자산을 설정해주세요.</p>
+      
+      <div class="input-group" style="margin-bottom: 16px;">
+        <div class="input-wrapper" style="display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 16px;">
+          <input type="text" id="targetAmountInput" placeholder="0" readonly style="flex:1;background:transparent;border:none;outline:none;font-size:18px;font-weight:800;color:var(--text);caret-color:transparent;text-align:right;">
+          <span class="unit" style="font-size:14px;font-weight:700;color:var(--text-muted);margin-left:8px;">원</span>
+        </div>
+      </div>
+
+      <div class="quick-cash-buttons" style="display:flex;gap:6px;margin-bottom:16px;">
+        <button class="btn btn-secondary" onclick="addTargetCash(10000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+1,000만</button>
+        <button class="btn btn-secondary" onclick="addTargetCash(100000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+1억</button>
+        <button class="btn btn-secondary" onclick="addTargetCash(1000000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+10억</button>
+        <button class="btn btn-secondary" onclick="clearTargetInput()" style="padding:8px 10px;font-size:11px;border-radius:6px;">초기화</button>
+      </div>
+
+      <div class="keypad-container" style="margin-bottom: 20px;">
+        <div class="keypad-grid" style="display:grid;grid-template-columns: repeat(3, 1fr);gap:6px;">
+          <button class="keypad-btn" onclick="pressTargetKey('1')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">1</button>
+          <button class="keypad-btn" onclick="pressTargetKey('2')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">2</button>
+          <button class="keypad-btn" onclick="pressTargetKey('3')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">3</button>
+          <button class="keypad-btn" onclick="pressTargetKey('4')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">4</button>
+          <button class="keypad-btn" onclick="pressTargetKey('5')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">5</button>
+          <button class="keypad-btn" onclick="pressTargetKey('6')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">6</button>
+          <button class="keypad-btn" onclick="pressTargetKey('7')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">7</button>
+          <button class="keypad-btn" onclick="pressTargetKey('8')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">8</button>
+          <button class="keypad-btn" onclick="pressTargetKey('9')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">9</button>
+          <button class="keypad-btn" onclick="pressTargetKey('00')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:800;cursor:pointer;color:var(--text);">00</button>
+          <button class="keypad-btn" onclick="pressTargetKey('0')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">0</button>
+          <button class="keypad-btn delete-btn" onclick="pressTargetKey('backspace')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="display:flex;gap:10px;">
+        <button class="btn btn-secondary" onclick="closeTargetModal()" style="flex:1;padding:12px;border-radius:10px;font-size:13px;">취소</button>
+        <button class="btn btn-primary" onclick="confirmTargetGoal()" style="flex:2;padding:12px;border-radius:10px;font-size:13px;">확인</button>
       </div>
     </div>
   </div>
