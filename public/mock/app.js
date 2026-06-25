@@ -137,18 +137,10 @@ async function checkSession() {
         currentUser = data.user;
         document.getElementById('profileName').textContent = currentUser.username;
         document.getElementById('avatarLetter').textContent = currentUser.username.substring(0, 1).toUpperCase();
-      } else {
-        alert('로그인이 필요한 서비스입니다. 메인 페이지로 이동합니다.');
-        window.location.href = '/';
       }
-    } else {
-      alert('로그인이 필요한 서비스입니다. 메인 페이지로 이동합니다.');
-      window.location.href = '/';
     }
   } catch (e) {
     console.warn("Session check failed, running as guest:", e);
-    alert('로그인이 필요한 서비스입니다. 메인 페이지로 이동합니다.');
-    window.location.href = '/';
   }
 }
 
