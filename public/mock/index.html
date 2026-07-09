@@ -342,6 +342,11 @@
           <button class="order-type-btn" id="order-sell" onclick="setOrderMode('sell')">주식 팔기</button>
         </div>
 
+        <div class="order-mode-selector" style="display:flex; background:var(--surface2); border-radius:var(--radius-sm); padding:2.5px; border:1px solid var(--border); margin: 8px 0;">
+          <button class="order-type-btn active" id="mode-virtual" onclick="setTradingMode('virtual')" style="flex:1; padding:6px; font-size:11.5px; font-weight:700; border:none; background:transparent; cursor:pointer; border-radius:4px; text-align:center;">단기 연습 (24시간 즉시)</button>
+          <button class="order-type-btn" id="mode-realtime" onclick="setTradingMode('realtime')" style="flex:1; padding:6px; font-size:11.5px; font-weight:700; border:none; background:transparent; cursor:pointer; border-radius:4px; text-align:center;">실전 롱텀 (실시간 매칭)</button>
+        </div>
+
         <div class="order-inputs">
           <div class="order-method-selector" style="display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:2.5px;border:1px solid var(--border);margin-bottom:8px;">
             <button class="order-type-btn active" id="method-qty" onclick="switchOrderMethod('qty')" style="padding:6px;font-size:11.5px;font-weight:700;border:none;background:transparent;cursor:pointer;border-radius:4px;">수량 주문 (주)</button>
@@ -356,11 +361,13 @@
             </div>
           </div>
 
-          <div class="quick-percentage-buttons">
-            <button class="quick-pct-btn" onclick="applyQuickPct(0.1)">10%</button>
-            <button class="quick-pct-btn" onclick="applyQuickPct(0.25)">25%</button>
-            <button class="quick-pct-btn" onclick="applyQuickPct(0.5)">50%</button>
-            <button class="quick-pct-btn" onclick="applyQuickPct(1.0)">최대</button>
+          <div class="quick-percentage-buttons" style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px;">
+            <button class="quick-pct-btn" onclick="addOrderAmount(10000)" style="flex:1; padding: 6px; font-size: 11px;">+1만</button>
+            <button class="quick-pct-btn" onclick="addOrderAmount(100000)" style="flex:1; padding: 6px; font-size: 11px;">+10만</button>
+            <button class="quick-pct-btn" onclick="addOrderAmount(1000000)" style="flex:1; padding: 6px; font-size: 11px;">+100만</button>
+            <button class="quick-pct-btn" onclick="applyQuickPct(0.1)" style="flex:1; padding: 6px; font-size: 11px;">10%</button>
+            <button class="quick-pct-btn" onclick="applyQuickPct(0.5)" style="flex:1; padding: 6px; font-size: 11px;">50%</button>
+            <button class="quick-pct-btn" onclick="applyQuickPct(1.0)" style="flex:1; padding: 6px; font-size: 11px;">최대</button>
           </div>
 
           <div class="account-summary-row">

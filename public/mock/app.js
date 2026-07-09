@@ -697,6 +697,10 @@ function openOrderDrawer(stockId) {
   // 디폴트로 사기 모드 켜기
   setOrderMode('buy');
 
+  // 거래 모드 초기화
+  const mode = getStorageItem('mock_mode', 'virtual');
+  setTradingMode(mode);
+
   // 오픈
   document.getElementById('tossDrawerOverlay').classList.add('open');
 }
@@ -705,6 +709,36 @@ function closeOrderDrawer() {
   document.getElementById('tossDrawerOverlay').classList.remove('open');
   activeDef = null;
   selectedOrderPrice = null; // 호가 지정가 리셋
+}
+
+function setTradingMode(mode) {
+  setStorageItem('mock_mode', mode);
+  document.getElementById('mode-virtual').classList.toggle('active', mode === 'virtual');
+  document.getElementById('mode-realtime').classList.toggle('active', mode === 'realtime');
+}
+
+function addOrderAmount(amount) {
+  if (!activeDef) return;
+  const quote = liveQuotes[activeDef.id] || { price: 0 };
+  const price = selectedOrderPrice !== null ? selectedOrderPrice : (quote.price || activeDef.price || 0);
+  const isUs = activeDef.market === 'us';
+  const priceKrw = isUs ? price * usdKrwRate : price;
+
+  const input = document.getElementById('orderQty');
+  if (activeOrderMethod === 'qty') {
+    if (priceKrw <= 0) return;
+    const qtyToAdd = Math.floor(amount / priceKrw);
+    let qty = parseInt(orderQtyString) || 0;
+    qty += qtyToAdd;
+    orderQtyString = qty.toString();
+    input.value = (qty === 0) ? '0' : qty.toLocaleString();
+  } else {
+    let val = parseInt(orderAmountString) || 0;
+    val += amount;
+    orderAmountString = val.toString();
+    input.value = (val === 0) ? '0' : val.toLocaleString();
+  }
+  calculateTotalCost();
 }
 
 // 사기/팔기 모드 변경
@@ -829,6 +863,47 @@ function executeOrder() {
 
   const totalCostUsd = isUs ? totalCostKrw / usdKrwRate : totalCostKrw;
   
+  // ── SERVER SYNC DETOUR ──
+  if (currentUser) {
+    showToast('주문을 서버에 접수하는 중입니다...');
+    const mode = getStorageItem('mock_mode', 'virtual');
+    
+    fetch('/api/trade/order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ticker: activeDef.ticker,
+        market: activeDef.market,
+        type: 'stock',
+        side: activeOrderMode,
+        price: price,
+        quantity: Math.floor(qty),
+        mode: mode
+      })
+    })
+    .then(async (res) => {
+      if (res.ok) {
+        const data = await res.json();
+        const msg = data.order.status === 'filled' 
+          ? `${activeDef.name} ${Math.floor(qty)}주 거래가 완료되었습니다.` 
+          : `${activeDef.name} ${Math.floor(qty)}주 주문이 접수되었습니다. (대기 중)`;
+        showToast(msg);
+        closeOrderDrawer();
+        updateUI();
+      } else {
+        const err = await res.json();
+        alert(err.error || '주문 처리에 실패했습니다.');
+      }
+    })
+    .catch(e => {
+      console.error('[ORDER SYNC] Error submitting order:', e);
+      alert('서버 연결 오류로 주문을 완료하지 못했습니다.');
+    });
+    return;
+  }
+
   let cash = getStorageItem('mock_cash', 0);
   let portfolio = getStorageItem('mock_portfolio', []);
   let history = getStorageItem('mock_history', []);
@@ -840,14 +915,11 @@ function executeOrder() {
       return;
     }
 
-    // 예수금 차감
     cash -= totalCostKrw;
     
-    // 포트폴리오 업데이트
     const index = portfolio.findIndex(p => p.id === activeDef.id);
     if (index !== -1) {
       const existing = portfolio[index];
-      // 가중평균 단가 계산 (USD 또는 KRW 본래 통화 기준)
       const newTotalQty = existing.qty + qty;
       const newAvgPrice = ((existing.avgPrice * existing.qty) + (price * qty)) / newTotalQty;
       
@@ -860,11 +932,10 @@ function executeOrder() {
         name: activeDef.name,
         market: activeDef.market,
         qty: qty,
-        avgPrice: price // (USD/KRW 본래 통화 기준)
+        avgPrice: price
       });
     }
 
-    // 거래 내역 로깅
     history.push({
       type: 'buy',
       id: activeDef.id,
@@ -889,18 +960,14 @@ function executeOrder() {
       return;
     }
 
-    // 예수금 가산
     cash += totalCostKrw;
 
-    // 포트폴리오 차감
     portfolio[index].qty = parseFloat((portfolio[index].qty - qty).toFixed(4));
     
-    // 수량 0이면 완전히 제거 (소수점 감안해서 0.0001 미만이면 제거)
     if (portfolio[index].qty < 0.0001) {
       portfolio.splice(index, 1);
     }
 
-    // 거래 내역 로깅
     history.push({
       type: 'sell',
       id: activeDef.id,
@@ -918,12 +985,10 @@ function executeOrder() {
     showToast(`${activeDef.name} ${parseFloat(displayQty).toLocaleString()}주를 팔았습니다.`);
   }
 
-  // 로컬 영구 저장
   setStorageItem('mock_cash', cash);
   setStorageItem('mock_portfolio', portfolio);
   setStorageItem('mock_history', history);
 
-  // 닫고 갱신
   closeOrderDrawer();
   updateUI();
 }
@@ -1316,7 +1381,7 @@ function startOrderBookSimulation(stock) {
     clearInterval(orderBookInterval);
   }
 
-  const renderOB = () => {
+  const renderOB = async () => {
     const rawQuote = liveQuotes[stock.id] || {};
     const price = rawQuote.price || (stock.market === 'kr' ? 70000 : 150);
     const change = rawQuote.changePct || 0;
@@ -1324,39 +1389,67 @@ function startOrderBookSimulation(stock) {
     const isUs = stock.market === 'us';
     const priceSymbol = isUs ? '$' : '₩';
     
-    let tickSize = 1;
-    if (stock.market === 'kr') {
-      if (price >= 500000) tickSize = 1000;
-      else if (price >= 100000) tickSize = 500;
-      else if (price >= 50000) tickSize = 100;
-      else if (price >= 10000) tickSize = 50;
-      else tickSize = 10;
-    } else {
-      tickSize = 0.05;
+    let asks = [];
+    let bids = [];
+    
+    // Fetch simulated orderbook from server when logged in
+    let synced = false;
+    if (currentUser) {
+      try {
+        const res = await fetch(`/api/trade/orderbook?ticker=${stock.ticker}&market=${stock.market}&type=stock`);
+        if (res.ok) {
+          const data = await res.json();
+          // Map backend format: { price, asks: [{price, volume}], bids: [{price, volume}] }
+          // Note asks array is already ordered
+          asks = data.asks.map(a => ({
+            price: a.price,
+            change: ((a.price - data.price) / data.price * 100) + change,
+            vol: a.volume
+          }));
+          bids = data.bids.map(b => ({
+            price: b.price,
+            change: ((b.price - data.price) / data.price * 100) + change,
+            vol: b.volume
+          }));
+          synced = true;
+        }
+      } catch (e) {
+        console.error('[ORDER BOOK SYNC] Error fetching orderbook:', e);
+      }
     }
+    
+    // Fallback: Local Client Side Orderbook Generator
+    if (!synced) {
+      let tickSize = 1;
+      if (stock.market === 'kr') {
+        if (price >= 500000) tickSize = 1000;
+        else if (price >= 100000) tickSize = 500;
+        else if (price >= 50000) tickSize = 100;
+        else if (price >= 10000) tickSize = 50;
+        else tickSize = 10;
+      } else {
+        tickSize = 0.05;
+      }
 
-    const bids = [];
-    const asks = [];
-    const maxQty = 40000;
-
-    // Asks (5 sells - above)
-    for (let i = 5; i >= 1; i--) {
-      const askPrice = price + (i * tickSize);
-      const askChg = change + (i * tickSize / price * 100);
-      const vol = Math.floor(500 + Math.random() * maxQty);
-      asks.push({ price: askPrice, change: askChg, vol: vol });
-    }
-
-    // Bids (5 buys - below)
-    for (let i = 1; i <= 5; i++) {
-      const bidPrice = price - (i * tickSize);
-      const bidChg = change - (i * tickSize / price * 100);
-      const vol = Math.floor(500 + Math.random() * maxQty);
-      bids.push({ price: bidPrice, change: bidChg, vol: vol });
+      const maxQty = 40000;
+      // Asks (5 sells - above)
+      for (let i = 5; i >= 1; i--) {
+        const askPrice = price + (i * tickSize);
+        const askChg = change + (i * tickSize / price * 100);
+        const vol = Math.floor(500 + Math.random() * maxQty);
+        asks.push({ price: askPrice, change: askChg, vol: vol });
+      }
+      // Bids (5 buys - below)
+      for (let i = 1; i <= 5; i++) {
+        const bidPrice = price - (i * tickSize);
+        const bidChg = change - (i * tickSize / price * 100);
+        const vol = Math.floor(500 + Math.random() * maxQty);
+        bids.push({ price: bidPrice, change: bidChg, vol: vol });
+      }
     }
 
     const allVols = [...asks, ...bids].map(x => x.vol);
-    const peakVol = Math.max(...allVols);
+    const peakVol = Math.max(...allVols) || 1;
 
     const obContainer = document.getElementById('detailOrderBook');
     if (!obContainer) return;
