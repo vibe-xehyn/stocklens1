@@ -54,6 +54,17 @@
 
   <!-- 메인 컨텐츠 영역 -->
   <main class="toss-container">
+    
+    <!-- 전역 모의투자 모드 선택기 (User Feedback 반영) -->
+    <div class="global-mode-selector" style="margin-bottom: 16px; padding: 4px; background: var(--surface2); border-radius: var(--radius-md); display: flex; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid var(--border);">
+      <button class="mode-btn active" id="global-mode-virtual" onclick="setTradingMode('virtual')" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 700; border: none; background: transparent; cursor: pointer; border-radius: var(--radius-sm); color: var(--text); transition: all 0.2s;">
+        ⚡ 단기 연습 (즉시 체결)
+      </button>
+      <button class="mode-btn" id="global-mode-realtime" onclick="setTradingMode('realtime')" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 700; border: none; background: transparent; cursor: pointer; border-radius: var(--radius-sm); color: var(--text-muted); transition: all 0.2s;">
+        🕰 실전 롱텀 (실시간 매칭)
+      </button>
+    </div>
+
     <div class="tabs-nav">
       <button class="tab-btn active" onclick="switchTab('assets')">내 자산</button>
       <button class="tab-btn" onclick="switchTab('shopping')">주식 쇼핑</button>

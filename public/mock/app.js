@@ -118,6 +118,9 @@ function setStorageItem(key, val) {
 
 // 초기화 확인 및 로딩
 document.addEventListener('DOMContentLoaded', async () => {
+  // 모의투자 모드 초기화
+  const savedMode = getStorageItem('mock_mode', 'virtual');
+  setTradingMode(savedMode);
   initTheme();
   await checkSession();
   setupEventListeners();
@@ -713,8 +716,40 @@ function closeOrderDrawer() {
 
 function setTradingMode(mode) {
   setStorageItem('mock_mode', mode);
-  document.getElementById('mode-virtual').classList.toggle('active', mode === 'virtual');
-  document.getElementById('mode-realtime').classList.toggle('active', mode === 'realtime');
+  
+  // Update order drawer toggles (if they exist)
+  const drawerVirtual = document.getElementById('mode-virtual');
+  const drawerRealtime = document.getElementById('mode-realtime');
+  if(drawerVirtual) drawerVirtual.classList.toggle('active', mode === 'virtual');
+  if(drawerRealtime) drawerRealtime.classList.toggle('active', mode === 'realtime');
+  
+  // Update global dashboard toggles
+  const globalVirtual = document.getElementById('global-mode-virtual');
+  const globalRealtime = document.getElementById('global-mode-realtime');
+  
+  if (globalVirtual && globalRealtime) {
+    if (mode === 'virtual') {
+      globalVirtual.classList.add('active');
+      globalVirtual.style.color = 'var(--text)';
+      globalVirtual.style.background = 'var(--surface)';
+      globalVirtual.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+      
+      globalRealtime.classList.remove('active');
+      globalRealtime.style.color = 'var(--text-muted)';
+      globalRealtime.style.background = 'transparent';
+      globalRealtime.style.boxShadow = 'none';
+    } else {
+      globalRealtime.classList.add('active');
+      globalRealtime.style.color = 'var(--text)';
+      globalRealtime.style.background = 'var(--surface)';
+      globalRealtime.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+      
+      globalVirtual.classList.remove('active');
+      globalVirtual.style.color = 'var(--text-muted)';
+      globalVirtual.style.background = 'transparent';
+      globalVirtual.style.boxShadow = 'none';
+    }
+  }
 }
 
 function addOrderAmount(amount) {

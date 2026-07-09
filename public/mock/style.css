@@ -1799,3 +1799,40 @@ body {
 }
 
 
+
+/* Global Mode Selector Redesign */
+.global-mode-selector {
+  margin-bottom: 24px;
+  padding: 6px;
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  display: flex;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.mode-btn.active {
+  color: var(--text);
+  background: var(--surface2);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  transform: scale(1.02);
+}
