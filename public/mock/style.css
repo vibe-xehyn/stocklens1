@@ -1275,10 +1275,9 @@ body {
   width: 130px;
   height: 130px;
 }
-#portfolioPie {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg); /* 12시 방향에서 시작 */
+#portfolioPieChart {
+  width: 100% !important;
+  height: 100% !important;
 }
 .pie-center {
   position: absolute;

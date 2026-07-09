@@ -8,6 +8,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
   <link rel="stylesheet" href="style.css?v=20260621">
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -87,9 +88,7 @@
         <h4 class="card-title">내 자산 비중</h4>
         <div class="portfolio-chart-wrap">
           <div class="pie-container">
-            <svg id="portfolioPie" viewBox="0 0 100 100">
-              <!-- JS로 동적 패스 주입 -->
-            </svg>
+            <canvas id="portfolioPieChart" width="130" height="130"></canvas>
             <div class="pie-center">
               <span class="center-label">주식 비중</span>
               <span class="center-val" id="portfolioPieRatio">0%</span>

@@ -63,6 +63,9 @@ let activeTab = 'assets';
 let activeShoppingMarket = 'kr';
 let liveQuotes = {}; // id -> { price, changePct }
 let usdKrwRate = 1350; // 기본 환율 fallback
+let myPortfolioChart = null;
+let mockPortfolioData = null;
+let mockHistoryData = null;
 
 // 상세 화면 및 차트/호가 시뮬레이션 상태
 let activeDetailDef = null;
@@ -326,23 +329,54 @@ function startLivePriceUpdates() {
   setInterval(updatePrices, 15000); // 15초 주기 갱신
 }
 
+async function refreshMockData() {
+  if (currentUser) {
+    try {
+      const pRes = await fetch('/api/trade/portfolio');
+      if (pRes.ok) mockPortfolioData = await pRes.json();
+      
+      const hRes = await fetch('/api/trade/history');
+      if (hRes.ok) mockHistoryData = await hRes.json();
+    } catch (e) {
+      console.error('[API SYNC] Error fetching mock data:', e);
+    }
+  }
+}
+
 // UI 갱신 총괄
-function updateUI() {
+async function updateUI() {
+  await refreshMockData();
   renderAssets();
   renderShoppingStocks();
   renderHistory();
   updateTargetReturnUI();
   
   // 헤더 프로필 영역 실시간 동기화
-  const cash = getStorageItem('mock_cash', 0);
+  const cash = currentUser && mockPortfolioData ? mockPortfolioData.cash : getStorageItem('mock_cash', 0);
   document.getElementById('profileCash').textContent = `₩${Math.round(cash).toLocaleString()}`;
 }
 
 // 1. 내 자산 렌더링
 function renderAssets() {
-  const capital = getStorageItem('mock_capital', 0);
-  const cash = getStorageItem('mock_cash', 0);
-  const portfolio = getStorageItem('mock_portfolio', []);
+  let capital = getStorageItem('mock_capital', 10000000);
+  let cash = getStorageItem('mock_cash', 10000000);
+  let portfolio = [];
+
+  if (currentUser && mockPortfolioData) {
+    cash = mockPortfolioData.cash;
+    capital = mockPortfolioData.investedPrincipal || capital;
+    portfolio = mockPortfolioData.holdings.map(h => ({
+      id: h.assetId.split('_')[0],
+      ticker: h.ticker,
+      market: h.market,
+      type: h.type,
+      avgPrice: h.avgPrice,
+      qty: h.quantity,
+      name: h.name || STOCK_DEFS.find(s => s.ticker === h.ticker)?.name || h.ticker
+    }));
+  } else {
+    portfolio = getStorageItem('mock_portfolio', []);
+  }
   
   let totalStockEval = 0; // 주식 평가금 합산 (원화)
 
@@ -526,7 +560,22 @@ function renderShoppingStocks() {
 function renderHistory() {
   if (activeTab !== 'history') return;
 
-  const history = getStorageItem('mock_history', []);
+  let history = [];
+  if (currentUser && mockHistoryData) {
+    history = mockHistoryData.map(h => ({
+      name: STOCK_DEFS.find(s => s.ticker === h.ticker)?.name || h.ticker,
+      ticker: h.ticker,
+      market: h.market,
+      type: h.side,
+      price: h.price,
+      qty: h.quantity,
+      total: h.price * h.quantity,
+      totalKrw: Math.abs(h.amount),
+      date: new Date(h.timestamp).toLocaleString()
+    }));
+  } else {
+    history = getStorageItem('mock_history', []);
+  }
   const listEl = document.getElementById('historyList');
 
   if (history.length === 0) {
@@ -544,8 +593,8 @@ function renderHistory() {
     const isUs = item.market === 'us';
     const priceSymbol = isUs ? '$' : '₩';
     
-    const badgeClass = item.type === 'buy' ? 'buy' : 'sell';
-    const badgeText = item.type === 'buy' ? '사기' : '팔기';
+    const badgeClass = item.type === 'buy' ? 'buy' : (item.type === 'sell' ? 'sell' : 'cancel');
+    const badgeText = item.type === 'buy' ? '사기' : (item.type === 'sell' ? '팔기' : '취소');
     
     // 원화 환산 힌트 표시 (미국 주식용)
     const totalKrwStr = isUs 
@@ -898,14 +947,14 @@ function showToast(msg) {
   }, 3000);
 }
 
-// ── Toss-style SVG Portfolio Donut Chart Rendering ──
+// ── Toss-style Chart.js Portfolio Donut Chart Rendering ──
 function renderPortfolioPie(cash, totalStockEval, portfolio) {
   const totalAssets = cash + totalStockEval;
   if (totalAssets <= 0) return;
 
-  const svg = document.getElementById('portfolioPie');
+  const canvas = document.getElementById('portfolioPieChart');
   const legend = document.getElementById('portfolioLegend');
-  if (!svg || !legend) return;
+  if (!canvas || !legend) return;
 
   const items = [];
   
@@ -940,37 +989,57 @@ function renderPortfolioPie(cash, totalStockEval, portfolio) {
   // Sort by asset valuation descending
   items.sort((a, b) => b.value - a.value);
 
-  // SVG Circle stroke dash math
-  let accumPercent = 0;
-  let paths = '';
-  const R = 38;
-  const CX = 50, CY = 50;
-  const circumference = 2 * Math.PI * R; // ~238.76
-
-  items.forEach((item, idx) => {
-    const strokeDash = `${item.pct * circumference} ${circumference}`;
-    const strokeOffset = -accumPercent * circumference;
-    accumPercent += item.pct;
-
-    paths += `<circle class="pie-slice" data-idx="${idx}" cx="${CX}" cy="${CY}" r="${R}" fill="transparent" stroke="${item.color}" stroke-width="10" stroke-dasharray="${strokeDash}" stroke-dashoffset="${strokeOffset}" style="cursor:pointer; transition: stroke-width 0.2s;" onmouseover="highlightSlice(${idx}, '${item.name}', '${item.pct * 100}', '${item.value}')" onmouseout="resetSliceHighlight()"></circle>`;
-  });
-
-  svg.innerHTML = paths;
-
   // Render stock ratio percent
   const stockRatio = (totalStockEval / totalAssets) * 100;
   document.getElementById('portfolioPieRatio').textContent = `${stockRatio.toFixed(0)}%`;
   document.getElementById('portfolioPieVal').textContent = `(₩${Math.round(totalStockEval).toLocaleString()})`;
 
+  // Destroy previous Chart instance if it exists
+  if (myPortfolioChart) {
+    myPortfolioChart.destroy();
+  }
+
+  // Build Chart.js Doughnut
+  const ctx = canvas.getContext('2d');
+  myPortfolioChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: items.map(item => item.name),
+      datasets: [{
+        data: items.map(item => item.value),
+        backgroundColor: items.map(item => item.color),
+        borderWidth: 0,
+        hoverOffset: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const val = context.raw || 0;
+              const pct = ((val / totalAssets) * 100).toFixed(1);
+              return `${context.label}: ₩${Math.round(val).toLocaleString()} (${pct}%)`;
+            }
+          }
+        }
+      },
+      cutout: '75%'
+    }
+  });
+
   // Draw legend list
   legend.innerHTML = items.map(item => {
     return `
-      <div class="legend-item">
-        <div class="legend-left">
-          <span class="legend-dot" style="background-color: ${item.color}"></span>
+      <div class="legend-item" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+        <div class="legend-left" style="display: flex; align-items: center; gap: 8px;">
+          <span class="legend-dot" style="background-color: ${item.color}; width: 8px; height: 8px; border-radius: 50%; display: inline-block;"></span>
           <span>${item.name}</span>
         </div>
-        <div class="legend-right">
+        <div class="legend-right" style="color: var(--text-muted); font-size: 12.5px;">
           <span>${(item.pct * 100).toFixed(1)}%</span>
         </div>
       </div>
