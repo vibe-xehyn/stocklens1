@@ -59,6 +59,42 @@ async function writeJSONSafe(filePath, data) {
   });
 }
 
+function getCookie(req, name) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  const cookie = cookies.find(c => c.startsWith(name + '='));
+  return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+}
+
+function requireAuth(req, res, next) {
+  let token = getCookie(req, 'sessionToken') || req.headers['x-session-token'];
+  if (!token && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1];
+    }
+  }
+  
+  if (token) {
+    try {
+      const SESSIONS_FILE = join(__dirname, 'data', 'sessions.json');
+      if (existsSync(SESSIONS_FILE)) {
+        const sessions = JSON.parse(readFileSync(SESSIONS_FILE, 'utf-8') || '{}');
+        const session = sessions[token];
+        if (session) {
+          req.user = session;
+          return next();
+        }
+      }
+    } catch (e) {
+      console.error('[AUTH LOCK] Custom requireAuth parsing error:', e);
+    }
+  }
+  
+  res.status(401).json({ error: '로그인이 필요합니다.' });
+}
+
 // ── PRICING MATH ENGINES ─────────────────────────────────────────────────────
 
 // Normal Cumulative Distribution Function (CDF) Hastings approximation
@@ -384,7 +420,7 @@ startOrderMatcher();
 // ── ENDPOINTS ────────────────────────────────────────────────────────────────
 
 // 1. Get Portfolio
-router.get('/portfolio', async (req, res) => {
+router.get('/portfolio', requireAuth, async (req, res) => {
   const userId = req.user.id;
   try {
     const portfolios = await readJSONSafe(PORTFOLIOS_FILE, {});
@@ -448,7 +484,7 @@ router.get('/portfolio', async (req, res) => {
 });
 
 // 2. Submit Order
-router.post('/order', async (req, res) => {
+router.post('/order', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { ticker, market, type, side, price, quantity, mode, optionDetails, bondDetails } = req.body;
   
@@ -576,7 +612,7 @@ router.post('/order', async (req, res) => {
 });
 
 // 3. Cancel Order
-router.post('/cancel', async (req, res) => {
+router.post('/cancel', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { orderId } = req.body;
   
@@ -653,7 +689,7 @@ router.post('/cancel', async (req, res) => {
 });
 
 // 4. Get Transaction History
-router.get('/history', async (req, res) => {
+router.get('/history', requireAuth, async (req, res) => {
   const userId = req.user.id;
   try {
     const history = await readJSONSafe(HISTORY_FILE, {});
