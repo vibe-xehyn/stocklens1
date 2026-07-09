@@ -59,7 +59,63 @@ async function writeJSONSafe(filePath, data) {
   });
 }
 
-// Helper: Get asset price from cache or simple fallback
+// ── PRICING MATH ENGINES ─────────────────────────────────────────────────────
+
+// Normal Cumulative Distribution Function (CDF) Hastings approximation
+function stdNormalCDF(x) {
+  const b1 =  0.319381530;
+  const b2 = -0.356563782;
+  const b3 =  1.781477937;
+  const b4 = -1.821255978;
+  const b5 =  1.330274429;
+  const p  =  0.2316419;
+  const c  =  0.39894228;
+
+  if (x >= 0.0) {
+    const t = 1.0 / (1.0 + p * x);
+    return (1.0 - c * Math.exp(-x * x / 2.0) * t *
+           (t * (t * (t * (t * b5 + b4) + b3) + b2) + b1));
+  } else {
+    const t = 1.0 / (1.0 - p * x);
+    return (c * Math.exp(-x * x / 2.0) * t *
+           (t * (t * (t * (t * b5 + b4) + b3) + b2) + b1));
+  }
+}
+
+// Black-Scholes Options Pricing Model
+function calculateOptionPrice(S, K, T, r, sigma, type) {
+  if (T <= 0) {
+    if (type === 'call') return Math.max(0, S - K);
+    return Math.max(0, K - S);
+  }
+  const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2.0) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+
+  if (type === 'call') {
+    return S * stdNormalCDF(d1) - K * Math.exp(-r * T) * stdNormalCDF(d2);
+  } else {
+    return K * Math.exp(-r * T) * stdNormalCDF(-d2) - S * stdNormalCDF(-d1);
+  }
+}
+
+// Bond Pricing Model (PV of coupons + PV of maturity par value)
+function calculateBondPrice(faceValue, couponRate, yearsToMaturity, ytm, frequency = 2) {
+  if (yearsToMaturity <= 0) return faceValue;
+  const periods = Math.ceil(yearsToMaturity * frequency);
+  const couponPayment = (faceValue * couponRate) / frequency;
+  const ratePerPeriod = ytm / frequency;
+  
+  let price = 0;
+  for (let t = 1; t <= periods; t++) {
+    price += couponPayment / Math.pow(1 + ratePerPeriod, t);
+  }
+  price += faceValue / Math.pow(1 + ratePerPeriod, periods);
+  return price;
+}
+
+// ── ASSET EVALUATION WRAPPERS ────────────────────────────────────────────────
+
+// Helper: Get stock price from cache
 function getAssetPrice(ticker, market, type) {
   if (type === 'stock') {
     try {
@@ -74,14 +130,94 @@ function getAssetPrice(ticker, market, type) {
     }
     return market === 'kr' ? 70000 : 150; // default fallbacks
   } else if (type === 'bond') {
-    return 1000.0; // standard bond par value
+    return 1000.0; // par fallback
   } else if (type === 'option') {
-    return 5.0; // default premium
+    return 5.0; // premium fallback
   }
   return 0;
 }
 
-// Helper: timezone local time checker
+function getOptionPrice(ticker, market, optionDetails) {
+  if (!optionDetails || !optionDetails.strike || !optionDetails.expiry || !optionDetails.optionType) {
+    return 5.0;
+  }
+  const S = getAssetPrice(ticker, market, 'stock');
+  const K = parseFloat(optionDetails.strike);
+  const expiryDate = new Date(optionDetails.expiry);
+  const now = new Date();
+  const T = (expiryDate - now) / (365 * 24 * 3600 * 1000); // expiry duration in years
+  
+  const r = 0.035; // 3.5% yield
+  const sigma = 0.30; // 30% volatility
+  const type = optionDetails.optionType;
+  
+  const price = calculateOptionPrice(S, K, T, r, sigma, type);
+  return parseFloat(price.toFixed(2));
+}
+
+function getBondPrice(ticker, market, bondDetails) {
+  if (!bondDetails || !bondDetails.maturityDate || !bondDetails.couponRate) {
+    return 1000.0;
+  }
+  const faceValue = 1000.0;
+  const couponRate = parseFloat(bondDetails.couponRate);
+  const maturityDate = new Date(bondDetails.maturityDate);
+  const now = new Date();
+  const yearsToMaturity = (maturityDate - now) / (365 * 24 * 3600 * 1000);
+  
+  const ytm = 0.045; // 4.5% yield
+  const frequency = bondDetails.couponFrequency ? parseInt(bondDetails.couponFrequency, 10) : 2;
+  
+  const price = calculateBondPrice(faceValue, couponRate, yearsToMaturity, ytm, frequency);
+  return parseFloat(price.toFixed(2));
+}
+
+// ── ORDER BOOK SIMULATOR ─────────────────────────────────────────────────────
+
+function generateOrderBook(ticker, market, type, optionDetails, bondDetails) {
+  let refPrice = 0;
+  if (type === 'stock') {
+    refPrice = getAssetPrice(ticker, market, 'stock');
+  } else if (type === 'option') {
+    refPrice = getOptionPrice(ticker, market, optionDetails);
+  } else if (type === 'bond') {
+    refPrice = getBondPrice(ticker, market, bondDetails);
+  }
+
+  if (refPrice <= 0) return null;
+
+  // Compute bid/ask spreads based on asset volatility profile
+  let spreadPct = 0.0005; // 0.05% default
+  if (type === 'stock' && market === 'us') spreadPct = 0.001; // 0.1%
+  if (type === 'option') spreadPct = 0.01; // 1%
+  
+  const spread = refPrice * spreadPct;
+
+  const asks = [];
+  const bids = [];
+
+  for (let i = 1; i <= 5; i++) {
+    const askPrice = refPrice + (spread * i);
+    const bidPrice = refPrice - (spread * i);
+
+    const askVol = Math.floor(Math.random() * 4500) + 500;
+    const bidVol = Math.floor(Math.random() * 4500) + 500;
+
+    asks.push({ price: parseFloat(askPrice.toFixed(2)), volume: askVol });
+    bids.push({ price: parseFloat(bidPrice.toFixed(2)), volume: bidVol });
+  }
+
+  return {
+    ticker,
+    type,
+    price: refPrice,
+    asks: asks.reverse(), // Highest ask price at top of asks list
+    bids: bids            // Highest bid price at top of bids list
+  };
+}
+
+// ── TIMEZONE OPERATIONAL CHECKS ─────────────────────────────────────────────
+
 function getLocalTime(timezone) {
   const date = new Date();
   
@@ -132,6 +268,119 @@ function isMarketOpen(market) {
   return false;
 }
 
+// ── BACKGROUND ORDER MATCHER ─────────────────────────────────────────────────
+
+function startOrderMatcher() {
+  console.log('[SECURITY ENGINE] Starting simulated order matching loop (5s interval)');
+  setInterval(async () => {
+    try {
+      const orders = await readJSONSafe(ORDERS_FILE, {});
+      const pendingOrders = Object.values(orders).filter(o => o.status === 'pending');
+      if (pendingOrders.length === 0) return;
+      
+      let portfolios = null;
+      let history = null;
+      let updated = false;
+      
+      for (const order of pendingOrders) {
+        if (order.mode === 'realtime' && !isMarketOpen(order.market)) {
+          continue; // market is closed, skip matching
+        }
+        
+        // Get price for the asset
+        let currentPrice = 0;
+        if (order.type === 'stock') {
+          currentPrice = getAssetPrice(order.ticker, order.market, 'stock');
+        } else if (order.type === 'option') {
+          currentPrice = getOptionPrice(order.ticker, order.market, order.optionDetails);
+        } else if (order.type === 'bond') {
+          currentPrice = getBondPrice(order.ticker, order.market, order.bondDetails);
+        }
+        
+        if (currentPrice <= 0) continue;
+        
+        let isMatched = false;
+        if (order.side === 'buy') {
+          if (currentPrice <= order.price) isMatched = true;
+        } else {
+          if (currentPrice >= order.price) isMatched = true;
+        }
+        
+        if (isMatched) {
+          if (!portfolios) portfolios = await readJSONSafe(PORTFOLIOS_FILE, {});
+          if (!history) history = await readJSONSafe(HISTORY_FILE, {});
+          
+          const userId = order.userId;
+          if (!portfolios[userId]) {
+            portfolios[userId] = { cash: 10000000, investedPrincipal: 0, holdings: [] };
+          }
+          const userPort = portfolios[userId];
+          const transactionValue = order.price * order.quantity;
+          const commissionRate = 0.00015;
+          const fee = transactionValue * commissionRate;
+          
+          if (order.side === 'buy') {
+            const assetId = `${order.ticker}_${order.market}`;
+            let holding = userPort.holdings.find(h => h.assetId === assetId);
+            if (!holding) {
+              holding = {
+                assetId,
+                ticker: order.ticker,
+                market: order.market,
+                type: order.type,
+                avgPrice: order.price,
+                quantity: order.quantity,
+                optionDetails: order.optionDetails,
+                bondDetails: order.bondDetails
+              };
+              userPort.holdings.push(holding);
+            } else {
+              const totalQty = holding.quantity + order.quantity;
+              holding.avgPrice = ((holding.quantity * holding.avgPrice) + (order.quantity * order.price)) / totalQty;
+              holding.quantity = totalQty;
+            }
+            userPort.investedPrincipal = (userPort.investedPrincipal || 0) + transactionValue;
+          } else {
+            userPort.cash += (transactionValue - fee);
+            userPort.investedPrincipal = Math.max(0, (userPort.investedPrincipal || 0) - transactionValue);
+          }
+          
+          order.status = 'filled';
+          order.filledQuantity = order.quantity;
+          
+          if (!history[userId]) history[userId] = [];
+          history[userId].push({
+            historyId: `hist_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+            type: 'trade',
+            ticker: order.ticker,
+            side: order.side,
+            price: order.price,
+            quantity: order.quantity,
+            amount: order.side === 'buy' ? -(transactionValue + fee) : (transactionValue - fee),
+            fee,
+            timestamp: new Date().toISOString(),
+            memo: `${order.ticker} ${order.quantity}주 ${order.side === 'buy' ? '매수' : '매도'} 체결 완료 (대기 주문 체결)`
+          });
+          
+          updated = true;
+        }
+      }
+      
+      if (updated) {
+        await writeJSONSafe(ORDERS_FILE, orders);
+        if (portfolios) await writeJSONSafe(PORTFOLIOS_FILE, portfolios);
+        if (history) await writeJSONSafe(HISTORY_FILE, history);
+        console.log('[SECURITY ENGINE] Processed matched pending orders.');
+      }
+    } catch (e) {
+      console.error('[SECURITY ENGINE] Order matcher matching interval failed:', e);
+    }
+  }, 5000);
+}
+
+// Start matching loop immediately on router load
+startOrderMatcher();
+
 // ── ENDPOINTS ────────────────────────────────────────────────────────────────
 
 // 1. Get Portfolio
@@ -153,7 +402,15 @@ router.get('/portfolio', async (req, res) => {
     let totalHoldingsCost = 0;
     
     const holdingsWithPrice = userPort.holdings.map(h => {
-      const currentPrice = getAssetPrice(h.ticker, h.market, h.type);
+      let currentPrice = 0;
+      if (h.type === 'stock') {
+        currentPrice = getAssetPrice(h.ticker, h.market, 'stock');
+      } else if (h.type === 'option') {
+        currentPrice = getOptionPrice(h.ticker, h.market, h.optionDetails);
+      } else if (h.type === 'bond') {
+        currentPrice = getBondPrice(h.ticker, h.market, h.bondDetails);
+      }
+      
       const evaluationValue = h.quantity * currentPrice;
       const cost = h.quantity * h.avgPrice;
       const profit = evaluationValue - cost;
@@ -229,7 +486,6 @@ router.post('/order', async (req, res) => {
       if (userPort.cash < requiredCash) {
         return res.status(400).json({ error: `잔액이 부족합니다. (필요: ${requiredCash.toLocaleString()}원, 잔고: ${userPort.cash.toLocaleString()}원)` });
       }
-      // Reserve cash immediately
       userPort.cash -= requiredCash;
     } else {
       const assetId = `${ticker}_${market}`;
@@ -237,7 +493,6 @@ router.post('/order', async (req, res) => {
       if (!holding || holding.quantity < parsedQty) {
         return res.status(400).json({ error: '보유 수량이 부족하여 매도할 수 없습니다.' });
       }
-      // Deduct asset quantity immediately
       holding.quantity -= parsedQty;
       if (holding.quantity === 0) {
         userPort.holdings = userPort.holdings.filter(h => h.assetId !== assetId);
@@ -289,12 +544,10 @@ router.post('/order', async (req, res) => {
         }
         userPort.investedPrincipal = (userPort.investedPrincipal || 0) + transactionValue;
       } else {
-        // Sell fill: credit cash
         userPort.cash += (transactionValue - fee);
         userPort.investedPrincipal = Math.max(0, (userPort.investedPrincipal || 0) - transactionValue);
       }
       
-      // Log transaction history
       const history = await readJSONSafe(HISTORY_FILE, {});
       if (!history[userId]) history[userId] = [];
       history[userId].push({
@@ -346,7 +599,6 @@ router.post('/cancel', async (req, res) => {
     const portfolios = await readJSONSafe(PORTFOLIOS_FILE, {});
     const userPort = portfolios[userId];
     
-    // Revert/refund reserves
     const commissionRate = 0.00015;
     const transactionValue = order.price * order.quantity;
     const fee = transactionValue * commissionRate;
@@ -375,7 +627,6 @@ router.post('/cancel', async (req, res) => {
     
     order.status = 'cancelled';
     
-    // Log cancellation in history
     const history = await readJSONSafe(HISTORY_FILE, {});
     if (!history[userId]) history[userId] = [];
     history[userId].push({
@@ -410,6 +661,31 @@ router.get('/history', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// 5. Get Order Book
+router.get('/orderbook', (req, res) => {
+  const { ticker, market, type, strike, expiry, optionType, couponRate, maturityDate, couponFrequency } = req.query;
+  if (!ticker || !market || !type) {
+    return res.status(400).json({ error: 'ticker, market, type 매개변수가 필요합니다.' });
+  }
+  
+  let optionDetails = null;
+  if (type === 'option') {
+    optionDetails = { strike, expiry, optionType };
+  }
+  
+  let bondDetails = null;
+  if (type === 'bond') {
+    bondDetails = { couponRate, maturityDate, couponFrequency };
+  }
+  
+  const orderBook = generateOrderBook(ticker, market, type, optionDetails, bondDetails);
+  if (!orderBook) {
+    return res.status(404).json({ error: '해당 자산의 가격을 조회할 수 없어 호가창을 생성하지 못했습니다.' });
+  }
+  
+  res.json(orderBook);
 });
 
 export default router;
