@@ -25,6 +25,7 @@ currentMode = getStore('mode', 'virtual');
 document.addEventListener('DOMContentLoaded', () => {
   switchMode(currentMode);
   switchTab('holdings');
+  updatePortfolioTotal(); // Calculate immediately using cached prices / mockCapital
   fetchMarketData();
   setInterval(fetchMarketData, 5000);
 });
