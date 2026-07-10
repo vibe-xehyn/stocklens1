@@ -17,12 +17,20 @@ function setStore(key, val) {
   localStorage.setItem(`mock_${key}`, JSON.stringify(val));
 }
 
-let mockCapital = getStore('capital', INIT_CAPITAL);
-let mockHoldings = getStore('holdings', {});
-let mockHistory = getStore('history', []);
-let mockDividends = getStore('dividends', []);
-let mockPendingOrders = getStore('pending', []);
-currentMode = getStore('mode', 'virtual');
+let currentMode = getStore('mode', 'virtual');
+
+function getModeStore(key, def) {
+  return getStore(`${currentMode}_${key}`, def);
+}
+function setModeStore(key, val) {
+  setStore(`${currentMode}_${key}`, val);
+}
+
+let mockCapital = getModeStore('capital', INIT_CAPITAL);
+let mockHoldings = getModeStore('holdings', {});
+let mockHistory = getModeStore('history', []);
+let mockDividends = getModeStore('dividends', []);
+let mockPendingOrders = getModeStore('pending', []);
 
 // --- Filter States ---
 let sortOrder = 'return_desc'; // 'return_desc', 'return_asc', 'val_desc'
@@ -42,12 +50,24 @@ document.addEventListener('DOMContentLoaded', () => {
 function switchMode(mode) {
   currentMode = mode;
   setStore('mode', mode);
+  
+  // Reload data for this mode
+  mockCapital = getModeStore('capital', INIT_CAPITAL);
+  mockHoldings = getModeStore('holdings', {});
+  mockHistory = getModeStore('history', []);
+  mockDividends = getModeStore('dividends', []);
+  mockPendingOrders = getModeStore('pending', []);
+  
   document.getElementById('btnModeVirtual').classList.toggle('active', mode === 'virtual');
   document.getElementById('btnModeRealtime').classList.toggle('active', mode === 'realtime');
   
   const container = document.querySelector('.mode-toggle-container');
   if (container) container.dataset.mode = mode;
   showToast(mode === 'virtual' ? '단기 연습모드로 변경되었습니다.' : '실전 롱텀모드로 변경되었습니다.');
+  
+  updatePortfolioTotal();
+  if (currentTab === 'holdings') renderHoldings();
+  if (currentTab === 'history') renderHistory();
 }
 
 function switchTab(tab) {
@@ -98,63 +118,101 @@ function toggleCurrency() {
   if (currentTab === 'history') renderHistory();
 }
 
+// --- Matching Engine ---
+function processPendingOrders() {
+  let pendingChanged = false;
+  mockPendingOrders = mockPendingOrders.filter(order => {
+    const q = liveQuotes[order.id];
+    if (!q) return true; // keep if no quote
+    
+    let executed = false;
+    if (order.type === 'buy' && q.price <= order.price) {
+      executed = true;
+      if (!mockHoldings[order.id]) {
+        mockHoldings[order.id] = { name: order.name, qty: 0, avgPrice: 0 };
+      }
+      const h = mockHoldings[order.id];
+      const cost = order.qty * order.price;
+      const totalCost = (h.qty * h.avgPrice) + cost;
+      h.qty += order.qty;
+      h.avgPrice = totalCost / h.qty;
+    } 
+    else if (order.type === 'sell' && q.price >= order.price) {
+      executed = true;
+      mockCapital += (order.qty * order.price);
+    }
+    
+    if (executed) {
+      pendingChanged = true;
+      mockHistory.push({ time: Date.now(), id: order.id, name: order.name, type: order.type, price: order.price, qty: order.qty });
+      showToast(`[체결완료] ${order.name} ${order.qty}주 지정가 ${order.type === 'buy' ? '구매' : '판매'}!`);
+      return false; // remove from pending
+    }
+    return true; // keep in pending
+  });
+  
+  if (pendingChanged) {
+    setModeStore('capital', mockCapital);
+    setModeStore('holdings', mockHoldings);
+    setModeStore('history', mockHistory);
+    setModeStore('pending', mockPendingOrders);
+    
+    updatePortfolioTotal();
+    if(currentTab === 'holdings') renderHoldings();
+    if(currentTab === 'history') renderHistory();
+    if(activeStock) updateSheetPrice();
+  }
+}
+
 // --- Data Fetching ---
 async function fetchMarketData() {
   try {
     const res = await fetch('/api/stock/top');
     const data = await res.json();
-    data.forEach(q => liveQuotes[q.id] = q);
-    
-    // --- Matching Engine for Pending Orders ---
-    let pendingChanged = false;
-    mockPendingOrders = mockPendingOrders.filter(order => {
-      const q = liveQuotes[order.id];
-      if (!q) return true; // keep if no quote
-      
-      let executed = false;
-      if (order.type === 'buy' && q.price <= order.price) {
-        executed = true;
-        // execute buy
-        if (!mockHoldings[order.id]) {
-          mockHoldings[order.id] = { name: order.name, qty: 0, avgPrice: 0 };
-        }
-        const h = mockHoldings[order.id];
-        const cost = order.qty * order.price;
-        const totalCost = (h.qty * h.avgPrice) + cost;
-        h.qty += order.qty;
-        h.avgPrice = totalCost / h.qty;
-      } 
-      else if (order.type === 'sell' && q.price >= order.price) {
-        executed = true;
-        // execute sell (stocks already reserved, just add cash)
-        mockCapital += (order.qty * order.price);
+    data.forEach(q => {
+      // In virtual mode, we only fetch once to initialize, then let the algorithm take over
+      if (currentMode === 'virtual' && liveQuotes[q.id]) {
+        return; 
       }
-      
-      if (executed) {
-        pendingChanged = true;
-        mockHistory.push({ time: Date.now(), id: order.id, name: order.name, type: order.type, price: order.price, qty: order.qty });
-        showToast(`[체결완료] ${order.name} ${order.qty}주 지정가 ${order.type === 'buy' ? '구매' : '판매'}!`);
-        return false; // remove from pending
-      }
-      return true; // keep in pending
+      liveQuotes[q.id] = q;
     });
     
-    if (pendingChanged) {
-      setStore('capital', mockCapital);
-      setStore('holdings', mockHoldings);
-      setStore('history', mockHistory);
-      setStore('pending', mockPendingOrders);
+    if (currentMode === 'realtime') {
+      processPendingOrders();
+      updatePortfolioTotal();
+      if(currentTab === 'holdings') renderHoldings();
+      if(currentTab === 'shopping') renderShopping();
+      if(activeStock) updateSheetPrice();
     }
+  } catch (e) { console.error('Fetch error', e); }
+}
+
+// --- Virtual Price Algorithm (단기 연습모드 호가 변동 엔진) ---
+setInterval(() => {
+  if (currentMode !== 'virtual') return;
+  
+  let changed = false;
+  Object.keys(liveQuotes).forEach(id => {
+    const q = liveQuotes[id];
+    // Random Walk: -1% to +1% every 2 seconds
+    const fluctuation = (Math.random() - 0.5) * 0.02; 
+    const oldPrice = q.price;
+    q.price = Math.round(q.price * (1 + fluctuation));
+    if (q.price !== oldPrice) changed = true;
     
+    // Update changePct roughly based on new price
+    if (!q._basePrice) q._basePrice = oldPrice / (1 + (q.changePct / 100));
+    q.changePct = ((q.price - q._basePrice) / q._basePrice) * 100;
+  });
+  
+  if (changed) {
+    processPendingOrders();
     updatePortfolioTotal();
     if(currentTab === 'holdings') renderHoldings();
     if(currentTab === 'shopping') renderShopping();
-    if(currentTab === 'history' && pendingChanged) renderHistory();
-    
-    // Update bottom sheet if open
     if(activeStock) updateSheetPrice();
-  } catch (e) { console.error('Fetch error', e); }
-}
+  }
+}, 2000);
 
 // --- Rendering ---
 function renderHoldings() {
@@ -219,8 +277,17 @@ function renderHoldings() {
   list.innerHTML = html || `<div class="empty-state">보유중인 주식이 없습니다.</div>`;
 }
 
+let lastSearchResults = null;
+
 function renderShopping() {
   const list = document.getElementById('searchList');
+  const input = document.getElementById('mockSearchInput');
+  
+  if (input && input.value.trim() && lastSearchResults) {
+    renderSearchResults(lastSearchResults);
+    return;
+  }
+  
   let html = '<div class="section-title" style="font-weight:700; margin-bottom:12px;">인기 종목</div>';
   
   const isUsd = displayCurrency === 'usd';
@@ -228,7 +295,7 @@ function renderShopping() {
   const sym = isUsd ? '$' : '';
   const unit = isUsd ? '' : '원';
 
-  const stocks = Object.values(liveQuotes);
+  const stocks = Object.values(liveQuotes).slice(0, 15); // Show top stocks in default view
   stocks.forEach(q => {
     const colorClass = q.changePct > 0 ? 'color-red' : (q.changePct < 0 ? 'color-blue' : '');
     html += `
@@ -243,6 +310,76 @@ function renderShopping() {
         <div class="item-right">
           <div class="item-price">${sym}${(q.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
           <div class="item-change ${colorClass}">${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%</div>
+        </div>
+      </div>
+    `;
+  });
+  list.innerHTML = html;
+}
+
+async function executeMockSearch() {
+  const query = document.getElementById('mockSearchInput').value.trim();
+  if(!query) {
+    lastSearchResults = null;
+    renderShopping();
+    return;
+  }
+  
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    lastSearchResults = data;
+    
+    // Add to liveQuotes so the algorithm can start fluctuating them and they can be traded
+    data.forEach(item => {
+      if(!liveQuotes[item.id]) {
+         liveQuotes[item.id] = {
+           id: item.id,
+           name: item.name,
+           price: parseFloat(item.price.toString().replace(/,/g, '')) || 0,
+           changePct: parseFloat(item.changePct) || 0
+         };
+      }
+    });
+    
+    renderSearchResults(data);
+  } catch(e) {
+    console.error('Search failed', e);
+  }
+}
+
+function renderSearchResults(data) {
+  const list = document.getElementById('searchList');
+  let html = '<div class="section-title" style="font-weight:700; margin-bottom:12px;">검색 결과</div>';
+  
+  if(data.length === 0) {
+    html += '<div class="empty-state">검색 결과가 없습니다.</div>';
+    list.innerHTML = html;
+    return;
+  }
+
+  const isUsd = displayCurrency === 'usd';
+  const rate = isUsd ? 1/1350 : 1;
+  const sym = isUsd ? '$' : '';
+  const unit = isUsd ? '' : '원';
+
+  data.forEach(q => {
+    // We use liveQuotes so that they fluctuate if in virtual mode
+    const lq = liveQuotes[q.id];
+    if(!lq) return;
+    const colorClass = lq.changePct > 0 ? 'color-red' : (lq.changePct < 0 ? 'color-blue' : '');
+    html += `
+      <div class="list-item" onclick="openOrderSheet('${q.id}')">
+        <div class="item-left">
+          <div class="item-icon">${q.name.substring(0,1)}</div>
+          <div>
+            <div class="item-title">${q.name}</div>
+            <div class="item-desc">${q.id}</div>
+          </div>
+        </div>
+        <div class="item-right">
+          <div class="item-price">${sym}${(lq.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
+          <div class="item-change ${colorClass}">${lq.changePct > 0 ? '+' : ''}${lq.changePct.toFixed(2)}%</div>
         </div>
       </div>
     `;
@@ -336,15 +473,15 @@ function cancelPendingOrder(time) {
   // Refund reserved cash or stocks
   if (order.type === 'buy') {
     mockCapital += (order.qty * order.price);
-    setStore('capital', mockCapital);
+    setModeStore('capital', mockCapital);
   } else {
     if (!mockHoldings[order.id]) mockHoldings[order.id] = { name: order.name, qty: 0, avgPrice: 0 };
     mockHoldings[order.id].qty += order.qty;
-    setStore('holdings', mockHoldings);
+    setModeStore('holdings', mockHoldings);
   }
   
   mockPendingOrders.splice(orderIdx, 1);
-  setStore('pending', mockPendingOrders);
+  setModeStore('pending', mockPendingOrders);
   updatePortfolioTotal();
   renderHistory();
   showToast('대기 주문이 취소되었습니다.');
@@ -366,8 +503,8 @@ function simulateDividend() {
   });
   
   mockCapital += totalDiv;
-  setStore('capital', mockCapital);
-  setStore('dividends', mockDividends);
+  setModeStore('capital', mockCapital);
+  setModeStore('dividends', mockDividends);
   updatePortfolioTotal();
   
   closeSettingsSheet();
@@ -537,7 +674,9 @@ function executeOrder() {
   
   setStore('capital', mockCapital);
   setStore('holdings', mockHoldings);
-  setStore('history', mockHistory);
+  setModeStore('capital', mockCapital);
+  setModeStore('holdings', mockHoldings);
+  setModeStore('history', mockHistory);
   
   closeOrderSheet();
   updatePortfolioTotal();
@@ -554,24 +693,33 @@ function closeSettingsSheet(e) {
   document.getElementById('settingsSheetOverlay').classList.remove('open');
 }
 function resetMockData() {
-  mockCapital = INIT_CAPITAL;
-  setStore('capital', mockCapital);
-  updatePortfolioTotal();
-  showToast('투자금이 1천만원으로 재설정되었습니다.');
-  closeSettingsSheet();
-}
-function clearAllData() {
+  if(!confirm('초기 투자금 1,000만원으로 리셋하시겠습니까? (현재 모드만 초기화됩니다)')) return;
   mockCapital = INIT_CAPITAL;
   mockHoldings = {};
   mockHistory = [];
-  setStore('capital', mockCapital);
-  setStore('holdings', mockHoldings);
-  setStore('history', mockHistory);
+  mockDividends = [];
+  mockPendingOrders = [];
+  setModeStore('capital', mockCapital);
+  setModeStore('holdings', mockHoldings);
+  setModeStore('history', mockHistory);
+  setModeStore('dividends', mockDividends);
+  setModeStore('pending', mockPendingOrders);
   updatePortfolioTotal();
   if(currentTab === 'holdings') renderHoldings();
   if(currentTab === 'history') renderHistory();
-  showToast('모든 데이터가 초기화되었습니다.');
   closeSettingsSheet();
+  showToast('현재 모드 초기화 완료');
+}
+
+function clearAllData() {
+  if(!confirm('모든 모드의 모의투자 데이터를 완전히 삭제하시겠습니까?')) return;
+  const keys = Object.keys(localStorage);
+  for (const k of keys) {
+    if (k.startsWith('mock_')) {
+      localStorage.removeItem(k);
+    }
+  }
+  window.location.reload();
 }
 
 // --- Utilities ---

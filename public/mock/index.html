@@ -80,13 +80,18 @@
     </div>
 
     <div class="tab-content" id="tabShopping">
-      <div class="search-box">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="searchInput" placeholder="주식 검색 (예: 테슬라, 삼성전자)" autocomplete="off">
+      <!-- Search Input -->
+      <div style="padding: 16px 20px 0 20px;">
+        <div style="position:relative; display:flex; align-items:center; background:var(--surface2); border-radius:12px; padding:12px 16px;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="var(--muted)" stroke-width="2" fill="none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="mockSearchInput" placeholder="주식, ETF 검색" onkeyup="if(event.key === 'Enter') executeMockSearch()" style="flex:1; background:transparent; border:none; color:var(--text); font-size:16px; margin-left:12px; outline:none; font-weight:500;">
+          <button onclick="executeMockSearch()" style="background:transparent; border:none; color:var(--up-color); font-weight:700; cursor:pointer;">검색</button>
+        </div>
       </div>
-      <div class="list-container" id="searchList">
+      
+      <div class="list-container" id="searchList" style="margin-top:12px;">
         <div class="section-title">인기 종목</div>
-        <!-- Default items will be injected here -->
+        <!-- Filled by JS -->
       </div>
     </div>
 
