@@ -65,10 +65,10 @@
 
     <!-- Filters -->
     <div class="toss-filters">
-      <button class="toss-chip">수익률 높은 순 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+      <button class="toss-chip" id="btnSortOrder" onclick="toggleSortOrder()">수익률 높은 순 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
       <div style="display:flex; gap:6px;">
-        <button class="toss-chip toggle-chip"><span class="active">현재가</span> <span>평가금</span></button>
-        <button class="toss-chip toggle-chip"><span class="active">$</span> <span>원</span></button>
+        <button class="toss-chip toggle-chip" id="btnToggleDisplayMode" onclick="toggleDisplayMode()"><span class="active" id="dispModeCurrent">현재가</span> <span id="dispModeVal">평가금</span></button>
+        <button class="toss-chip toggle-chip" id="btnToggleCurrency" onclick="toggleCurrency()"><span id="currUsd">$</span> <span class="active" id="currKrw">원</span></button>
       </div>
     </div>
 
@@ -91,6 +91,10 @@
     </div>
 
     <div class="tab-content" id="tabHistory">
+      <div class="toss-tabs" style="margin-top:-10px; margin-bottom:12px; border-bottom:1px solid var(--border);">
+        <div class="tab active" onclick="switchSubTab('orders')" id="subTabOrders">주문내역</div>
+        <div class="tab" onclick="switchSubTab('dividends')" id="subTabDividends">배당금</div>
+      </div>
       <div class="list-container" id="historyList">
         <div class="empty-state">거래 내역이 없습니다.</div>
       </div>
@@ -145,6 +149,7 @@
       <div class="sheet-handle"></div>
       <h3 style="margin-bottom: 24px; font-size: 20px; font-weight: 800;">설정</h3>
       <div style="display:flex; flex-direction:column; gap:12px;">
+        <button class="toss-btn secondary" onclick="simulateDividend()">배당금 지급 시뮬레이션</button>
         <button class="toss-btn secondary" onclick="resetMockData()">초기 투자금 재설정 (₩10,000,000)</button>
         <button class="toss-btn secondary" style="color:var(--red);" onclick="clearAllData()">모든 데이터 초기화</button>
       </div>
