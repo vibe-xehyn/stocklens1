@@ -10,52 +10,66 @@
 </head>
 <body>
 
-  <header class="app-header">
-    <button class="back-btn" onclick="location.href='/'">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-    </button>
-    <h1 class="header-title">모의투자</h1>
-    <button class="settings-btn" onclick="toggleSettingsDrawer()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
+  <header class="app-header toss-header">
+    <div class="header-left">
+      <h1 class="header-title" style="font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 2px;">토스증권</h1>
+      <div style="font-size: 13px; color: var(--muted); font-weight: 500;">모의투자 <span id="headerIndexStr" style="color:var(--red);">연동중</span></div>
+    </div>
+    <div class="header-icons">
+      <button onclick="location.href='/'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button onclick="toggleSettingsDrawer()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
   </header>
 
   <main class="app-content">
     
-    <!-- Mode Toggle (Hero) -->
-    <div class="mode-toggle-container">
-      <div class="mode-toggle-bg"></div>
-      <button class="mode-btn active" id="btnModeVirtual" onclick="switchMode('virtual')">단기 연습모드</button>
-      <button class="mode-btn" id="btnModeRealtime" onclick="switchMode('realtime')">실전 롱텀모드</button>
+    <!-- Account Switcher Area -->
+    <div class="toss-account-header">
+      <div class="account-selector" onclick="toggleSettingsDrawer()">
+        <div class="account-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+        </div>
+        <span class="account-name" id="currentAccountName">단기 연습계좌</span>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="account-view-link" onclick="toggleSettingsDrawer()">계좌 관리</div>
     </div>
 
-    <!-- Portfolio Card -->
-    <section class="portfolio-hero">
-      <div class="portfolio-label">총 자산</div>
-      <h2 class="portfolio-total" id="portfolioTotal">₩0</h2>
-      <div class="portfolio-return" id="portfolioReturn">
-        <span class="return-pct">0.00%</span>
-        <span class="return-amt">0원</span>
+    <!-- Balance Cards (원화 / 달러) -->
+    <div class="toss-balance-cards">
+      <div class="balance-card">
+        <div class="balance-title">원화</div>
+        <div class="balance-amount" id="portfolioCashKrw">33원</div>
       </div>
-      
-      <div class="portfolio-details">
-        <div class="detail-row">
-          <span>투자 원금</span>
-          <span id="portfolioCapital">₩0</span>
-        </div>
-        <div class="detail-row">
-          <span>주문가능 금액</span>
-          <span id="portfolioCash" style="color:var(--accent); font-weight:700;">₩0</span>
-        </div>
+      <div class="balance-card">
+        <div class="balance-title">달러</div>
+        <div class="balance-amount" id="portfolioCashUsd">$0.00</div>
+      </div>
+    </div>
+
+    <!-- Total Investment -->
+    <section class="toss-portfolio-hero">
+      <div class="portfolio-label">내 투자</div>
+      <div style="display:flex; align-items:center; gap:4px; margin-bottom: 6px;">
+        <h2 class="portfolio-total" id="portfolioTotal">1,751,748원</h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:20px;height:20px;margin-top:4px;"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="portfolio-return color-red" id="portfolioReturn">
+        +217,339원 (14.1%)
       </div>
     </section>
 
-    <!-- Nav Tabs -->
-    <div class="toss-tabs">
-      <div class="tab active" onclick="switchTab('holdings')">보유 주식</div>
-      <div class="tab" onclick="switchTab('shopping')">주식 쇼핑</div>
-      <div class="tab" onclick="switchTab('history')">거래 내역</div>
-      <div class="tab-indicator"></div>
+    <!-- Filters -->
+    <div class="toss-filters">
+      <button class="toss-chip">수익률 높은 순 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+      <div style="display:flex; gap:6px;">
+        <button class="toss-chip toggle-chip"><span class="active">현재가</span> <span>평가금</span></button>
+        <button class="toss-chip toggle-chip"><span class="active">$</span> <span>원</span></button>
+      </div>
     </div>
 
     <!-- Tab Contents -->

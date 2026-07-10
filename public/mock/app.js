@@ -184,15 +184,22 @@ function updatePortfolioTotal() {
   const returnAmt = totalAsset - INIT_CAPITAL;
   const returnPct = ((returnAmt / INIT_CAPITAL) * 100).toFixed(2);
   
+  // Total Asset (내 투자)
   document.getElementById('portfolioTotal').innerText = `${Math.floor(totalAsset).toLocaleString()}원`;
-  document.getElementById('portfolioCapital').innerText = `${INIT_CAPITAL.toLocaleString()}원`;
-  document.getElementById('portfolioCash').innerText = `${Math.floor(mockCapital).toLocaleString()}원`;
   
+  // Return text like: "+217,339원 (14.1%)"
   const retEl = document.getElementById('portfolioReturn');
-  retEl.querySelector('.return-pct').innerText = `${returnPct > 0 ? '+' : ''}${returnPct}%`;
-  retEl.querySelector('.return-amt').innerText = `${returnAmt > 0 ? '+' : ''}${Math.floor(returnAmt).toLocaleString()}원`;
+  const sign = returnAmt > 0 ? '+' : '';
+  retEl.innerText = `${sign}${Math.floor(returnAmt).toLocaleString()}원 (${sign}${returnPct}%)`;
+  retEl.className = `portfolio-return ${returnAmt > 0 ? 'color-red' : (returnAmt < 0 ? 'color-blue' : '')}`;
   
-  retEl.className = `portfolio-return ${returnPct > 0 ? 'color-red' : (returnPct < 0 ? 'color-blue' : '')}`;
+  // Balance Cards
+  document.getElementById('portfolioCashKrw').innerText = `${Math.floor(mockCapital).toLocaleString()}원`;
+  document.getElementById('portfolioCashUsd').innerText = `$${(mockCapital / 1350).toFixed(2)}`;
+  
+  // Account Name Update
+  const accNameEl = document.getElementById('currentAccountName');
+  if (accNameEl) accNameEl.innerText = mockMode === 'virtual' ? '단기 연습계좌' : '실전 롱텀계좌';
 }
 
 // --- Bottom Sheet Logic ---

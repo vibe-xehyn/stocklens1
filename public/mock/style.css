@@ -150,3 +150,61 @@ body { background: var(--bg); color: var(--text); overflow-x: hidden; user-selec
 
 .toss-toast { position: fixed; top: 20px; left: 50%; transform: translate(-50%, -20px); background: rgba(0,0,0,0.8); color: white; padding: 14px 24px; border-radius: 30px; font-weight: 600; font-size: 15px; z-index: 9999; opacity: 0; visibility: hidden; transition: 0.3s; }
 .toss-toast.show { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+
+/* Toss Securities Specific Overrides */
+.toss-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 16px 20px; background: transparent; border-bottom: none;
+}
+.header-icons { display: flex; gap: 16px; color: var(--text); }
+.header-icons button { background: none; border: none; color: inherit; padding: 4px; cursor: pointer; }
+.header-icons svg { width: 22px; height: 22px; }
+
+.toss-account-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px 8px 20px;
+}
+.account-selector { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.account-icon { width: 24px; height: 24px; color: #3b82f6; }
+.account-name { font-size: 16px; font-weight: 700; color: var(--text); }
+.account-selector .chevron { width: 16px; height: 16px; color: var(--muted); }
+.account-view-link { font-size: 13px; color: var(--muted); font-weight: 500; cursor: pointer; }
+
+.toss-balance-cards {
+  display: flex; gap: 12px; padding: 8px 20px 24px 20px;
+}
+.balance-card {
+  flex: 1; background: var(--surface2); border-radius: 20px; padding: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.balance-title { font-size: 13px; color: var(--muted); font-weight: 600; }
+.balance-amount { font-size: 16px; font-weight: 800; color: var(--text); }
+
+.toss-portfolio-hero {
+  padding: 0 20px 24px 20px;
+}
+.toss-portfolio-hero .portfolio-label { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.toss-portfolio-hero .portfolio-total { font-size: 32px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; margin: 0; }
+.toss-portfolio-hero .portfolio-return { font-size: 15px; font-weight: 700; }
+.color-red { color: #ef4444 !important; }
+.color-blue { color: #3b82f6 !important; }
+
+.toss-filters {
+  display: flex; justify-content: space-between; align-items: center; padding: 8px 20px;
+}
+.toss-chip {
+  display: flex; align-items: center; gap: 4px; padding: 8px 12px;
+  background: var(--surface2); border: none; border-radius: 12px;
+  color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.toss-chip svg { width: 14px; height: 14px; }
+.toss-chip.toggle-chip { gap: 8px; padding: 4px; }
+.toss-chip.toggle-chip span { padding: 4px 10px; border-radius: 8px; color: var(--muted); }
+.toss-chip.toggle-chip span.active { background: var(--surface); color: var(--text); }
+
+/* Holdings List specific for Toss layout */
+.toss-holdings-header {
+  display: flex; justify-content: space-between; padding: 16px 20px 8px 20px;
+  font-size: 13px; color: var(--muted); font-weight: 500;
+}
+
