@@ -3,531 +3,143 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>StockLens 모의투자</title>
-  <!-- Pretendard Variable webfont -->
+  <title>StockLens 모의투자 (Premium)</title>
+  <!-- Pretendard Font -->
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
-  <link rel="stylesheet" href="style.css?v=20260709">
-  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        regs.forEach(r => r.unregister());
-      });
-    }
-  </script>
+  <link rel="stylesheet" href="style.css?v=premium1">
 </head>
 <body>
 
-  <!-- 메인 네비게이션 헤더 -->
-  <header class="toss-header">
-    <div class="header-inner">
-      <div class="header-left">
-        <a href="/" class="back-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-          대시보드
-        </a>
-        <span class="logo-divider"></span>
-        <h1 class="toss-logo">Stock<span>Lens</span> <span>모의투자</span></h1>
-      </div>
-      <div class="header-center">
-        <div class="search-wrapper">
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="tossSearch" placeholder="브랜드, 주식 검색..." autocomplete="off">
-          <div class="search-results-dropdown" id="searchResults"></div>
-        </div>
-      </div>
-      <div class="header-right" style="display:flex;align-items:center;gap:12px;">
-        <button id="themeToggleBtn" onclick="toggleTheme()" class="theme-toggle-btn" title="테마 변경" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text);transition:var(--transition);padding:0;">
-          <svg class="theme-icon" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        </button>
-        <div class="user-profile-badge" id="headerProfile">
-          <div class="avatar" id="avatarLetter">G</div>
-          <div class="user-info">
-            <span class="username" id="profileName">게스트</span>
-            <span class="cash-hint" id="profileCash">₩0</span>
-          </div>
-        </div>
-      </div>
-    </div>
+  <header class="app-header">
+    <button class="back-btn" onclick="location.href='/'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <h1 class="header-title">모의투자</h1>
+    <button class="settings-btn" onclick="toggleSettingsDrawer()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
   </header>
 
-  <!-- 메인 컨텐츠 영역 -->
-  <main class="toss-container">
+  <main class="app-content">
     
-    <!-- 전역 모의투자 모드 선택기 (User Feedback 반영) -->
-    <div class="global-mode-selector" style="margin-bottom: 16px; padding: 4px; background: var(--surface2); border-radius: var(--radius-md); display: flex; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid var(--border);">
-      <button class="mode-btn active" id="global-mode-virtual" onclick="setTradingMode('virtual')" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 700; border: none; background: transparent; cursor: pointer; border-radius: var(--radius-sm); color: var(--text); transition: all 0.2s;">
-        ⚡ 단기 연습 (즉시 체결)
-      </button>
-      <button class="mode-btn" id="global-mode-realtime" onclick="setTradingMode('realtime')" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 700; border: none; background: transparent; cursor: pointer; border-radius: var(--radius-sm); color: var(--text-muted); transition: all 0.2s;">
-        🕰 실전 롱텀 (실시간 매칭)
-      </button>
+    <!-- Mode Toggle (Hero) -->
+    <div class="mode-toggle-container">
+      <div class="mode-toggle-bg"></div>
+      <button class="mode-btn active" id="btnModeVirtual" onclick="switchMode('virtual')">단기 연습모드</button>
+      <button class="mode-btn" id="btnModeRealtime" onclick="switchMode('realtime')">실전 롱텀모드</button>
     </div>
 
-    <div class="tabs-nav">
-      <button class="tab-btn active" onclick="switchTab('assets')">내 자산</button>
-      <button class="tab-btn" onclick="switchTab('shopping')">주식 쇼핑</button>
-      <button class="tab-btn" onclick="switchTab('history')">거래 내역</button>
+    <!-- Portfolio Card -->
+    <section class="portfolio-hero">
+      <div class="portfolio-label">총 자산</div>
+      <h2 class="portfolio-total" id="portfolioTotal">₩0</h2>
+      <div class="portfolio-return" id="portfolioReturn">
+        <span class="return-pct">0.00%</span>
+        <span class="return-amt">0원</span>
+      </div>
+      
+      <div class="portfolio-details">
+        <div class="detail-row">
+          <span>투자 원금</span>
+          <span id="portfolioCapital">₩0</span>
+        </div>
+        <div class="detail-row">
+          <span>주문가능 금액</span>
+          <span id="portfolioCash" style="color:var(--accent); font-weight:700;">₩0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Nav Tabs -->
+    <div class="toss-tabs">
+      <div class="tab active" onclick="switchTab('holdings')">보유 주식</div>
+      <div class="tab" onclick="switchTab('shopping')">주식 쇼핑</div>
+      <div class="tab" onclick="switchTab('history')">거래 내역</div>
+      <div class="tab-indicator"></div>
     </div>
 
-    <!-- 1. 내 자산 탭 -->
-    <section id="tab-assets" class="tab-content active">
-      <div class="assets-summary-card">
-        <div class="summary-left">
-          <span class="summary-label">내 계좌 평가금액</span>
-          <h2 class="summary-val" id="totalAssetVal">₩0</h2>
-          <div class="summary-return" id="totalAssetReturn">
-            <span class="pct">0.00%</span>
-            <span class="amt">(₩0)</span>
-          </div>
-        </div>
-        <div class="summary-right">
-          <div class="cash-info">
-            <div class="cash-row">
-              <span class="label">보유 예수금</span>
-              <span class="val" id="assetCash">₩0</span>
-            </div>
-            <div class="cash-row">
-              <span class="label">주식 평가금</span>
-              <span class="val" id="assetStocks">₩0</span>
-            </div>
-          </div>
-          <div style="display:flex;gap:6px;width:100%;margin-top:6px;">
-            <button class="btn btn-primary deposit-btn" onclick="openCashModal('deposit')" style="flex:1;padding:8px;font-size:11.5px;">입금</button>
-            <button class="btn btn-secondary withdraw-btn" onclick="openCashModal('withdraw')" style="flex:1;padding:8px;font-size:11.5px;">출금</button>
-            <button class="btn btn-secondary reset-btn" onclick="openCapitalModal(true)" style="padding:8px;font-size:11.5px;display:flex;align-items:center;justify-content:center;" title="투자금 초기화">↻</button>
-          </div>
-        </div>
+    <!-- Tab Contents -->
+    <div class="tab-content active" id="tabHoldings">
+      <div class="list-container" id="holdingsList">
+        <div class="empty-state">보유중인 주식이 없습니다.</div>
       </div>
+    </div>
 
-      <!-- 포트폴리오 비중 시각화 카드 (Toss style) -->
-      <div class="portfolio-chart-card" id="portfolioChartCard" style="display: none;">
-        <h4 class="card-title">내 자산 비중</h4>
-        <div class="portfolio-chart-wrap">
-          <div class="pie-container">
-            <canvas id="portfolioPieChart" width="130" height="130"></canvas>
-            <div class="pie-center">
-              <span class="center-label">주식 비중</span>
-              <span class="center-val" id="portfolioPieRatio">0%</span>
-              <span class="center-sub-val" id="portfolioPieVal" style="font-size: 10px; color: var(--text-muted); margin-top: 2px; font-weight: 600;"></span>
-            </div>
-          </div>
-          <div class="portfolio-legend" id="portfolioLegend">
-            <!-- JS 범례 주입 -->
-          </div>
-        </div>
+    <div class="tab-content" id="tabShopping">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="searchInput" placeholder="주식 검색 (예: 테슬라, 삼성전자)" autocomplete="off">
       </div>
+      <div class="list-container" id="searchList">
+        <div class="section-title">인기 종목</div>
+        <!-- Default items will be injected here -->
+      </div>
+    </div>
 
+    <div class="tab-content" id="tabHistory">
+      <div class="list-container" id="historyList">
+        <div class="empty-state">거래 내역이 없습니다.</div>
       </div>
+    </div>
 
-      <!-- 목표 수익률 & 수익 현황 카드 -->
-      <div class="target-return-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:var(--shadow);">
-        <div class="target-header" style="display:flex;align-items:center;margin-bottom:12px;width:100%;justify-content:space-between;">
-          <span class="target-title" style="font-size:14px;font-weight:800;">나의 투자 목표</span>
-          <button class="btn btn-secondary edit-target-btn" onclick="openTargetModal()" style="padding:4px 10px;font-size:11px;border-radius:6px;">목표 설정</button>
-        </div>
-        <div class="target-body">
-          <div class="progress-wrap" style="margin-bottom:12px;">
-            <div class="progress-bar-bg" style="width:100%;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:6px;">
-              <div class="progress-bar-fill" id="targetProgressBar" style="width: 0%;height:100%;background:var(--accent);border-radius:3px;transition:width 0.3s ease;"></div>
-            </div>
-            <div class="progress-labels" style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;">
-              <span class="progress-pct" id="targetProgressPct" style="color:var(--accent);">0% 달성</span>
-              <span class="target-goal-val" id="targetGoalLabel" style="color:var(--text-muted);">목표 ₩0</span>
-            </div>
-          </div>
-          <div class="analysis-status-box" id="portfolioAnalysisReport" style="font-size:11.5px;line-height:1.5;color:var(--text-desc);background:var(--surface2);padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);">
-            자산 상태 분석 중...
-          </div>
-        </div>
-      </div>
-
-      <div class="section-title-wrap">
-        <h3 class="section-title">보유 주식</h3>
-      </div>
-      <div class="holdings-list" id="holdingsList">
-        <!-- JS로 동적 주입 -->
-        <div class="empty-state">
-          <span class="icon">📈</span>
-          <p>보유 주식이 없습니다. 주식 쇼핑 탭에서 첫 주식을 사보세요!</p>
-          <button class="btn btn-primary" onclick="switchTab('shopping')" style="margin-top: 12px; padding: 10px 20px;">주식 사러 가기</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- 2. 주식 쇼핑 탭 -->
-    <section id="tab-shopping" class="tab-content">
-      <div class="shopping-layout">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 8px;">
-          <div class="market-selector">
-            <button class="mkt-btn active" id="mkt-kr" onclick="filterMarket('kr')">한국 주식</button>
-            <button class="mkt-btn" id="mkt-us" onclick="filterMarket('us')">미국 주식</button>
-          </div>
-          <div class="category-selector" style="display:flex;gap:4px;background:var(--surface2);padding:3px;border-radius:var(--radius-md);border:1px solid var(--border);">
-            <button class="mkt-btn active" id="cat-popular" onclick="switchCategory('popular')" style="padding:6px 12px; font-size:12px;">인기순</button>
-            <button class="mkt-btn" id="cat-gainers" onclick="switchCategory('gainers')" style="padding:6px 12px; font-size:12px;">급상승</button>
-            <button class="mkt-btn" id="cat-losers" onclick="switchCategory('losers')" style="padding:6px 12px; font-size:12px;">급하락</button>
-            <button class="mkt-btn" id="cat-dividend" onclick="switchCategory('dividend')" style="padding:6px 12px; font-size:12px;">고배당</button>
-          </div>
-        </div>
-        
-        <div class="shopping-stocks-card">
-          <div class="stocks-table-header">
-            <span>종목</span>
-            <span class="txt-right">현재가</span>
-            <span class="txt-right">대비</span>
-            <span class="txt-center">거래</span>
-          </div>
-          <div class="stocks-table-list" id="shoppingStockList">
-            <!-- JS 동적 주입 -->
-            <div class="loading-state">
-              <div class="spinner"></div>
-              <span>실시간 시세 로드 중...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 3. 거래 내역 탭 -->
-    <section id="tab-history" class="tab-content">
-      <div class="section-title-wrap">
-        <h3 class="section-title">거래 내역</h3>
-      </div>
-      <div class="history-list" id="historyList">
-        <!-- JS 동적 주입 -->
-        <div class="empty-state">
-          <span class="icon">📝</span>
-          <p>아직 거래 내역이 없습니다.</p>
-        </div>
-      </div>
-    </section>
   </main>
 
-  <!-- 4. 종목 상세 화면 (Toss style SPA Layer) -->
-  <div class="detail-screen" id="stockDetailScreen">
-    <div class="detail-header">
-      <button class="detail-back-btn" onclick="closeStockDetail()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-        이전
-      </button>
-      <div class="detail-title-area">
-        <h2 id="detailStockName">삼성전자</h2>
-        <span id="detailStockTicker">005930</span>
-      </div>
-      <div style="width: 48px;"></div> <!-- Alignment placeholder -->
-    </div>
-
-    <div class="detail-body">
-      <!-- 4-1. 시세 요약 정보 -->
-      <div class="detail-price-section">
-        <div class="price-row">
-          <h1 id="detailCurrentPrice">₩0</h1>
-          <span id="detailCurrentChange" class="current-change">0.00%</span>
+  <!-- Bottom Sheet (Order Drawer) -->
+  <div class="bottom-sheet-overlay" id="orderSheetOverlay" onclick="closeOrderSheet(event)">
+    <div class="bottom-sheet" id="orderSheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-stock-info">
+          <img src="" id="orderStockIcon" class="stock-icon" onerror="this.style.display='none'">
+          <h2 id="orderStockName">종목명</h2>
         </div>
-        <span id="detailExchangeRateHint" class="price-sub"></span>
-      </div>
-
-      <!-- 4-2. 실시간 차트 영역 (Lightweight Charts) -->
-      <div class="detail-chart-card">
-        <div class="chart-range-tabs">
-          <button class="range-btn active" onclick="changeDetailChartRange('1d', this)">1일</button>
-          <button class="range-btn" onclick="changeDetailChartRange('1w', this)">1주</button>
-          <button class="range-btn" onclick="changeDetailChartRange('1m', this)">1달</button>
-          <button class="range-btn" onclick="changeDetailChartRange('1y', this)">1년</button>
-        </div>
-        <div class="chart-container-wrap">
-          <div id="detailChart"></div>
+        <div class="sheet-price-info">
+          <div id="orderStockPrice" class="sheet-price">0원</div>
+          <div id="orderStockChange" class="sheet-change">0.00%</div>
         </div>
       </div>
-
-      <!-- 4-3. 실시간 호가 영역 (Toss style Order Book) -->
-      <div class="detail-orderbook-card">
-        <h3 class="card-sub-title">실시간 호가</h3>
-        <div class="orderbook-table" id="detailOrderBook">
-          <!-- JS dynamic generation -->
-          <div class="loading-state">호가를 불러오는 중...</div>
-        </div>
-      </div>
-
-      <!-- 4-3.5 실시간 고래 추적기 -->
-      <div class="detail-whale-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:var(--shadow);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;width:100%;">
-          <h3 class="card-sub-title" style="margin:0;">실시간 대형 거래 (고래 체결)</h3>
-          <span id="detailWhaleIndex" style="font-size:11px;font-weight:700;color:var(--red);background:var(--red-bg);padding:2px 8px;border-radius:12px;">매집 지수: 82%</span>
-        </div>
-        <div class="whale-stream-container" style="position:relative;height:90px;overflow:hidden;">
-          <div id="whaleAlertStream" style="display:flex;flex-direction:column;gap:8px;position:absolute;width:100%;transition:transform 0.4s ease;">
-            <!-- JS dynamic rows -->
-          </div>
-        </div>
-      </div>
-
-      <!-- 4-4. 종목 정보 / 주요 지표 영역 -->
-      <div class="detail-metrics-card">
-        <h3 class="card-sub-title">종목 정보</h3>
-        <div class="metrics-grid">
-          <div class="metric-item">
-            <span class="label">시가</span>
-            <span class="val" id="metricOpen">₩0</span>
-          </div>
-          <div class="metric-item">
-            <span class="label">고가</span>
-            <span class="val" id="metricHigh">₩0</span>
-          </div>
-          <div class="metric-item">
-            <span class="label">저가</span>
-            <span class="val" id="metricLow">₩0</span>
-          </div>
-          <div class="metric-item">
-            <span class="label">거래량</span>
-            <span class="val" id="metricVolume">0</span>
-          </div>
-          <div class="metric-item">
-            <span class="label">52주 최고</span>
-            <span class="val" id="metric52High">₩0</span>
-          </div>
-          <div class="metric-item">
-            <span class="label">52주 최저</span>
-            <span class="val" id="metric52Low">₩0</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 하단 고정 거래 실행 바 -->
-    <div class="detail-bottom-bar">
-      <button class="btn btn-buy-action" onclick="openOrderDrawerFromDetail('buy')">사기</button>
-      <button class="btn btn-sell-action" onclick="openOrderDrawerFromDetail('sell')">팔기</button>
-    </div>
-  </div>
-
-  <!-- 초기 투자금 선택 모달 -->
-  <div class="modal-overlay" id="capitalModal">
-    <div class="modal-box">
-      <h2 class="modal-title">모의투자를 시작해볼까요?</h2>
-      <p class="modal-desc">초기 투자금을 선택해주세요.<br>선택한 금액으로 모의투자가 시작되며, 언제든 초기화할 수 있습니다.</p>
       
-      <div class="capital-options">
-        <button class="capital-opt-btn" onclick="initAccount(1000000)">
-          <span class="opt-title">실속 시작</span>
-          <span class="opt-val">₩100만</span>
-        </button>
-        <button class="capital-opt-btn" onclick="initAccount(10000000)">
-          <span class="opt-title">기본형</span>
-          <span class="opt-val">₩1,000만</span>
-        </button>
-        <button class="capital-opt-btn active" onclick="initAccount(100000000)">
-          <span class="opt-title">추천</span>
-          <span class="opt-val">₩1억</span>
-        </button>
-        <button class="capital-opt-btn" onclick="initAccount(1000000000)">
-          <span class="opt-title">대형 자산가</span>
-          <span class="opt-val">₩10억</span>
-        </button>
-      </div>
-
-      <div class="modal-actions" style="margin-top: 24px;">
-        <button class="btn btn-primary" onclick="confirmCapitalSelection()" style="width: 100%; padding: 14px;">계좌 개설하기</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Toss style 슬라이딩 거래 패널 (Drawer) -->
-  <div class="drawer-overlay" id="tossDrawerOverlay" onclick="closeOrderDrawer()">
-    <div class="order-drawer" id="orderDrawer" onclick="event.stopPropagation()">
-      <div class="drawer-header">
-        <div class="stock-title-area">
-          <h3 id="drawerStockName">삼성전자</h3>
-          <span id="drawerStockTicker">005930</span>
-        </div>
-        <button class="close-drawer-btn" onclick="closeOrderDrawer()">&times;</button>
-      </div>
-
-      <div class="drawer-body">
-        <div class="drawer-price-info">
-          <span class="price-label">현재가</span>
-          <div class="price-row">
-            <span class="current-price" id="drawerCurrentPrice">₩0</span>
-            <span class="current-change" id="drawerCurrentChange">0.00%</span>
-          </div>
-          <span class="price-sub" id="drawerExchangeRateHint"></span>
-        </div>
-
+      <div class="sheet-body">
         <div class="order-type-tabs">
-          <button class="order-type-btn active" id="order-buy" onclick="setOrderMode('buy')">주식 사기</button>
-          <button class="order-type-btn" id="order-sell" onclick="setOrderMode('sell')">주식 팔기</button>
+          <button class="order-type-btn active" id="btnOrderBuy" onclick="switchOrderType('buy')">구매</button>
+          <button class="order-type-btn" id="btnOrderSell" onclick="switchOrderType('sell')">판매</button>
         </div>
 
-        <div class="order-mode-selector" style="display:flex; background:var(--surface2); border-radius:var(--radius-sm); padding:2.5px; border:1px solid var(--border); margin: 8px 0;">
-          <button class="order-type-btn active" id="mode-virtual" onclick="setTradingMode('virtual')" style="flex:1; padding:6px; font-size:11.5px; font-weight:700; border:none; background:transparent; cursor:pointer; border-radius:4px; text-align:center;">단기 연습 (24시간 즉시)</button>
-          <button class="order-type-btn" id="mode-realtime" onclick="setTradingMode('realtime')" style="flex:1; padding:6px; font-size:11.5px; font-weight:700; border:none; background:transparent; cursor:pointer; border-radius:4px; text-align:center;">실전 롱텀 (실시간 매칭)</button>
+        <div class="input-container">
+          <input type="text" id="orderAmountInput" placeholder="얼마나 주문할까요?" inputmode="numeric" oninput="formatOrderInput(this)">
+          <span class="input-suffix">원</span>
         </div>
+        <div class="estimated-qty" id="estimatedQty">예상 수량: 0주</div>
 
-        <div class="order-inputs">
-          <div class="order-method-selector" style="display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:2.5px;border:1px solid var(--border);margin-bottom:8px;">
-            <button class="order-type-btn active" id="method-qty" onclick="switchOrderMethod('qty')" style="padding:6px;font-size:11.5px;font-weight:700;border:none;background:transparent;cursor:pointer;border-radius:4px;">수량 주문 (주)</button>
-            <button class="order-type-btn" id="method-amount" onclick="switchOrderMethod('amount')" style="padding:6px;font-size:11.5px;font-weight:700;border:none;background:transparent;cursor:pointer;border-radius:4px;">금액 주문 (원)</button>
-          </div>
-
-          <div class="input-group">
-            <label for="orderQty" class="input-label" id="inputLabel">주문 수량</label>
-            <div class="input-wrapper">
-              <input type="text" id="orderQty" placeholder="0" readonly style="caret-color:transparent;">
-              <span class="unit" id="inputUnit">주</span>
-            </div>
-          </div>
-
-          <div class="quick-percentage-buttons" style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px;">
-            <button class="quick-pct-btn" onclick="addOrderAmount(10000)" style="flex:1; padding: 6px; font-size: 11px;">+1만</button>
-            <button class="quick-pct-btn" onclick="addOrderAmount(100000)" style="flex:1; padding: 6px; font-size: 11px;">+10만</button>
-            <button class="quick-pct-btn" onclick="addOrderAmount(1000000)" style="flex:1; padding: 6px; font-size: 11px;">+100만</button>
-            <button class="quick-pct-btn" onclick="applyQuickPct(0.1)" style="flex:1; padding: 6px; font-size: 11px;">10%</button>
-            <button class="quick-pct-btn" onclick="applyQuickPct(0.5)" style="flex:1; padding: 6px; font-size: 11px;">50%</button>
-            <button class="quick-pct-btn" onclick="applyQuickPct(1.0)" style="flex:1; padding: 6px; font-size: 11px;">최대</button>
-          </div>
-
-          <div class="account-summary-row">
-            <span class="label" id="drawerAvailableLabel">주문 가능 금액</span>
-            <span class="val" id="drawerAvailableVal">₩0</span>
-          </div>
-          
-          <div class="total-cost-row">
-            <span class="label" id="drawerTotalCostLabel">예상 총 금액</span>
-            <span class="val" id="drawerTotalCost">₩0</span>
-          </div>
+        <div class="quick-amounts">
+          <button onclick="addOrderAmount(10000)">+1만</button>
+          <button onclick="addOrderAmount(50000)">+5만</button>
+          <button onclick="addOrderAmount(100000)">+10만</button>
+          <button onclick="addOrderAmount('max')">최대</button>
         </div>
+      </div>
 
-        <!-- Custom Numeric Keypad -->
-        <div class="keypad-container" style="margin-bottom: 20px;">
-          <div class="keypad-grid" style="display:grid;grid-template-columns: repeat(3, 1fr);gap:8px;">
-            <button class="keypad-btn" onclick="pressKey('1')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">1</button>
-            <button class="keypad-btn" onclick="pressKey('2')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">2</button>
-            <button class="keypad-btn" onclick="pressKey('3')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">3</button>
-            <button class="keypad-btn" onclick="pressKey('4')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">4</button>
-            <button class="keypad-btn" onclick="pressKey('5')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">5</button>
-            <button class="keypad-btn" onclick="pressKey('6')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">6</button>
-            <button class="keypad-btn" onclick="pressKey('7')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">7</button>
-            <button class="keypad-btn" onclick="pressKey('8')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">8</button>
-            <button class="keypad-btn" onclick="pressKey('9')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">9</button>
-            <button class="keypad-btn" onclick="pressKey('00')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:15px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">00</button>
-            <button class="keypad-btn" onclick="pressKey('0')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);">0</button>
-            <button class="keypad-btn delete-btn" onclick="pressKey('backspace')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:16px;font-weight:800;cursor:pointer;color:var(--text);transition:var(--transition);display:flex;align-items:center;justify-content:center;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px;"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-            </button>
-          </div>
-        </div>
-
-        <div class="drawer-actions">
-          <button class="btn btn-buy" id="drawerActionBtn" onclick="executeOrder()">사기</button>
-        </div>
+      <div class="sheet-footer">
+        <button class="toss-btn primary" id="btnExecuteOrder" onclick="executeOrder()">주문하기</button>
       </div>
     </div>
   </div>
 
-  <!-- 예수금 입출금 모달 -->
-  <div class="modal-overlay" id="cashModal">
-    <div class="modal-box" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:100%;max-width:380px;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);box-shadow:0 20px 50px rgba(0,0,0,0.15);">
-      <h2 class="modal-title" id="cashModalTitle" style="font-size:18px;font-weight:800;text-align:center;margin-bottom:8px;">예수금 입금</h2>
-      <p class="modal-desc" id="cashModalDesc" style="font-size:12px;color:var(--text-muted);text-align:center;margin-bottom:20px;">입금할 금액을 입력해주세요.</p>
-      
-      <div class="input-group" style="margin-bottom: 16px;">
-        <div class="input-wrapper" style="display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 16px;">
-          <input type="text" id="cashAmountInput" placeholder="0" readonly style="flex:1;background:transparent;border:none;outline:none;font-size:18px;font-weight:800;color:var(--text);caret-color:transparent;text-align:right;">
-          <span class="unit" style="font-size:14px;font-weight:700;color:var(--text-muted);margin-left:8px;">원</span>
-        </div>
-      </div>
-
-      <!-- Quick Amount Buttons -->
-      <div class="quick-cash-buttons" style="display:flex;gap:6px;margin-bottom:16px;">
-        <button class="btn btn-secondary" onclick="addQuickCash(1000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+100만</button>
-        <button class="btn btn-secondary" onclick="addQuickCash(10000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+1,000만</button>
-        <button class="btn btn-secondary" onclick="addQuickCash(50000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+5,000만</button>
-        <button class="btn btn-secondary" onclick="clearCashInput()" style="padding:8px 10px;font-size:11px;border-radius:6px;">초기화</button>
-      </div>
-
-      <!-- Keypad for Cash Modal -->
-      <div class="keypad-container" style="margin-bottom: 20px;">
-        <div class="keypad-grid" style="display:grid;grid-template-columns: repeat(3, 1fr);gap:6px;">
-          <button class="keypad-btn" onclick="pressCashKey('1')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">1</button>
-          <button class="keypad-btn" onclick="pressCashKey('2')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">2</button>
-          <button class="keypad-btn" onclick="pressCashKey('3')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">3</button>
-          <button class="keypad-btn" onclick="pressCashKey('4')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">4</button>
-          <button class="keypad-btn" onclick="pressCashKey('5')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">5</button>
-          <button class="keypad-btn" onclick="pressCashKey('6')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">6</button>
-          <button class="keypad-btn" onclick="pressCashKey('7')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">7</button>
-          <button class="keypad-btn" onclick="pressCashKey('8')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">8</button>
-          <button class="keypad-btn" onclick="pressCashKey('9')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">9</button>
-          <button class="keypad-btn" onclick="pressCashKey('00')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:800;cursor:pointer;color:var(--text);">00</button>
-          <button class="keypad-btn" onclick="pressCashKey('0')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">0</button>
-          <button class="keypad-btn delete-btn" onclick="pressCashKey('backspace')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="modal-actions" style="display:flex;gap:10px;">
-        <button class="btn btn-secondary" onclick="closeCashModal()" style="flex:1;padding:12px;border-radius:10px;font-size:13px;">취소</button>
-        <button class="btn btn-primary" id="cashModalActionBtn" onclick="executeCashTransaction()" style="flex:2;padding:12px;border-radius:10px;font-size:13px;">확인</button>
+  <!-- Settings Drawer -->
+  <div class="bottom-sheet-overlay" id="settingsSheetOverlay" onclick="closeSettingsSheet(event)">
+    <div class="bottom-sheet" id="settingsSheet">
+      <div class="sheet-handle"></div>
+      <h3 style="margin-bottom: 24px; font-size: 20px; font-weight: 800;">설정</h3>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <button class="toss-btn secondary" onclick="resetMockData()">초기 투자금 재설정 (₩10,000,000)</button>
+        <button class="toss-btn secondary" style="color:var(--red);" onclick="clearAllData()">모든 데이터 초기화</button>
       </div>
     </div>
   </div>
 
-  <!-- 목표 자산 설정 모달 -->
-  <div class="modal-overlay" id="targetModal">
-    <div class="modal-box" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:100%;max-width:380px;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);box-shadow:0 20px 50px rgba(0,0,0,0.15);">
-      <h2 class="modal-title" style="font-size:18px;font-weight:800;text-align:center;margin-bottom:8px;">목표 자산 설정</h2>
-      <p class="modal-desc" style="font-size:12px;color:var(--text-muted);text-align:center;margin-bottom:20px;">모의투자 목표 자산을 설정해주세요.</p>
-      
-      <div class="input-group" style="margin-bottom: 16px;">
-        <div class="input-wrapper" style="display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 16px;">
-          <input type="text" id="targetAmountInput" placeholder="0" readonly style="flex:1;background:transparent;border:none;outline:none;font-size:18px;font-weight:800;color:var(--text);caret-color:transparent;text-align:right;">
-          <span class="unit" style="font-size:14px;font-weight:700;color:var(--text-muted);margin-left:8px;">원</span>
-        </div>
-      </div>
+  <!-- Toast Notification -->
+  <div class="toss-toast" id="toastMsg">알림 메시지</div>
 
-      <div class="quick-cash-buttons" style="display:flex;gap:6px;margin-bottom:16px;">
-        <button class="btn btn-secondary" onclick="addTargetCash(10000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+1,000만</button>
-        <button class="btn btn-secondary" onclick="addTargetCash(100000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+1억</button>
-        <button class="btn btn-secondary" onclick="addTargetCash(1000000000)" style="flex:1;padding:8px 0;font-size:11px;border-radius:6px;">+10억</button>
-        <button class="btn btn-secondary" onclick="clearTargetInput()" style="padding:8px 10px;font-size:11px;border-radius:6px;">초기화</button>
-      </div>
-
-      <div class="keypad-container" style="margin-bottom: 20px;">
-        <div class="keypad-grid" style="display:grid;grid-template-columns: repeat(3, 1fr);gap:6px;">
-          <button class="keypad-btn" onclick="pressTargetKey('1')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">1</button>
-          <button class="keypad-btn" onclick="pressTargetKey('2')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">2</button>
-          <button class="keypad-btn" onclick="pressTargetKey('3')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">3</button>
-          <button class="keypad-btn" onclick="pressTargetKey('4')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">4</button>
-          <button class="keypad-btn" onclick="pressTargetKey('5')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">5</button>
-          <button class="keypad-btn" onclick="pressTargetKey('6')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">6</button>
-          <button class="keypad-btn" onclick="pressTargetKey('7')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">7</button>
-          <button class="keypad-btn" onclick="pressTargetKey('8')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">8</button>
-          <button class="keypad-btn" onclick="pressTargetKey('9')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">9</button>
-          <button class="keypad-btn" onclick="pressTargetKey('00')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:800;cursor:pointer;color:var(--text);">00</button>
-          <button class="keypad-btn" onclick="pressTargetKey('0')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);">0</button>
-          <button class="keypad-btn delete-btn" onclick="pressTargetKey('backspace')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:14px;font-weight:800;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="modal-actions" style="display:flex;gap:10px;">
-        <button class="btn btn-secondary" onclick="closeTargetModal()" style="flex:1;padding:12px;border-radius:10px;font-size:13px;">취소</button>
-        <button class="btn btn-primary" onclick="confirmTargetGoal()" style="flex:2;padding:12px;border-radius:10px;font-size:13px;">확인</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Toss-style 토스트 성공 메시지 -->
-  <div class="toss-toast" id="tossToast">
-    <div class="toast-content">
-      <span class="icon">✅</span>
-      <span class="message" id="toastMessage">주문이 성공적으로 체결되었습니다.</span>
-    </div>
-  </div>
-
-  <script src="app.js?v=20260709"></script>
+  <script src="app.js?v=premium1"></script>
 </body>
 </html>
