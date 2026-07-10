@@ -143,24 +143,21 @@ function renderHistory() {
     return;
   }
   
-  let html = '';
+  let html = '<div style="font-size:15px; font-weight:700; color:var(--text); margin-bottom:16px; padding:0 20px;">완료된 주문</div>';
+  
   // Reverse to show newest first
   [...mockHistory].reverse().forEach(h => {
-    const colorClass = h.type === 'buy' ? 'color-red' : 'color-blue';
     const typeStr = h.type === 'buy' ? '구매' : '판매';
-    const dateStr = new Date(h.time).toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const dateObj = new Date(h.time);
+    const dateStr = `${dateObj.getMonth() + 1}.${dateObj.getDate()}`;
+    const priceStr = h.price > 50000 ? `${h.price.toLocaleString()}원` : `$${(h.price/1350).toFixed(2)}`;
     
     html += `
-      <div class="list-item" style="cursor:default;">
-        <div class="item-left">
-          <div>
-            <div class="item-title">${h.name} <span class="${colorClass}">${typeStr}</span></div>
-            <div class="item-desc">${dateStr}</div>
-          </div>
-        </div>
-        <div class="item-right">
-          <div class="item-price">${(h.price * h.qty).toLocaleString()}원</div>
-          <div class="item-change">${h.qty}주 @ ${h.price.toLocaleString()}원</div>
+      <div style="display:flex; padding:12px 20px; align-items:flex-start;">
+        <div style="width:50px; font-size:15px; font-weight:600; color:var(--text); margin-top:2px;">${dateStr}</div>
+        <div style="flex:1;">
+          <div style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:4px;">${h.name}</div>
+          <div style="font-size:14px; font-weight:500; color:var(--muted);">${priceStr} ${typeStr} 완료</div>
         </div>
       </div>
     `;
