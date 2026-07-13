@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>StockLens - 모의투자 (마스터피스)</title>
+<title>StockLens - 주식 투자 대시보드</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script>
@@ -19,27 +19,27 @@ if ('serviceWorker' in navigator) {
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
-    --bg: #F2F4F6;
-    --surface: #FFFFFF;
-    --surface2: #F9FAFB;
-    --surface3: #F2F4F6;
+    --bg: #F5F5F7;
+    --surface: rgba(255, 255, 255, 0.45);
+    --surface2: rgba(255, 255, 255, 0.7);
+    --surface3: rgba(255, 255, 255, 0.95);
     --border: rgba(0, 0, 0, 0.05);
-    --border2: rgba(0, 0, 0, 0.08);
-    --text: #191F28;
-    --text2: #4E5968;
-    --muted: #8B95A1;
-    --accent: #3182F6;
-    --accent2: #1B64DA;
-    --accent-glow: rgba(49, 130, 246, 0.1);
+    --border2: rgba(0, 0, 0, 0.1);
+    --text: #1D1D1F;
+    --text2: #515154;
+    --muted: #86868B;
+    --accent: #0066CC;
+    --accent2: #0077ED;
+    --accent-glow: rgba(0, 102, 204, 0.06);
     --up-color: #F04452;
     --up-bg: rgba(240, 68, 82, 0.08);
     --down-color: #3182F6;
     --down-bg: rgba(49, 130, 246, 0.08);
     --yellow: #FF9500;
-    --radius: 24px;
-    --radius-sm: 16px;
-    --shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-    --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.06);
+    --radius: 18px;
+    --radius-sm: 12px;
+    --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.03), inset 0 1px 0 0 rgba(255, 255, 255, 0.65);
+    --shadow-md: 0 12px 40px 0 rgba(31, 38, 135, 0.07), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -47,13 +47,17 @@ if ('serviceWorker' in navigator) {
   body { 
     overflow-x: clip; 
     max-width: 100%; 
-    background: var(--bg); 
+    background: #F4F5F9; 
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(130, 201, 255, 0.15) 0px, transparent 45%), 
+      radial-gradient(at 100% 0%, rgba(255, 182, 193, 0.12) 0px, transparent 50%), 
+      radial-gradient(at 50% 100%, rgba(220, 200, 255, 0.15) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(168, 255, 220, 0.1) 0px, transparent 40%);
     color: var(--text); 
-    font-family: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
     min-height: 100vh; 
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
-    letter-spacing: -0.3px;
   }
 
   /* ── Scrollbar ── */
@@ -72,12 +76,13 @@ if ('serviceWorker' in navigator) {
   .h-scroll > * { scroll-snap-align: start; }
 
   header {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
     padding: 0 28px; display: flex; align-items: center; justify-content: space-between;
-    height: 64px; position: sticky; top: 0; z-index: 100; gap: 12px;
+    height: 68px; position: sticky; top: 0; z-index: 100; gap: 12px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.015), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
   }
   
   .logo { 
@@ -934,7 +939,7 @@ if ('serviceWorker' in navigator) {
     <div id="stockList"></div>
 
     <!-- 모의투자 바로가기 배너 -->
-    <div id="mockBannerContainer" style="display:none; margin-top: 24px;">
+    <div id="mockBannerContainer" style="margin-top: 24px;">
       <a href="/?mode=mock" class="sidebar-mock-banner" id="mockLinkBtn">
         <div class="banner-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -3502,117 +3507,52 @@ async function renderHome(opts = {}) {
       ${items.length ? items.map(stockRowHTML).join('') : '<div style="color:var(--muted);font-size:13px;padding:8px 0">데이터 로딩 중...</div>'}
     </div>`;
 
-  const renderTossHoldings = () => {
-    if (!mockServerPortfolio || !mockServerPortfolio.holdings || mockServerPortfolio.holdings.length === 0) {
-      return `<div style="padding:24px; text-align:center; color:var(--muted); font-size:14px; background:var(--surface); border-radius:var(--radius-sm); border:1px solid var(--border);">보유 중인 주식이 없습니다.</div>`;
-    }
-    return mockServerPortfolio.holdings.map(h => {
-      const up = h.profitPct >= 0;
-      const isKrStock = h.market === 'kr';
-      const sym = isKrStock ? '₩' : '$';
-      const q = quoteCache[h.ticker] || {};
-      const curPrice = q.price || h.currentPrice || h.avgPrice;
-      const curProfit = (curPrice - h.avgPrice) * h.quantity;
-      const curProfitPct = (curPrice - h.avgPrice) / h.avgPrice * 100;
-      const curUp = curProfit >= 0;
-      
-      // Look up stock name from STOCK_DEFS
-      const def = STOCK_DEFS.find(d => d.ticker === h.ticker || d.displayTicker === h.ticker);
-      const name = def ? def.name : h.ticker;
-      
-      return `
-      <div class="home-stock-row" style="background:var(--surface); border:none; padding:16px; margin-bottom:8px; border-radius:16px; box-shadow:0 1px 3px rgba(0,0,0,0.02);" onclick="selectStock('${def ? def.id : h.ticker}')">
-        <div style="display:flex; align-items:center; gap:16px;">
-          <div style="width:40px; height:40px; border-radius:50%; background:var(--bg); display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--accent); font-size:16px;">
-             ${name.charAt(0)}
-          </div>
-          <div class="home-stock-info">
-            <div class="home-stock-ticker" style="font-size:15px;">${name}</div>
-            <div class="home-stock-name" style="font-size:13px;">${h.quantity.toLocaleString()}주</div>
-          </div>
-        </div>
-        <div class="home-stock-price" style="text-align:right;">
-          <div class="home-stock-pval" style="font-size:15px; font-weight:800;">${Math.floor(curPrice * h.quantity).toLocaleString()}원</div>
-          <div class="home-stock-pchg ${curUp?'up':'down'}" style="font-size:13px; font-weight:700;">${curUp?'+':''}${curProfitPct.toFixed(2)}%</div>
-        </div>
-      </div>`;
-    }).join('');
-  };
-
-  const totalAsset = mockServerPortfolio ? (mockServerPortfolio.cash + mockServerPortfolio.holdings.reduce((sum, h) => {
-    const q = quoteCache[h.ticker] || {};
-    const curPrice = q.price || h.currentPrice || h.avgPrice;
-    return sum + (curPrice * h.quantity);
-  }, 0)) : 0;
-  
-  const totalCost = mockServerPortfolio ? mockServerPortfolio.holdings.reduce((sum, h) => sum + (h.avgPrice * h.quantity), 0) : 0;
-  const totalProfit = totalCost > 0 ? (totalAsset - mockServerPortfolio.cash - totalCost) : 0;
-  const totalProfitPct = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
-  const profitUp = totalProfit >= 0;
-
   document.getElementById('mainContent').innerHTML = `
-    <div class="home-wrap" style="max-width:600px; margin:0 auto; padding-top:20px;">
+    <div class="home-wrap">
+      <div class="home-hero">
+        <h1>Stock<span>Lens</span></h1>
+        <p>한국 · 미국 주식 실시간 분석 &amp; AI 투자 의견</p>
+      </div>
+
+      <div id="homeIndices" class="home-indices" style="margin-bottom:20px">${idxHTML || ''}</div>
+
+      <!-- 관심종목 모아보기 카드 -->
+      <div id="homeWatchlistCard" style="margin-bottom:24px">
+        ${renderHomeWatchlistCard(all)}
+      </div>
+
+      <!-- 투자신호 (메인 기능 - 최우선) -->
+      <div id="buySignalsCard">${renderBuySignalsCard(null)}</div>
+
+      <!-- 매크로 대시보드 -->
+      <div id="homeMacro">${renderMacroDashboard(macro)}</div>
       
-      <!-- Toss Style Hero -->
-      <div style="padding: 24px 16px 36px;">
-        <div style="font-size:15px; color:var(--text2); font-weight:600; margin-bottom:8px;">내 자산</div>
-        <div style="font-size:36px; font-weight:900; letter-spacing:-1.5px; color:var(--text); line-height:1.2;">
-          ${Math.floor(totalAsset).toLocaleString()}원
-        </div>
-        <div style="font-size:15px; font-weight:700; margin-top:8px; display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; background:var(--surface); border:1px solid var(--border);">
-          <span style="color:var(--text2)">예수금</span>
-          <span style="color:var(--text); font-weight:800;">${mockServerPortfolio ? Math.floor(mockServerPortfolio.cash).toLocaleString() : 0}원</span>
-        </div>
-        ${totalCost > 0 ? `
-        <div style="margin-top:12px; font-size:16px; font-weight:800; color:var(${profitUp ? '--up-color' : '--down-color'});">
-          ${profitUp?'+':''}${Math.floor(totalProfit).toLocaleString()}원 (${totalProfitPct.toFixed(2)}%)
-        </div>
-        ` : ''}
+      <!-- 등락 상위/하락 -->
+      <div class="home-stocks-grid" style="margin-bottom:24px">
+        ${stocksSection('상승 상위', gainers)}
+        ${stocksSection('하락 상위', losers)}
       </div>
 
-      <!-- Quick Actions -->
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:0 16px; margin-bottom:32px;">
-        <button onclick="renderHistoryModal()" style="padding:16px; background:var(--surface); border:none; border-radius:16px; text-align:left; font-size:15px; font-weight:700; color:var(--text); box-shadow:0 2px 8px rgba(0,0,0,0.02); cursor:pointer;">
-          거래 내역
-        </button>
-        <button onclick="alert('배당금 시뮬레이션 기능 준비 중입니다.')" style="padding:16px; background:var(--surface); border:none; border-radius:16px; text-align:left; font-size:15px; font-weight:700; color:var(--text); box-shadow:0 2px 8px rgba(0,0,0,0.02); cursor:pointer;">
-          배당 내역
-        </button>
+      <!-- 한국 주식 -->
+      <div class="home-section-title" style="margin-bottom:12px">한국 주식</div>
+      <div class="three-column-grid" style="margin-bottom:24px">
+        ${chunkArray(krAll, Math.ceil(krAll.length/3)).map(group =>
+          `<div class="card" style="padding:12px 16px">${group.map(stockRowHTML).join('')}</div>`
+        ).join('')}
       </div>
 
-      <!-- Holdings -->
-      <div style="padding:0 16px; margin-bottom:40px;">
-        <div style="font-size:18px; font-weight:800; color:var(--text); margin-bottom:16px;">보유 주식</div>
-        ${renderTossHoldings()}
+      <!-- 미국 주식 -->
+      <div class="home-section-title" style="margin-bottom:12px">미국 주식</div>
+      <div class="three-column-grid" style="margin-bottom:24px">
+        ${chunkArray(usAll, Math.ceil(usAll.length/3)).map(group =>
+          `<div class="card" style="padding:12px 16px">${group.map(stockRowHTML).join('')}</div>`
+        ).join('')}
       </div>
 
-      <!-- Top Movers -->
-      <div style="padding:0 16px; margin-bottom:40px;">
-        <div style="font-size:18px; font-weight:800; color:var(--text); margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
-           실시간 급등주
-           <span style="font-size:13px; color:var(--muted); font-weight:600; cursor:pointer;" onclick="mobileMarketSwitch('kr')">더보기</span>
-        </div>
-        <div style="background:var(--surface); border-radius:16px; padding:8px 0; box-shadow:0 1px 3px rgba(0,0,0,0.02);">
-          ${gainers.slice(0,5).map(stockRowHTML).join('')}
-        </div>
-      </div>
-
-      <!-- Indices -->
-      <div style="padding:0 16px; margin-bottom:40px;">
-        <div style="font-size:18px; font-weight:800; color:var(--text); margin-bottom:16px;">주요 지수</div>
-        <div class="h-scroll" style="display:flex; gap:12px; padding-bottom:12px;">
-          ${indices.map(m => {
-            const up = m.change >= 0;
-            return `
-            <div style="min-width:140px; background:var(--surface); padding:16px; border-radius:16px; box-shadow:0 1px 3px rgba(0,0,0,0.02);">
-              <div style="font-size:12px; color:var(--muted); font-weight:700; margin-bottom:8px;">${m.name}</div>
-              <div style="font-size:16px; font-weight:800; color:var(--text);">${m.value.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-              <div style="font-size:13px; font-weight:700; color:var(${up?'--up-color':'--down-color'}); margin-top:4px;">${up?'+':''}${m.change.toFixed(2)}%</div>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>
-
+      <!-- 포트폴리오 & 알림 -->
+      <div class="home-stocks-grid" style="margin-bottom:24px">
+        ${renderPortfolioCard(all)}
+        ${renderAlertsCard(all)}
       </div>
 
       <!-- 가치투자 스크리너 -->
@@ -3973,13 +3913,7 @@ function renderPortfolioCard(allStocks) {
     <div class="home-section-title" style="margin-bottom:12px">포트폴리오</div>
     ${portfolio.length ? `
       <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:12px">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
         <div style="font-size:11px;color:var(--muted)">총 손익 (원화 환산)</div>
-        <div style="font-size:11px;color:var(--accent);font-weight:700;">예수금: ₩<span id="mockCapitalDisplay">0</span></div>
-      </div>
-    <div style="font-size:11px;color:var(--accent)">모의투자 예수금: ₩${Math.floor(parseFloat(localStorage.getItem('stocklens_mock_capital')||'10000000')).toLocaleString()}</div>
-  </div>
         <div style="font-size:20px;font-weight:800;color:${totalKrw>=0?'var(--up-color)':'var(--down-color)'}">₩${totalKrw.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
       </div>
       ${rows.join('')}
@@ -5236,19 +5170,19 @@ async function handleDeleteAccount() {
 
 <!-- ── Mock Order Bottom Sheet (Toss Advanced UI) ── -->
 <div class="modal-overlay" id="mockOrderSheet" style="align-items:flex-end; padding:0;" onclick="if(event.target===this)closeMockOrderSheet()">
-  <div style="background:var(--surface); width:100%; height:90vh; border-radius:32px 32px 0 0; padding:24px 20px; box-shadow:0 -10px 40px rgba(0,0,0,0.08); transform:translateY(100%); transition:transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); display:flex; flex-direction:column;" id="mockOrderSheetContent">
-    <div style="width:48px; height:5px; background:var(--border2); border-radius:3px; margin:0 auto 20px auto;"></div>
+  <div style="background:var(--surface); width:100%; height:90vh; border-radius:24px 24px 0 0; padding:24px; box-shadow:0 -4px 20px rgba(0,0,0,0.3); transform:translateY(100%); transition:transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); display:flex; flex-direction:column;" id="mockOrderSheetContent">
+    <div style="width:40px; height:4px; background:var(--border); border-radius:2px; margin:0 auto 16px auto;"></div>
     
     <!-- Top Header & Stock Info -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-      <h2 id="mockOrderStockName" style="font-size:22px; font-weight:800; color:var(--text); letter-spacing:-0.5px;">종목명</h2>
-      <div id="mockOrderStockPrice" style="font-size:22px; font-weight:800; color:var(--text);">0원</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h2 id="mockOrderStockName" style="font-size:18px; font-weight:800; color:var(--text);">종목명</h2>
+      <div id="mockOrderStockPrice" style="font-size:18px; font-weight:800; color:var(--text);">0원</div>
     </div>
 
     <!-- Buy / Sell Tabs -->
-    <div style="display:flex; background:var(--bg); border-radius:14px; padding:4px; margin-bottom:24px;">
-      <button id="mockTabBuy" onclick="switchMockTab('buy')" style="flex:1; padding:12px; border-radius:10px; border:none; background:var(--surface); color:var(--up-color); font-weight:800; font-size:15px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.04);">구매</button>
-      <button id="mockTabSell" onclick="switchMockTab('sell')" style="flex:1; padding:12px; border-radius:10px; border:none; background:transparent; color:var(--muted); font-weight:700; font-size:15px; cursor:pointer;">판매</button>
+    <div style="display:flex; background:var(--surface2); border-radius:12px; padding:4px; margin-bottom:24px;">
+      <button id="mockTabBuy" onclick="switchMockTab('buy')" style="flex:1; padding:10px; border-radius:8px; border:none; background:var(--surface); color:var(--text); font-weight:700; font-size:15px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.1);">구매</button>
+      <button id="mockTabSell" onclick="switchMockTab('sell')" style="flex:1; padding:10px; border-radius:8px; border:none; background:transparent; color:var(--muted); font-weight:700; font-size:15px; cursor:pointer;">판매</button>
     </div>
 
     <!-- Order Input Area -->
@@ -5551,19 +5485,18 @@ function renderOrderBook() {
     const vol = Math.floor(Math.random() * 5000) + 100;
     const isSelected = p === mockLimitPrice;
     html += `
-      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--down-color); position:relative; overflow:hidden;">
-        <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((vol/5000)*100, 100)}%; background:rgba(49, 130, 246, 0.08); z-index:0;"></div>
-        <span style="position:relative; z-index:1; font-weight:700;">${p.toLocaleString()}</span>
-        <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${vol.toLocaleString()}</span>
+      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; cursor:pointer; background:${isSelected ? 'rgba(58,130,246,0.2)' : 'rgba(58,130,246,0.05)'}; color:var(--down-color);">
+        <span>${p.toLocaleString()}</span>
+        <span style="opacity:0.8">${vol.toLocaleString()}</span>
       </div>
     `;
   }
   
   // Current Price Line
   html += `
-    <div style="display:flex; justify-content:space-between; padding:12px 12px; background:var(--surface2); border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin:4px 0;">
-      <span style="color:var(--text); font-weight:800; font-size:15px;">${currentPrice.toLocaleString()} (현재가)</span>
-      <span style="color:var(--text); opacity:0.5; font-weight:700;">-</span>
+    <div style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; background:var(--surface); border:1px solid var(--border); margin:4px 0;">
+      <span style="color:var(--text);">${currentPrice.toLocaleString()} (현재가)</span>
+      <span style="color:var(--text); opacity:0.5">-</span>
     </div>
   `;
 
@@ -5573,10 +5506,9 @@ function renderOrderBook() {
     const vol = Math.floor(Math.random() * 5000) + 100;
     const isSelected = p === mockLimitPrice;
     html += `
-      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--up-color); position:relative; overflow:hidden;">
-        <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((vol/5000)*100, 100)}%; background:rgba(240, 68, 82, 0.08); z-index:0;"></div>
-        <span style="position:relative; z-index:1; font-weight:700;">${p.toLocaleString()}</span>
-        <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${vol.toLocaleString()}</span>
+      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; cursor:pointer; background:${isSelected ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.05)'}; color:var(--up-color);">
+        <span>${p.toLocaleString()}</span>
+        <span style="opacity:0.8">${vol.toLocaleString()}</span>
       </div>
     `;
   }
@@ -5650,36 +5582,29 @@ function initMockSSE() {
       if (!ob || !obData || !document.getElementById('mockOrderSheet').classList.contains('open')) return;
 
       let html = '';
-      let maxVol = 0;
-      obData.asks.forEach(a => { if (a.volume > maxVol) maxVol = a.volume; });
-      obData.bids.forEach(b => { if (b.volume > maxVol) maxVol = b.volume; });
-      if (maxVol === 0) maxVol = 1;
-
       obData.asks.forEach(ask => {
         const isSelected = ask.price === mockLimitPrice;
         html += `
-          <div onclick="setMockLimitPrice(${ask.price})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--down-color); position:relative; overflow:hidden;">
-            <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((ask.volume/maxVol)*100, 100)}%; background:rgba(49, 130, 246, 0.08); z-index:0; transition:width 0.2s;"></div>
-            <span style="position:relative; z-index:1; font-weight:700;">${ask.price.toLocaleString()}</span>
-            <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${ask.volume.toLocaleString()}</span>
+          <div onclick="setMockLimitPrice(${ask.price})" style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; cursor:pointer; background:${isSelected ? 'rgba(58,130,246,0.2)' : 'rgba(58,130,246,0.05)'}; color:var(--down-color);">
+            <span>${ask.price.toLocaleString()}</span>
+            <span style="opacity:0.8">${ask.volume.toLocaleString()}</span>
           </div>
         `;
       });
       
       html += `
-        <div style="display:flex; justify-content:space-between; padding:12px 12px; background:var(--surface2); border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin:4px 0;">
-          <span style="color:var(--text); font-weight:800; font-size:15px;">${obData.price.toLocaleString()} (현재가)</span>
-          <span style="color:var(--text); opacity:0.5; font-weight:700;">-</span>
+        <div style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; background:var(--surface); border:1px solid var(--border); margin:4px 0;">
+          <span style="color:var(--text);">${obData.price.toLocaleString()} (현재가)</span>
+          <span style="color:var(--text); opacity:0.5">-</span>
         </div>
       `;
 
       obData.bids.forEach(bid => {
         const isSelected = bid.price === mockLimitPrice;
         html += `
-          <div onclick="setMockLimitPrice(${bid.price})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--up-color); position:relative; overflow:hidden;">
-            <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((bid.volume/maxVol)*100, 100)}%; background:rgba(240, 68, 82, 0.08); z-index:0; transition:width 0.2s;"></div>
-            <span style="position:relative; z-index:1; font-weight:700;">${bid.price.toLocaleString()}</span>
-            <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${bid.volume.toLocaleString()}</span>
+          <div onclick="setMockLimitPrice(${bid.price})" style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; cursor:pointer; background:${isSelected ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.05)'}; color:var(--up-color);">
+            <span>${bid.price.toLocaleString()}</span>
+            <span style="opacity:0.8">${bid.volume.toLocaleString()}</span>
           </div>
         `;
       });
@@ -5741,174 +5666,5 @@ document.addEventListener('keydown', e => {
 });
 </script>
 
-
-<script>
-// --- MOCK INVESTMENT ENGINE OVERRIDES ---
-window.addEventListener('DOMContentLoaded', () => {
-  // Sync portfolio from mockHoldings
-  function syncFromMockHoldings() {
-    let mockHoldings = JSON.parse(localStorage.getItem('stocklens_mock_holdings') || '{}');
-    portfolio = Object.keys(mockHoldings).map(id => {
-      let m = mockHoldings[id];
-      return {
-        id: id,
-        ticker: id.toUpperCase(),
-        name: m.name,
-        market: /^[0-9]+$/.test(id) ? 'kr' : 'us',
-        qty: m.qty,
-        buyPrice: m.avgPrice
-      };
-    }).filter(p => p.qty > 0);
-  }
-  syncFromMockHoldings();
-
-  // Sync capital
-  function updateCapitalDisplay() {
-    let cap = parseFloat(localStorage.getItem('stocklens_mock_capital') || '10000000');
-    let el = document.getElementById('mockCapitalDisplay');
-    if (el) el.textContent = Math.floor(cap).toLocaleString();
-  }
-  
-  // Override savePortfolio
-  window.savePortfolio = function() {
-    let mockHoldings = {};
-    portfolio.forEach(p => {
-      if (p.qty > 0) mockHoldings[p.id] = { name: p.name, qty: p.qty, avgPrice: p.buyPrice };
-    });
-    localStorage.setItem('stocklens_mock_holdings', JSON.stringify(mockHoldings));
-    
-    // Original sync to UI
-    if(window.updateGlobalPortfolio) updateGlobalPortfolio();
-    if(window.renderHome) renderHome({skipFetch:true});
-    updateCapitalDisplay();
-  };
-
-  // Override buyStock
-  window.buyStock = function() {
-    const price = parseFloat(document.getElementById('portfolioPrice').value);
-    const qty = parseFloat(document.getElementById('portfolioQty').value);
-    if (!price || !qty) { alert('단가와 수량을 입력하세요.'); return; }
-    
-    let capital = parseFloat(localStorage.getItem('stocklens_mock_capital') || '10000000');
-    const isUs = _portfolioDef.market === 'us';
-    const usdkrw = ratesCache?.usdkrw?.value || 1350;
-    const cost = isUs ? price * qty * usdkrw : price * qty;
-    
-    if (capital < cost) { alert('예수금이 부족합니다! (현재: ' + Math.floor(capital).toLocaleString() + '원)'); return; }
-    capital -= cost;
-    localStorage.setItem('stocklens_mock_capital', capital.toString());
-
-    const idx = portfolio.findIndex(p => p.id === _portfolioDef.id);
-    if (idx !== -1) {
-      const oldQty = portfolio[idx].qty;
-      const oldPrice = portfolio[idx].buyPrice;
-      portfolio[idx].qty = oldQty + qty;
-      portfolio[idx].buyPrice = ((oldQty * oldPrice) + (qty * price)) / portfolio[idx].qty;
-    } else {
-      portfolio.push({ id: _portfolioDef.id, ticker: _portfolioDef.ticker, name: _portfolioDef.name, market: _portfolioDef.market, qty, buyPrice: price });
-    }
-    
-    // Save history
-    let mockHistory = JSON.parse(localStorage.getItem('stocklens_mock_history') || '[]');
-    mockHistory.push({ time: Date.now(), id: _portfolioDef.id, name: _portfolioDef.name, type: 'buy', price, qty });
-    localStorage.setItem('stocklens_mock_history', JSON.stringify(mockHistory));
-
-    savePortfolio();
-    document.getElementById('portfolioModal').classList.remove('open');
-  };
-
-  // Override sellStock
-  window.sellStock = function() {
-    const price = parseFloat(document.getElementById('portfolioPrice').value);
-    const qty = parseFloat(document.getElementById('portfolioQty').value);
-    if (!price || !qty) { alert('단가와 수량을 입력하세요.'); return; }
-    
-    const idx = portfolio.findIndex(p => p.id === _portfolioDef.id);
-    if (idx === -1 || portfolio[idx].qty < qty) { alert('보유 수량이 부족합니다.'); return; }
-    
-    let capital = parseFloat(localStorage.getItem('stocklens_mock_capital') || '10000000');
-    const isUs = _portfolioDef.market === 'us';
-    const usdkrw = ratesCache?.usdkrw?.value || 1350;
-    const revenue = isUs ? price * qty * usdkrw : price * qty;
-    capital += revenue;
-    localStorage.setItem('stocklens_mock_capital', capital.toString());
-
-    portfolio[idx].qty -= qty;
-    if (portfolio[idx].qty <= 0) portfolio.splice(idx, 1);
-    
-    // Save history
-    let mockHistory = JSON.parse(localStorage.getItem('stocklens_mock_history') || '[]');
-    mockHistory.push({ time: Date.now(), id: _portfolioDef.id, name: _portfolioDef.name, type: 'sell', price, qty });
-    localStorage.setItem('stocklens_mock_history', JSON.stringify(mockHistory));
-
-    savePortfolio();
-    document.getElementById('portfolioModal').classList.remove('open');
-  };
-  
-  // Intercept renderHome to always show mock capital
-  const origRenderHome = window.renderHome;
-  window.renderHome = async function(opts) {
-    if(origRenderHome) await origRenderHome(opts);
-    updateCapitalDisplay();
-  };
-  
-  // Hide real portfolio fetch
-  window.loadPortfolio = async function() { syncFromMockHoldings(); updateCapitalDisplay(); };
-  
-});
-</script>
-
 </body>
 </html>
-
-<!-- ── 거래 내역 모달 ── -->
-<div class="modal-overlay" id="historyModal" onclick="if(event.target===this)closeHistoryModal()">
-  <div class="modal-box" style="max-height: 80vh; display: flex; flex-direction: column;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-      <div class="modal-title">거래 내역</div>
-      <button onclick="closeHistoryModal()" style="background:transparent; border:none; color:var(--text2); font-size:20px; cursor:pointer;">&times;</button>
-    </div>
-    <div id="historyModalContent" style="flex:1; overflow-y:auto; padding-right:8px;"></div>
-  </div>
-</div>
-
-<script>
-function renderHistoryModal() {
-  const content = document.getElementById('historyModalContent');
-  if (!mockServerHistory || mockServerHistory.length === 0) {
-    content.innerHTML = `<div style="text-align:center; padding:40px 0; color:var(--muted); font-size:14px;">거래 내역이 없습니다.</div>`;
-  } else {
-    // 최신 순으로 정렬
-    const sorted = [...mockServerHistory].sort((a,b) => b.timestamp - a.timestamp);
-    content.innerHTML = sorted.map(h => {
-      const isBuy = h.type === 'buy';
-      const def = STOCK_DEFS.find(d => d.ticker === h.ticker || d.displayTicker === h.ticker);
-      const name = def ? def.name : h.ticker;
-      const date = new Date(h.timestamp);
-      const dateStr = `${date.getMonth()+1}월 ${date.getDate()}일 ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
-      
-      return `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 0; border-bottom:1px solid var(--border);">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div style="width:40px; height:40px; border-radius:50%; background:var(--bg); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800; color:var(--text2);">
-            ${isBuy ? '매수' : '매도'}
-          </div>
-          <div>
-            <div style="font-size:15px; font-weight:700; color:var(--text);">${name}</div>
-            <div style="font-size:12px; color:var(--muted); margin-top:2px;">${dateStr} | ${h.quantity}주</div>
-          </div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:15px; font-weight:800; color:var(--text);">${Math.floor(h.price * h.quantity).toLocaleString()}원</div>
-          <div style="font-size:12px; color:var(--muted); margin-top:2px;">${h.price.toLocaleString()}원/주</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-  document.getElementById('historyModal').classList.add('open');
-}
-
-function closeHistoryModal() {
-  document.getElementById('historyModal').classList.remove('open');
-}
-</script>
