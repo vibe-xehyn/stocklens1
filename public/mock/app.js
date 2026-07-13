@@ -259,17 +259,14 @@ function renderHoldings() {
     }
     
     html += `
-      <div class="list-item" onclick="openOrderSheet('${d.id}')">
-        <div class="item-left">
-          <div class="item-icon">${d.id.substring(0,1)}</div>
-          <div>
-            <div class="item-title">${d.holding.name}</div>
-            <div class="item-desc">${d.holding.qty}주 (평단가 ${sym}${(d.holding.avgPrice * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit})</div>
-          </div>
+      <div onclick="openOrderSheet('${d.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <div style="min-width:0;flex:1;margin-right:12px">
+          <div style="font-weight:700;font-size:16px;color:var(--text);margin-bottom:2px">${d.holding.name}</div>
+          <div style="font-size:13px;color:var(--muted)">${d.holding.qty}주 @ ${sym}${(d.holding.avgPrice * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
         </div>
-        <div class="item-right">
-          <div class="item-price">${topText}</div>
-          <div class="item-change ${colorClass}">${btmText}</div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:16px;color:${colorClass ? 'var(--' + (d.returnPct > 0 ? 'red' : 'blue') + ')' : 'var(--text)'}">${topText}</div>
+          <div style="font-size:13px;color:${colorClass ? 'var(--' + (d.returnPct > 0 ? 'red' : 'blue') + ')' : 'var(--muted)'};font-weight:600">${btmText}</div>
         </div>
       </div>
     `;
@@ -299,17 +296,14 @@ function renderShopping() {
   stocks.forEach(q => {
     const colorClass = q.changePct > 0 ? 'color-red' : (q.changePct < 0 ? 'color-blue' : '');
     html += `
-      <div class="list-item" onclick="openOrderSheet('${q.id}')">
-        <div class="item-left">
-          <div class="item-icon">${q.name.substring(0,1)}</div>
-          <div>
-            <div class="item-title">${q.name}</div>
-            <div class="item-desc">${q.id}</div>
-          </div>
+      <div onclick="openOrderSheet('${q.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <div style="min-width:0;flex:1;margin-right:12px">
+          <div style="font-weight:700;font-size:16px;color:var(--text);margin-bottom:2px">${q.name}</div>
+          <div style="font-size:13px;color:var(--muted)">${q.id}</div>
         </div>
-        <div class="item-right">
-          <div class="item-price">${sym}${(q.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
-          <div class="item-change ${colorClass}">${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%</div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:16px;color:var(--text)">${sym}${(q.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
+          <div style="font-size:13px;color:${colorClass ? 'var(--' + (q.changePct > 0 ? 'red' : 'blue') + ')' : 'var(--muted)'};font-weight:600">${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%</div>
         </div>
       </div>
     `;
@@ -369,17 +363,14 @@ function renderSearchResults(data) {
     if(!lq) return;
     const colorClass = lq.changePct > 0 ? 'color-red' : (lq.changePct < 0 ? 'color-blue' : '');
     html += `
-      <div class="list-item" onclick="openOrderSheet('${q.id}')">
-        <div class="item-left">
-          <div class="item-icon">${q.name.substring(0,1)}</div>
-          <div>
-            <div class="item-title">${q.name}</div>
-            <div class="item-desc">${q.id}</div>
-          </div>
+      <div onclick="openOrderSheet('${q.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <div style="min-width:0;flex:1;margin-right:12px">
+          <div style="font-weight:700;font-size:16px;color:var(--text);margin-bottom:2px">${q.name}</div>
+          <div style="font-size:13px;color:var(--muted)">${q.id}</div>
         </div>
-        <div class="item-right">
-          <div class="item-price">${sym}${(lq.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
-          <div class="item-change ${colorClass}">${lq.changePct > 0 ? '+' : ''}${lq.changePct.toFixed(2)}%</div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:16px;color:var(--text)">${sym}${(lq.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
+          <div style="font-size:13px;color:${colorClass ? 'var(--' + (lq.changePct > 0 ? 'red' : 'blue') + ')' : 'var(--muted)'};font-weight:600">${lq.changePct > 0 ? '+' : ''}${lq.changePct.toFixed(2)}%</div>
         </div>
       </div>
     `;
