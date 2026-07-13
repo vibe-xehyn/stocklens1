@@ -252,6 +252,72 @@ function generateOrderBook(ticker, market, type, optionDetails, bondDetails) {
   };
 }
 
+// ── SERVER-SENT EVENTS (SSE) STREAMING ───────────────────────────────────────
+
+const sseClients = new Map(); // userId -> { res, activeTicker, mode }
+
+function broadcastSSE(userId, event, data) {
+  const client = sseClients.get(userId);
+  if (client && client.res) {
+    client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+}
+
+// Global HFT Engine Loop (Tick every 500ms)
+setInterval(async () => {
+  if (sseClients.size === 0) return;
+  
+  let screenerCache = null;
+  try {
+    if (existsSync(SCREENER_CACHE_FILE)) {
+      screenerCache = JSON.parse(readFileSync(SCREENER_CACHE_FILE, 'utf-8'));
+    }
+  } catch(e) {}
+  if (!screenerCache || !screenerCache.data) return;
+
+  let cacheUpdated = false;
+
+  sseClients.forEach((client, userId) => {
+    const { res, activeTicker, mode } = client;
+    if (!activeTicker || mode !== 'virtual') return;
+
+    const tickerData = screenerCache.data[activeTicker];
+    if (tickerData && tickerData.price) {
+      // HFT Microstructure Jump-Diffusion
+      const oldPrice = tickerData.price;
+      const momentum = (Math.random() - 0.48) * 0.015; // slightly skewed to cause volatility
+      const tickSize = oldPrice > 100000 ? 500 : (oldPrice > 10000 ? 50 : 5);
+      let diff = Math.round((oldPrice * momentum) / tickSize) * tickSize;
+      if (diff === 0) diff = (Math.random() > 0.5 ? tickSize : -tickSize);
+      
+      const newPrice = Math.max(tickSize, oldPrice + diff);
+      if (newPrice !== oldPrice) {
+        tickerData.price = newPrice;
+        if (!tickerData._basePrice) tickerData._basePrice = oldPrice / (1 + (tickerData.changePct / 100));
+        tickerData.changePct = ((newPrice - tickerData._basePrice) / tickerData._basePrice) * 100;
+        cacheUpdated = true;
+      }
+      
+      // Generate realistic order book
+      const ob = generateOrderBook(activeTicker, 'kr', 'stock', null, null);
+      if (ob) {
+        res.write(`event: orderbook\ndata: ${JSON.stringify(ob)}\n\n`);
+      }
+    }
+  });
+
+  if (cacheUpdated) {
+    writeFileSync(SCREENER_CACHE_FILE, JSON.stringify(screenerCache, null, 2));
+    
+    // Broadcast price updates to all virtual clients
+    sseClients.forEach((client, userId) => {
+      if (client.mode === 'virtual') {
+         client.res.write(`event: price_update\ndata: ${JSON.stringify(screenerCache.data)}\n\n`);
+      }
+    });
+  }
+}, 500);
+
 // ── TIMEZONE OPERATIONAL CHECKS ─────────────────────────────────────────────
 
 function getLocalTime(timezone) {
@@ -722,6 +788,36 @@ router.get('/orderbook', (req, res) => {
   }
   
   res.json(orderBook);
+});
+
+// 6. SSE Stream
+router.get('/stream', (req, res) => {
+  const userId = req.query.userId;
+  if (!userId) {
+    return res.status(400).end('userId required');
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  
+  sseClients.set(userId, { res, activeTicker: req.query.activeTicker || null, mode: req.query.mode || 'virtual' });
+  
+  req.on('close', () => {
+    sseClients.delete(userId);
+  });
+});
+
+// 7. Update SSE Context (change active ticker)
+router.post('/stream/context', express.json(), (req, res) => {
+  const { userId, activeTicker, mode } = req.body;
+  if (sseClients.has(userId)) {
+    const client = sseClients.get(userId);
+    if (activeTicker) client.activeTicker = activeTicker;
+    if (mode) client.mode = mode;
+  }
+  res.json({ ok: true });
 });
 
 export default router;
