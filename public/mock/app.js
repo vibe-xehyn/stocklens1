@@ -556,8 +556,25 @@ function updatePortfolioTotal() {
 
 // --- Bottom Sheet Logic ---
 function openOrderSheet(id) {
-  // Redirect to the main app's full-size trading screen in mock mode
-  location.href = `/?stock=${encodeURIComponent(id)}&mode=mock`;
+  const stock = MOCK_STOCKS.find(s => s.id === id);
+  if(!stock) return;
+  activeStock = stock;
+  
+  document.getElementById('orderStockName').innerText = stock.name;
+  if(stock.icon) {
+    document.getElementById('orderStockIcon').src = stock.icon;
+    document.getElementById('orderStockIcon').style.display = 'block';
+  } else {
+    document.getElementById('orderStockIcon').style.display = 'none';
+  }
+  
+  switchOrderType('buy');
+  document.getElementById('orderAmountInput').value = '';
+  document.getElementById('estimatedQty').innerText = '예상 수량: 0주';
+  
+  updateSheetPrice();
+  renderOrderBook(); // Render fake order book
+  document.getElementById('orderSheetOverlay').classList.add('open');
 }
 
 function closeOrderSheet(e) {
@@ -730,4 +747,64 @@ function showToast(msg) {
   t.classList.add('show');
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+let mockLimitPrice = 0;
+
+function setMockLimitPrice(p) {
+  mockLimitPrice = p;
+  const input = document.getElementById('orderAmountInput');
+  if (input) {
+    // Usually in Toss, clicking an orderbook row might set the limit price, but here we just have an amount input
+    // To keep it simple, we just re-render to show selection
+    renderOrderBook();
+  }
+}
+
+function renderOrderBook() {
+  if (!activeStock) return;
+  const currentPrice = (liveQuotes[activeStock.id] || activeStock).price;
+  const tickSize = currentPrice > 100000 ? 500 : (currentPrice > 10000 ? 50 : 5);
+  
+  const ob = document.getElementById('mockOrderBook');
+  if (!ob) return;
+
+  let html = '';
+  // 5 Sell Levels
+  for (let i = 5; i >= 1; i--) {
+    const p = currentPrice + (i * tickSize);
+    const vol = Math.floor(Math.random() * 5000) + 100;
+    const isSelected = p === mockLimitPrice;
+    html += `
+      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--blue); position:relative; overflow:hidden;">
+        <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((vol/5000)*100, 100)}%; background:rgba(49, 130, 246, 0.08); z-index:0;"></div>
+        <span style="position:relative; z-index:1; font-weight:700;">${p.toLocaleString()}</span>
+        <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${vol.toLocaleString()}</span>
+      </div>
+    `;
+  }
+  
+  // Current Price
+  html += `
+    <div style="display:flex; justify-content:space-between; padding:12px 12px; background:var(--surface2); border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin:4px 0;">
+      <span style="color:var(--text); font-weight:800; font-size:15px;">${currentPrice.toLocaleString()} (현재가)</span>
+      <span style="color:var(--text); opacity:0.5; font-weight:700;">-</span>
+    </div>
+  `;
+
+  // 5 Buy Levels
+  for (let i = 1; i <= 5; i++) {
+    const p = currentPrice - (i * tickSize);
+    const vol = Math.floor(Math.random() * 5000) + 100;
+    const isSelected = p === mockLimitPrice;
+    html += `
+      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--red); position:relative; overflow:hidden;">
+        <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((vol/5000)*100, 100)}%; background:rgba(240, 68, 82, 0.08); z-index:0;"></div>
+        <span style="position:relative; z-index:1; font-weight:700;">${p.toLocaleString()}</span>
+        <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${vol.toLocaleString()}</span>
+      </div>
+    `;
+  }
+  
+  ob.innerHTML = html;
 }

@@ -138,6 +138,10 @@
           <button class="order-type-btn" id="btnOrderSell" onclick="switchOrderType('sell')">판매</button>
         </div>
 
+        <div id="mockOrderBook" style="background:var(--surface2); border-radius:16px; padding:12px; margin-bottom:16px; display:flex; flex-direction:column; gap:2px; font-size:13px; font-weight:700;">
+          <!-- Filled by JS -->
+        </div>
+
         <div class="input-container">
           <input type="text" id="orderAmountInput" placeholder="얼마나 주문할까요?" inputmode="numeric" oninput="formatOrderInput(this)">
           <span class="input-suffix">원</span>
