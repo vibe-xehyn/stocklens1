@@ -63,6 +63,16 @@
       </div>
     </section>
 
+    <!-- Quick Actions -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:0 20px; margin-bottom:24px;">
+      <button onclick="switchTab('tabHistory')" style="padding:16px; background:var(--surface); border:none; border-radius:16px; text-align:left; font-size:15px; font-weight:700; color:var(--text); box-shadow:0 2px 8px rgba(0,0,0,0.02); cursor:pointer;">
+        거래 내역
+      </button>
+      <button onclick="switchTab('tabHistory'); setTimeout(() => switchSubTab('dividends'), 100);" style="padding:16px; background:var(--surface); border:none; border-radius:16px; text-align:left; font-size:15px; font-weight:700; color:var(--text); box-shadow:0 2px 8px rgba(0,0,0,0.02); cursor:pointer;">
+        배당 내역
+      </button>
+    </div>
+
     <!-- Filters -->
     <div class="toss-filters">
       <button class="toss-chip" id="btnSortOrder" onclick="toggleSortOrder()">수익률 높은 순 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>

@@ -21,18 +21,6 @@
   --spring: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #101012;
-    --surface: #1C1C1E;
-    --surface-hover: #2C2C2E;
-    --border: rgba(255, 255, 255, 0.08);
-    --text: #F9FAFB;
-    --text-muted: #8B95A1;
-    --text-desc: #D1D6DB;
-    --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-  }
-}
 
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-family); -webkit-font-smoothing: antialiased; }
 body { background: var(--bg); color: var(--text); overflow-x: hidden; user-select: none; -webkit-tap-highlight-color: transparent; }
