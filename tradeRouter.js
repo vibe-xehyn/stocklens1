@@ -1,5 +1,5 @@
 import express from 'express';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
@@ -7,813 +7,603 @@ import crypto from 'crypto';
 const router = express.Router();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORTFOLIOS_FILE = join(__dirname, 'data', 'portfolios.json');
-const ORDERS_FILE = join(__dirname, 'data', 'orders.json');
-const HISTORY_FILE = join(__dirname, 'data', 'history.json');
-const SCREENER_CACHE_FILE = join(__dirname, '.screener-cache.json');
+const DATA_DIR = join(__dirname, 'data');
 
-// File locking/queueing system to prevent race conditions on 1GB RAM budget
-const fileQueues = new Map();
+// ensure data directory
+if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
-function enqueue(filePath, operation) {
-  if (!fileQueues.has(filePath)) {
-    fileQueues.set(filePath, Promise.resolve());
-  }
-  const promise = fileQueues.get(filePath).then(async () => {
-    try {
-      return await operation();
-    } catch (e) {
-      console.error(`[LOCK ENGINE] Error in file queue operations for ${filePath}:`, e);
-      throw e;
-    }
-  });
-  fileQueues.set(filePath, promise.catch(() => {}));
-  return promise;
+const ACCOUNTS_FILE = join(DATA_DIR, 'mock_accounts.json');
+const PORTFOLIOS_FILE = join(DATA_DIR, 'mock_portfolios.json');
+const ORDERS_FILE = join(DATA_DIR, 'mock_orders.json');
+const HISTORY_FILE = join(DATA_DIR, 'mock_history.json');
+const DIVIDENDS_FILE = join(DATA_DIR, 'mock_dividends.json');
+const SCREENER_CACHE = join(__dirname, '.screener-cache.json');
+
+// ── File Queue (race-condition safe on low-memory) ────────────────────────
+const queues = new Map();
+function enqueue(fp, op) {
+  if (!queues.has(fp)) queues.set(fp, Promise.resolve());
+  const p = queues.get(fp).then(() => op()).catch(e => { console.error(`[QUEUE] ${fp}:`, e); throw e; });
+  queues.set(fp, p.catch(() => {}));
+  return p;
 }
 
-async function readJSONSafe(filePath, defaultValue = {}) {
-  return enqueue(filePath, async () => {
-    try {
-      if (!existsSync(filePath)) {
-        writeFileSync(filePath, JSON.stringify(defaultValue, null, 2), 'utf-8');
-        return defaultValue;
-      }
-      const data = readFileSync(filePath, 'utf-8');
-      return JSON.parse(data || JSON.stringify(defaultValue));
-    } catch (e) {
-      console.error(`[LOCK ENGINE] Error reading JSON from ${filePath}:`, e);
-      return defaultValue;
-    }
+async function readJSON(fp, def = {}) {
+  return enqueue(fp, async () => {
+    if (!existsSync(fp)) { writeFileSync(fp, JSON.stringify(def, null, 2)); return def; }
+    try { return JSON.parse(readFileSync(fp, 'utf-8')); } catch { return def; }
   });
 }
 
-async function writeJSONSafe(filePath, data) {
-  return enqueue(filePath, async () => {
-    try {
-      writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-      return true;
-    } catch (e) {
-      console.error(`[LOCK ENGINE] Error writing JSON to ${filePath}:`, e);
-      throw e;
-    }
-  });
+async function writeJSON(fp, data) {
+  return enqueue(fp, async () => { writeFileSync(fp, JSON.stringify(data, null, 2)); });
 }
 
+// ── Auth ─────────────────────────────────────────────────────────────────
 function getCookie(req, name) {
-  const cookieHeader = req.headers.cookie;
-  if (!cookieHeader) return null;
-  const cookies = cookieHeader.split(';').map(c => c.trim());
-  const cookie = cookies.find(c => c.startsWith(name + '='));
-  return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+  const h = req.headers.cookie;
+  if (!h) return null;
+  const c = h.split(';').map(s => s.trim()).find(s => s.startsWith(name + '='));
+  return c ? decodeURIComponent(c.split('=')[1]) : null;
 }
 
 function requireAuth(req, res, next) {
   let token = getCookie(req, 'sessionToken') || req.headers['x-session-token'];
   if (!token && req.headers.authorization) {
     const parts = req.headers.authorization.split(' ');
-    if (parts.length === 2 && parts[0] === 'Bearer') {
-      token = parts[1];
-    }
+    if (parts.length === 2 && parts[0] === 'Bearer') token = parts[1];
   }
-  
   if (token) {
     try {
-      const SESSIONS_FILE = join(__dirname, 'data', 'sessions.json');
-      if (existsSync(SESSIONS_FILE)) {
-        const sessions = JSON.parse(readFileSync(SESSIONS_FILE, 'utf-8') || '{}');
-        const session = sessions[token];
-        if (session) {
-          req.user = session;
-          return next();
-        }
+      const sf = join(DATA_DIR, 'sessions.json');
+      if (existsSync(sf)) {
+        const sessions = JSON.parse(readFileSync(sf, 'utf-8'));
+        const sess = sessions[token];
+        if (sess) { req.user = sess; return next(); }
       }
-    } catch (e) {
-      console.error('[AUTH LOCK] Custom requireAuth parsing error:', e);
-    }
+    } catch (e) { console.error('[AUTH] parse error:', e); }
   }
-  
-  res.status(401).json({ error: '로그인이 필요합니다.' });
+  return next(); // soft-auth: allow guest
 }
 
-// ── PRICING MATH ENGINES ─────────────────────────────────────────────────────
-
-// Normal Cumulative Distribution Function (CDF) Hastings approximation
-function stdNormalCDF(x) {
-  const b1 =  0.319381530;
-  const b2 = -0.356563782;
-  const b3 =  1.781477937;
-  const b4 = -1.821255978;
-  const b5 =  1.330274429;
-  const p  =  0.2316419;
-  const c  =  0.39894228;
-
-  if (x >= 0.0) {
-    const t = 1.0 / (1.0 + p * x);
-    return (1.0 - c * Math.exp(-x * x / 2.0) * t *
-           (t * (t * (t * (t * b5 + b4) + b3) + b2) + b1));
-  } else {
-    const t = 1.0 / (1.0 - p * x);
-    return (c * Math.exp(-x * x / 2.0) * t *
-           (t * (t * (t * (t * b5 + b4) + b3) + b2) + b1));
-  }
-}
-
-// Black-Scholes Options Pricing Model
-function calculateOptionPrice(S, K, T, r, sigma, type) {
-  if (T <= 0) {
-    if (type === 'call') return Math.max(0, S - K);
-    return Math.max(0, K - S);
-  }
-  const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2.0) * T) / (sigma * Math.sqrt(T));
-  const d2 = d1 - sigma * Math.sqrt(T);
-
-  if (type === 'call') {
-    return S * stdNormalCDF(d1) - K * Math.exp(-r * T) * stdNormalCDF(d2);
-  } else {
-    return K * Math.exp(-r * T) * stdNormalCDF(-d2) - S * stdNormalCDF(-d1);
-  }
-}
-
-// Bond Pricing Model (PV of coupons + PV of maturity par value)
-function calculateBondPrice(faceValue, couponRate, yearsToMaturity, ytm, frequency = 2) {
-  if (yearsToMaturity <= 0) return faceValue;
-  const periods = Math.ceil(yearsToMaturity * frequency);
-  const couponPayment = (faceValue * couponRate) / frequency;
-  const ratePerPeriod = ytm / frequency;
-  
-  let price = 0;
-  for (let t = 1; t <= periods; t++) {
-    price += couponPayment / Math.pow(1 + ratePerPeriod, t);
-  }
-  price += faceValue / Math.pow(1 + ratePerPeriod, periods);
-  return price;
-}
-
-// ── ASSET EVALUATION WRAPPERS ────────────────────────────────────────────────
-
-// Helper: Get stock price from cache
-function getAssetPrice(ticker, market, type) {
-  if (type === 'stock') {
-    try {
-      if (existsSync(SCREENER_CACHE_FILE)) {
-        const c = JSON.parse(readFileSync(SCREENER_CACHE_FILE, 'utf-8'));
-        if (c && c.data && c.data[ticker]) {
-          return c.data[ticker].price || 0;
-        }
+// ── Price Helpers ────────────────────────────────────────────────────────
+function getAssetPrice(ticker, market) {
+  try {
+    if (existsSync(SCREENER_CACHE)) {
+      const c = JSON.parse(readFileSync(SCREENER_CACHE, 'utf-8'));
+      if (c?.data?.[ticker]?.price) return c.data[ticker].price;
+      // fuzzy match by ticker key
+      for (const k of Object.keys(c.data || {})) {
+        if (k.toUpperCase() === ticker.toUpperCase() && c.data[k]?.price) return c.data[k].price;
       }
-    } catch (e) {
-      console.error('[PRICING ENGINE] Screener cache parse error:', e);
     }
-    return market === 'kr' ? 70000 : 150; // default fallbacks
-  } else if (type === 'bond') {
-    return 1000.0; // par fallback
-  } else if (type === 'option') {
-    return 5.0; // premium fallback
-  }
-  return 0;
+  } catch {}
+  return market === 'kr' ? 50000 : 150;
 }
 
-function getOptionPrice(ticker, market, optionDetails) {
-  if (!optionDetails || !optionDetails.strike || !optionDetails.expiry || !optionDetails.optionType) {
-    return 5.0;
-  }
-  const S = getAssetPrice(ticker, market, 'stock');
-  const K = parseFloat(optionDetails.strike);
-  const expiryDate = new Date(optionDetails.expiry);
-  const now = new Date();
-  const T = (expiryDate - now) / (365 * 24 * 3600 * 1000); // expiry duration in years
-  
-  const r = 0.035; // 3.5% yield
-  const sigma = 0.30; // 30% volatility
-  const type = optionDetails.optionType;
-  
-  const price = calculateOptionPrice(S, K, T, r, sigma, type);
-  return parseFloat(price.toFixed(2));
+function getUSDKRW() {
+  try {
+    if (existsSync(SCREENER_CACHE)) {
+      const c = JSON.parse(readFileSync(SCREENER_CACHE, 'utf-8'));
+      if (c?.rates?.usdkrw?.value) return c.rates.usdkrw.value;
+    }
+  } catch {}
+  return 1350;
 }
 
-function getBondPrice(ticker, market, bondDetails) {
-  if (!bondDetails || !bondDetails.maturityDate || !bondDetails.couponRate) {
-    return 1000.0;
-  }
-  const faceValue = 1000.0;
-  const couponRate = parseFloat(bondDetails.couponRate);
-  const maturityDate = new Date(bondDetails.maturityDate);
-  const now = new Date();
-  const yearsToMaturity = (maturityDate - now) / (365 * 24 * 3600 * 1000);
-  
-  const ytm = 0.045; // 4.5% yield
-  const frequency = bondDetails.couponFrequency ? parseInt(bondDetails.couponFrequency, 10) : 2;
-  
-  const price = calculateBondPrice(faceValue, couponRate, yearsToMaturity, ytm, frequency);
-  return parseFloat(price.toFixed(2));
-}
-
-// ── ORDER BOOK SIMULATOR ─────────────────────────────────────────────────────
-
-function generateOrderBook(ticker, market, type, optionDetails, bondDetails) {
-  let refPrice = 0;
-  if (type === 'stock') {
-    refPrice = getAssetPrice(ticker, market, 'stock');
-  } else if (type === 'option') {
-    refPrice = getOptionPrice(ticker, market, optionDetails);
-  } else if (type === 'bond') {
-    refPrice = getBondPrice(ticker, market, bondDetails);
-  }
-
-  if (refPrice <= 0) return null;
-
-  // Compute bid/ask spreads based on asset volatility profile
-  let spreadPct = 0.0005; // 0.05% default
-  if (type === 'stock' && market === 'us') spreadPct = 0.001; // 0.1%
-  if (type === 'option') spreadPct = 0.01; // 1%
-  
-  const spread = refPrice * spreadPct;
-
-  const asks = [];
-  const bids = [];
-
+// ── Order Book Generator ─────────────────────────────────────────────────
+function generateOrderBook(ticker, market, refPrice) {
+  const price = refPrice || getAssetPrice(ticker, market);
+  if (price <= 0) return null;
+  const spreadPct = market === 'kr' ? 0.0003 : 0.001;
+  const spread = Math.max(price * spreadPct, market === 'kr' ? 10 : 0.01);
+  const asks = [], bids = [];
   for (let i = 1; i <= 5; i++) {
-    const askPrice = refPrice + (spread * i);
-    const bidPrice = refPrice - (spread * i);
-
-    const askVol = Math.floor(Math.random() * 4500) + 500;
-    const bidVol = Math.floor(Math.random() * 4500) + 500;
-
-    asks.push({ price: parseFloat(askPrice.toFixed(2)), volume: askVol });
-    bids.push({ price: parseFloat(bidPrice.toFixed(2)), volume: bidVol });
+    asks.push({ price: parseFloat((price + spread * i).toFixed(2)), volume: Math.floor(Math.random() * 2000) + 200 });
+    bids.push({ price: parseFloat((price - spread * i).toFixed(2)), volume: Math.floor(Math.random() * 2000) + 200 });
   }
-
-  return {
-    ticker,
-    type,
-    price: refPrice,
-    asks: asks.reverse(), // Highest ask price at top of asks list
-    bids: bids            // Highest bid price at top of bids list
-  };
+  return { ticker, type: 'stock', price, asks: asks.reverse(), bids };
 }
 
-// ── SERVER-SENT EVENTS (SSE) STREAMING ───────────────────────────────────────
+// ── SSE Clients ──────────────────────────────────────────────────────────
+const sseClients = new Map(); // userId -> { res, accountId, mode, activeTicker }
 
-const sseClients = new Map(); // userId -> { res, activeTicker, mode }
-
-function broadcastSSE(userId, event, data) {
-  const client = sseClients.get(userId);
-  if (client && client.res) {
-    client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  }
-}
-
-// Global HFT Engine Loop (Tick every 500ms)
+// ── HFT Tick Engine (500ms) ─────────────────────────────────────────────
 setInterval(async () => {
   if (sseClients.size === 0) return;
-  
-  let screenerCache = null;
-  try {
-    if (existsSync(SCREENER_CACHE_FILE)) {
-      screenerCache = JSON.parse(readFileSync(SCREENER_CACHE_FILE, 'utf-8'));
+  let cache = null;
+  try { if (existsSync(SCREENER_CACHE)) cache = JSON.parse(readFileSync(SCREENER_CACHE, 'utf-8')); } catch {}
+  if (!cache?.data) return;
+
+  let dirty = false;
+  sseClients.forEach((client, uid) => {
+    if (client.mode !== 'virtual' || !client.activeTicker) return;
+    const td = cache.data[client.activeTicker];
+    if (!td?.price) return;
+
+    const old = td.price;
+    const mom = (Math.random() - 0.48) * 0.015;
+    const tickSize = old > 100000 ? 500 : (old > 10000 ? 50 : 5);
+    let diff = Math.round((old * mom) / tickSize) * tickSize;
+    if (diff === 0) diff = Math.random() > 0.5 ? tickSize : -tickSize;
+    const np = Math.max(tickSize, old + diff);
+    if (np !== old) {
+      if (!td._basePrice) td._basePrice = old / (1 + (td.changePct || 0) / 100);
+      td.price = np;
+      td.changePct = ((np - td._basePrice) / td._basePrice) * 100;
+      td.lastUpdated = Date.now();
+      dirty = true;
     }
-  } catch(e) {}
-  if (!screenerCache || !screenerCache.data) return;
-
-  let cacheUpdated = false;
-
-  sseClients.forEach((client, userId) => {
-    const { res, activeTicker, mode } = client;
-    if (!activeTicker || mode !== 'virtual') return;
-
-    const tickerData = screenerCache.data[activeTicker];
-    if (tickerData && tickerData.price) {
-      // HFT Microstructure Jump-Diffusion
-      const oldPrice = tickerData.price;
-      const momentum = (Math.random() - 0.48) * 0.015; // slightly skewed to cause volatility
-      const tickSize = oldPrice > 100000 ? 500 : (oldPrice > 10000 ? 50 : 5);
-      let diff = Math.round((oldPrice * momentum) / tickSize) * tickSize;
-      if (diff === 0) diff = (Math.random() > 0.5 ? tickSize : -tickSize);
-      
-      const newPrice = Math.max(tickSize, oldPrice + diff);
-      if (newPrice !== oldPrice) {
-        tickerData.price = newPrice;
-        if (!tickerData._basePrice) tickerData._basePrice = oldPrice / (1 + (tickerData.changePct / 100));
-        tickerData.changePct = ((newPrice - tickerData._basePrice) / tickerData._basePrice) * 100;
-        cacheUpdated = true;
-      }
-      
-      // Generate realistic order book
-      const ob = generateOrderBook(activeTicker, 'kr', 'stock', null, null);
-      if (ob) {
-        res.write(`event: orderbook\ndata: ${JSON.stringify(ob)}\n\n`);
-      }
-    }
+    // push order book
+    const ob = generateOrderBook(client.activeTicker, 'kr', np);
+    if (ob) client.res.write(`event: orderbook\ndata: ${JSON.stringify(ob)}\n\n`);
   });
 
-  if (cacheUpdated) {
-    writeFileSync(SCREENER_CACHE_FILE, JSON.stringify(screenerCache, null, 2));
-    
-    // Broadcast price updates to all virtual clients
-    sseClients.forEach((client, userId) => {
-      if (client.mode === 'virtual') {
-         client.res.write(`event: price_update\ndata: ${JSON.stringify(screenerCache.data)}\n\n`);
-      }
+  if (dirty) {
+    writeFileSync(SCREENER_CACHE, JSON.stringify(cache, null, 2));
+    sseClients.forEach((c) => {
+      if (c.mode === 'virtual') c.res.write(`event: price\ndata: ${JSON.stringify(cache.data)}\n\n`);
     });
   }
 }, 500);
 
-// ── TIMEZONE OPERATIONAL CHECKS ─────────────────────────────────────────────
+// ── Dividend Scheduler (every hour) ─────────────────────────────────────
+const DIVIDEND_CALENDAR = {
+  '005930': { exDate: '2026-03-28', payDate: '2026-04-20', amount: 361 },
+  'NVDA':   { exDate: '2026-03-12', payDate: '2026-03-28', amount: 0.01 },
+  'AAPL':   { exDate: '2026-02-14', payDate: '2026-02-28', amount: 0.25 },
+  'MSFT':   { exDate: '2026-02-20', payDate: '2026-03-13', amount: 0.83 },
+  '000660': { exDate: '2026-06-27', payDate: '2026-07-15', amount: 300 },
+};
 
-function getLocalTime(timezone) {
-  const date = new Date();
-  
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-  
-  const dayFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    weekday: 'short'
-  });
-  
-  const weekday = dayFormatter.format(date);
-  const parts = formatter.formatToParts(date);
-  const map = {};
-  parts.forEach(p => { map[p.type] = p.value; });
-  
-  return {
-    weekday,
-    hour: parseInt(map.hour, 10),
-    minute: parseInt(map.minute, 10)
-  };
+async function processDividends() {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const accounts = await readJSON(ACCOUNTS_FILE, {});
+  const portfolios = await readJSON(PORTFOLIOS_FILE, {});
+  const divRecords = await readJSON(DIVIDENDS_FILE, {});
+
+  for (const [uid, acctList] of Object.entries(accounts)) {
+    for (const acct of Object.values(acctList)) {
+      const port = portfolios[acct.id];
+      if (!port?.holdings?.length) continue;
+      const key = `${uid}_${acct.id}`;
+      if (!divRecords[key]) divRecords[key] = [];
+
+      for (const h of port.holdings) {
+        const cal = DIVIDEND_CALENDAR[h.ticker];
+        if (!cal || cal.exDate !== today) continue;
+        // check already processed
+        const already = divRecords[key].find(r => r.ticker === h.ticker && r.date === today);
+        if (already) continue;
+
+        const amount = cal.amount * h.quantity;
+        const currency = h.market === 'kr' ? 'KRW' : 'USD';
+        if (currency === 'KRW') port.krwBalance += amount;
+        else port.usdBalance += amount;
+
+        divRecords[key].push({
+          ticker: h.ticker, date: today, payDate: cal.payDate,
+          amount, currency, quantity: h.quantity,
+        });
+      }
+      portfolios[acct.id] = port;
+    }
+  }
+
+  await writeJSON(PORTFOLIOS_FILE, portfolios);
+  await writeJSON(DIVIDENDS_FILE, divRecords);
+}
+setInterval(processDividends, 3600_000);
+processDividends(); // initial run
+
+// ── Timezone ─────────────────────────────────────────────────────────────
+function tzInfo(tz) {
+  const d = new Date();
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short' });
+  const parts = fmt.formatToParts(d);
+  const map = {}; parts.forEach(p => { map[p.type] = p.value; });
+  return { weekday: map.weekday, hour: parseInt(map.hour), min: parseInt(map.minute) };
 }
 
 function isMarketOpen(market) {
   try {
     if (market === 'kr') {
-      const time = getLocalTime('Asia/Seoul');
-      if (time.weekday === 'Sat' || time.weekday === 'Sun') return false;
-      const minutes = time.hour * 60 + time.minute;
-      return minutes >= 9 * 60 && minutes <= 15 * 60 + 30; // 09:00 - 15:30
-    } else if (market === 'us') {
-      const time = getLocalTime('America/New_York');
-      if (time.weekday === 'Sat' || time.weekday === 'Sun') return false;
-      const minutes = time.hour * 60 + time.minute;
-      return minutes >= 9 * 60 + 30 && minutes <= 16 * 60; // 09:30 - 16:00
+      const t = tzInfo('Asia/Seoul');
+      if (t.weekday === 'Sat' || t.weekday === 'Sun') return false;
+      const m = t.hour * 60 + t.min;
+      return m >= 540 && m <= 930; // 09:00-15:30
     }
-  } catch (e) {
-    console.error('[MARKET STATE ENGINE] Error in isMarketOpen evaluation:', e);
-  }
+    if (market === 'us') {
+      const t = tzInfo('America/New_York');
+      if (t.weekday === 'Sat' || t.weekday === 'Sun') return false;
+      const m = t.hour * 60 + t.min;
+      return m >= 570 && m <= 960; // 09:30-16:00
+    }
+  } catch {}
   return false;
 }
 
-// ── BACKGROUND ORDER MATCHER ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  ACCOUNT ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════
 
-function startOrderMatcher() {
-  console.log('[SECURITY ENGINE] Starting simulated order matching loop (5s interval)');
-  setInterval(async () => {
-    try {
-      const orders = await readJSONSafe(ORDERS_FILE, {});
-      const pendingOrders = Object.values(orders).filter(o => o.status === 'pending');
-      if (pendingOrders.length === 0) return;
-      
-      let portfolios = null;
-      let history = null;
-      let updated = false;
-      
-      for (const order of pendingOrders) {
-        if (order.mode === 'realtime' && !isMarketOpen(order.market)) {
-          continue; // market is closed, skip matching
-        }
-        
-        // Get price for the asset
-        let currentPrice = 0;
-        if (order.type === 'stock') {
-          currentPrice = getAssetPrice(order.ticker, order.market, 'stock');
-        } else if (order.type === 'option') {
-          currentPrice = getOptionPrice(order.ticker, order.market, order.optionDetails);
-        } else if (order.type === 'bond') {
-          currentPrice = getBondPrice(order.ticker, order.market, order.bondDetails);
-        }
-        
-        if (currentPrice <= 0) continue;
-        
-        let isMatched = false;
-        if (order.side === 'buy') {
-          if (currentPrice <= order.price) isMatched = true;
-        } else {
-          if (currentPrice >= order.price) isMatched = true;
-        }
-        
-        if (isMatched) {
-          if (!portfolios) portfolios = await readJSONSafe(PORTFOLIOS_FILE, {});
-          if (!history) history = await readJSONSafe(HISTORY_FILE, {});
-          
-          const userId = order.userId;
-          if (!portfolios[userId]) {
-            portfolios[userId] = { cash: 10000000, investedPrincipal: 0, holdings: [] };
-          }
-          const userPort = portfolios[userId];
-          const transactionValue = order.price * order.quantity;
-          const commissionRate = 0.00015;
-          const fee = transactionValue * commissionRate;
-          
-          if (order.side === 'buy') {
-            const assetId = `${order.ticker}_${order.market}`;
-            let holding = userPort.holdings.find(h => h.assetId === assetId);
-            if (!holding) {
-              holding = {
-                assetId,
-                ticker: order.ticker,
-                market: order.market,
-                type: order.type,
-                avgPrice: order.price,
-                quantity: order.quantity,
-                optionDetails: order.optionDetails,
-                bondDetails: order.bondDetails
-              };
-              userPort.holdings.push(holding);
-            } else {
-              const totalQty = holding.quantity + order.quantity;
-              holding.avgPrice = ((holding.quantity * holding.avgPrice) + (order.quantity * order.price)) / totalQty;
-              holding.quantity = totalQty;
-            }
-            userPort.investedPrincipal = (userPort.investedPrincipal || 0) + transactionValue;
-          } else {
-            userPort.cash += (transactionValue - fee);
-            userPort.investedPrincipal = Math.max(0, (userPort.investedPrincipal || 0) - transactionValue);
-          }
-          
-          order.status = 'filled';
-          order.filledQuantity = order.quantity;
-          
-          if (!history[userId]) history[userId] = [];
-          history[userId].push({
-            historyId: `hist_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-            type: 'trade',
-            ticker: order.ticker,
-            side: order.side,
-            price: order.price,
-            quantity: order.quantity,
-            amount: order.side === 'buy' ? -(transactionValue + fee) : (transactionValue - fee),
-            fee,
-            timestamp: new Date().toISOString(),
-            memo: `${order.ticker} ${order.quantity}주 ${order.side === 'buy' ? '매수' : '매도'} 체결 완료 (대기 주문 체결)`
-          });
-          
-          updated = true;
-        }
-      }
-      
-      if (updated) {
-        await writeJSONSafe(ORDERS_FILE, orders);
-        if (portfolios) await writeJSONSafe(PORTFOLIOS_FILE, portfolios);
-        if (history) await writeJSONSafe(HISTORY_FILE, history);
-        console.log('[SECURITY ENGINE] Processed matched pending orders.');
-      }
-    } catch (e) {
-      console.error('[SECURITY ENGINE] Order matcher matching interval failed:', e);
-    }
-  }, 5000);
-}
+// Create account
+router.post('/accounts', requireAuth, async (req, res) => {
+  const userId = req.user?.id || req.user?.email || 'guest';
+  const { type, initialCapital } = req.body; // type: 'realtime'|'virtual', initialCapital: number (KRW)
 
-// Start matching loop immediately on router load
-startOrderMatcher();
+  if (!type || !initialCapital) return res.status(400).json({ error: 'type과 initialCapital이 필요합니다.' });
+  if (!['realtime', 'virtual'].includes(type)) return res.status(400).json({ error: 'type은 realtime 또는 virtual이어야 합니다.' });
+  const cap = parseInt(initialCapital);
+  if (isNaN(cap) || cap < 1000000) return res.status(400).json({ error: '초기자본금은 최소 100만원 이상이어야 합니다.' });
 
-// ── ENDPOINTS ────────────────────────────────────────────────────────────────
-
-// 1. Get Portfolio
-router.get('/portfolio', requireAuth, async (req, res) => {
-  const userId = req.user.id;
   try {
-    const portfolios = await readJSONSafe(PORTFOLIOS_FILE, {});
-    if (!portfolios[userId]) {
-      portfolios[userId] = {
-        cash: 10000000,
-        investedPrincipal: 0,
-        holdings: []
-      };
-      await writeJSONSafe(PORTFOLIOS_FILE, portfolios);
+    const accounts = await readJSON(ACCOUNTS_FILE, {});
+    if (!accounts[userId]) accounts[userId] = {};
+
+    const acctId = `mock_${crypto.randomBytes(6).toString('hex')}`;
+    const account = {
+      id: acctId,
+      userId,
+      type,
+      initialCapital: cap,
+      createdAt: new Date().toISOString(),
+      label: `${type === 'realtime' ? '실시간' : '가상'} 계좌 #${Object.keys(accounts[userId]).length + 1}`,
+    };
+    accounts[userId][acctId] = account;
+    await writeJSON(ACCOUNTS_FILE, accounts);
+
+    // init portfolio
+    const portfolios = await readJSON(PORTFOLIOS_FILE, {});
+    portfolios[acctId] = {
+      krwBalance: cap,
+      usdBalance: 0,
+      investedPrincipal: 0,
+      holdings: [],
+    };
+    await writeJSON(PORTFOLIOS_FILE, portfolios);
+
+    res.json({ ok: true, account });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// List accounts
+router.get('/accounts', requireAuth, async (req, res) => {
+  const userId = req.user?.id || req.user?.email || 'guest';
+  try {
+    const accounts = await readJSON(ACCOUNTS_FILE, {});
+    const mine = Object.values(accounts[userId] || {});
+    res.json(mine);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Reset account
+router.post('/accounts/:id/reset', requireAuth, async (req, res) => {
+  const userId = req.user?.id || req.user?.email || 'guest';
+  const { id } = req.params;
+  try {
+    const accounts = await readJSON(ACCOUNTS_FILE, {});
+    const acct = (accounts[userId] || {})[id];
+    if (!acct) return res.status(404).json({ error: '계좌를 찾을 수 없습니다.' });
+
+    const portfolios = await readJSON(PORTFOLIOS_FILE, {});
+    portfolios[id] = { krwBalance: acct.initialCapital, usdBalance: 0, investedPrincipal: 0, holdings: [] };
+    await writeJSON(PORTFOLIOS_FILE, portfolios);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete account
+router.delete('/accounts/:id', requireAuth, async (req, res) => {
+  const userId = req.user?.id || req.user?.email || 'guest';
+  const { id } = req.params;
+  try {
+    const accounts = await readJSON(ACCOUNTS_FILE, {});
+    if (!accounts[userId]?.[id]) return res.status(404).json({ error: '계좌를 찾을 수 없습니다.' });
+    delete accounts[userId][id];
+    await writeJSON(ACCOUNTS_FILE, accounts);
+
+    // cleanup portfolio
+    const portfolios = await readJSON(PORTFOLIOS_FILE, {});
+    delete portfolios[id];
+    await writeJSON(PORTFOLIOS_FILE, portfolios);
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PORTFOLIO ENDPOINT
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.get('/portfolio/:accountId', requireAuth, async (req, res) => {
+  const { accountId } = req.params;
+  try {
+    const accounts = await readJSON(ACCOUNTS_FILE, {});
+    // find account
+    let acct = null;
+    for (const [uid, alist] of Object.entries(accounts)) {
+      if (alist[accountId]) { acct = alist[accountId]; break; }
     }
-    
-    const userPort = portfolios[userId];
-    let totalHoldingsValue = 0;
-    let totalHoldingsCost = 0;
-    
-    const holdingsWithPrice = userPort.holdings.map(h => {
-      let currentPrice = 0;
-      if (h.type === 'stock') {
-        currentPrice = getAssetPrice(h.ticker, h.market, 'stock');
-      } else if (h.type === 'option') {
-        currentPrice = getOptionPrice(h.ticker, h.market, h.optionDetails);
-      } else if (h.type === 'bond') {
-        currentPrice = getBondPrice(h.ticker, h.market, h.bondDetails);
-      }
-      
-      const evaluationValue = h.quantity * currentPrice;
+    if (!acct) return res.status(404).json({ error: '계좌 없음' });
+
+    const portfolios = await readJSON(PORTFOLIOS_FILE, {});
+    const port = portfolios[accountId] || { krwBalance: acct.initialCapital, usdBalance: 0, investedPrincipal: 0, holdings: [] };
+
+    const usdkrw = getUSDKRW();
+    let totalHoldingsValueKRW = 0;
+    const holdingsWithPrice = port.holdings.map(h => {
+      const cp = getAssetPrice(h.ticker, h.market);
+      const evalVal = h.quantity * cp;
       const cost = h.quantity * h.avgPrice;
-      const profit = evaluationValue - cost;
+      const profit = evalVal - cost;
       const profitPct = cost > 0 ? (profit / cost) * 100 : 0;
-      
-      totalHoldingsValue += evaluationValue;
-      totalHoldingsCost += cost;
-      
-      return {
-        ...h,
-        currentPrice,
-        evaluationValue,
-        profit,
-        profitPct
-      };
+      const inKRW = h.market === 'kr' ? evalVal : evalVal * usdkrw;
+      totalHoldingsValueKRW += inKRW;
+      return { ...h, currentPrice: cp, evaluationValue: evalVal, profit, profitPct, evalKRW: inKRW };
     });
-    
-    const totalAssetValuation = userPort.cash + totalHoldingsValue;
-    const totalEvaluationProfit = totalHoldingsValue - totalHoldingsCost;
-    const totalEvaluationProfitPct = totalHoldingsCost > 0 ? (totalEvaluationProfit / totalHoldingsCost) * 100 : 0;
-    
+
+    const usdInKRW = port.usdBalance * usdkrw;
+    const totalAssetKRW = port.krwBalance + usdInKRW + totalHoldingsValueKRW;
+    const totalProfit = totalAssetKRW - acct.initialCapital;
+    const totalProfitPct = acct.initialCapital > 0 ? (totalProfit / acct.initialCapital) * 100 : 0;
+
     res.json({
-      cash: userPort.cash,
-      investedPrincipal: userPort.investedPrincipal || totalHoldingsCost,
-      totalAssetValuation,
-      totalHoldingsValue,
-      totalHoldingsCost,
-      totalEvaluationProfit,
-      totalEvaluationProfitPct,
-      holdings: holdingsWithPrice
+      account: acct,
+      krwBalance: port.krwBalance,
+      usdBalance: port.usdBalance,
+      usdkrw,
+      usdInKRW,
+      investedPrincipal: port.investedPrincipal,
+      totalHoldingsValueKRW,
+      totalAssetKRW,
+      totalProfit,
+      totalProfitPct,
+      holdings: holdingsWithPrice,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// 2. Submit Order
+// ═══════════════════════════════════════════════════════════════════════════
+//  ORDER ENDPOINT (with auto-FX)
+// ═══════════════════════════════════════════════════════════════════════════
+
 router.post('/order', requireAuth, async (req, res) => {
-  const userId = req.user.id;
-  const { ticker, market, type, side, price, quantity, mode, optionDetails, bondDetails } = req.body;
-  
-  if (!ticker || !market || !type || !side || !price || !quantity || !mode) {
-    return res.status(400).json({ error: '필수 주문 매개변수가 누락되었습니다.' });
+  const userId = req.user?.id || req.user?.email || 'guest';
+  const { accountId, ticker, market, side, price, quantity, mode } = req.body;
+
+  if (!accountId || !ticker || !market || !side || !price || !quantity) {
+    return res.status(400).json({ error: '필수 주문 파라미터 누락' });
   }
-  
-  const parsedPrice = parseFloat(price);
-  const parsedQty = parseInt(quantity, 10);
-  
-  if (isNaN(parsedPrice) || parsedPrice <= 0 || isNaN(parsedQty) || parsedQty <= 0) {
-    return res.status(400).json({ error: '올바른 수량 및 가격을 입력해 주세요.' });
+  const qty = parseInt(quantity);
+  const prc = parseFloat(price);
+  if (isNaN(qty) || qty <= 0 || isNaN(prc) || prc <= 0) {
+    return res.status(400).json({ error: '올바른 수량/가격 입력' });
   }
-  
-  if (side !== 'buy' && side !== 'sell') {
-    return res.status(400).json({ error: '주문 방향은 buy 또는 sell이어야 합니다.' });
+  if (!['buy', 'sell'].includes(side)) {
+    return res.status(400).json({ error: 'side는 buy 또는 sell' });
   }
-  
-  const commissionRate = 0.00015; // 0.015%
-  const transactionValue = parsedPrice * parsedQty;
-  const fee = transactionValue * commissionRate;
-  
+
   try {
-    const portfolios = await readJSONSafe(PORTFOLIOS_FILE, {});
-    const orders = await readJSONSafe(ORDERS_FILE, {});
-    
-    if (!portfolios[userId]) {
-      portfolios[userId] = { cash: 10000000, investedPrincipal: 0, holdings: [] };
+    const accounts = await readJSON(ACCOUNTS_FILE, {});
+    let acct = null;
+    for (const [, alist] of Object.entries(accounts)) {
+      if (alist[accountId]) { acct = alist[accountId]; break; }
     }
-    const userPort = portfolios[userId];
-    
-    // Validate bounds / execute cash reserve or stock deduct
+    if (!acct) return res.status(404).json({ error: '계좌 없음' });
+
+    const portfolios = await readJSON(PORTFOLIOS_FILE, {});
+    const port = portfolios[accountId];
+    if (!port) return res.status(404).json({ error: '포트폴리오 없음' });
+
+    const isKR = market === 'kr';
+    const usdkrw = getUSDKRW();
+    const tv = prc * qty;
+    const commission = tv * 0.00015;
+
+    const orders = await readJSON(ORDERS_FILE, {});
+
     if (side === 'buy') {
-      const requiredCash = transactionValue + fee;
-      if (userPort.cash < requiredCash) {
-        return res.status(400).json({ error: `잔액이 부족합니다. (필요: ${requiredCash.toLocaleString()}원, 잔고: ${userPort.cash.toLocaleString()}원)` });
+      // determine required funds
+      if (isKR) {
+        const need = tv + commission;
+        if (port.krwBalance < need) return res.status(400).json({ error: `원화 잔액 부족 (필요: ₩${Math.ceil(need).toLocaleString()}, 보유: ₩${Math.ceil(port.krwBalance).toLocaleString()})` });
+        port.krwBalance -= need;
+        port.investedPrincipal += tv;
+      } else {
+        // US stock — need USD
+        const needUSD = tv + commission;
+        if (port.usdBalance >= needUSD) {
+          port.usdBalance -= needUSD;
+        } else {
+          // auto-FX: convert KRW → USD
+          const shortfallUSD = needUSD - port.usdBalance;
+          const krwNeeded = shortfallUSD * usdkrw * 1.005; // 0.5% spread
+          if (port.krwBalance >= krwNeeded) {
+            port.krwBalance -= krwNeeded;
+            port.usdBalance = 0;
+          } else {
+            return res.status(400).json({ error: `환전 포함 잔액 부족` });
+          }
+        }
+        port.investedPrincipal += tv;
       }
-      userPort.cash -= requiredCash;
     } else {
+      // sell: check holding
       const assetId = `${ticker}_${market}`;
-      const holding = userPort.holdings.find(h => h.assetId === assetId);
-      if (!holding || holding.quantity < parsedQty) {
-        return res.status(400).json({ error: '보유 수량이 부족하여 매도할 수 없습니다.' });
-      }
-      holding.quantity -= parsedQty;
-      if (holding.quantity === 0) {
-        userPort.holdings = userPort.holdings.filter(h => h.assetId !== assetId);
-      }
+      const h = port.holdings.find(x => x.assetId === assetId);
+      if (!h || h.quantity < qty) return res.status(400).json({ error: '보유 수량 부족' });
+      h.quantity -= qty;
+      if (h.quantity === 0) port.holdings = port.holdings.filter(x => x.assetId !== assetId);
+      const proceeds = tv - commission;
+      if (isKR) port.krwBalance += proceeds;
+      else port.usdBalance += proceeds;
+      port.investedPrincipal = Math.max(0, port.investedPrincipal - tv);
     }
-    
-    // Evaluate if execution can occur immediately
-    const isOpen = isMarketOpen(market);
-    const executeImmediately = (mode === 'virtual') || (mode === 'realtime' && isOpen);
-    
+
+    // immediate fill (virtual always; realtime only if market open)
+    const executeNow = (acct.type === 'virtual') || (acct.type === 'realtime' && isMarketOpen(market));
     const orderId = `ord_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const newOrder = {
-      orderId,
-      userId,
-      ticker,
-      market,
-      type,
-      side,
-      price: parsedPrice,
-      quantity: parsedQty,
-      filledQuantity: executeImmediately ? parsedQty : 0,
-      status: executeImmediately ? 'filled' : 'pending',
-      mode,
+    const order = {
+      orderId, userId, accountId, ticker, market, side, price: prc, quantity: qty,
+      filledQty: executeNow ? qty : 0,
+      status: executeNow ? 'filled' : 'pending',
+      mode: acct.type,
       createdAt: new Date().toISOString(),
-      optionDetails: optionDetails || null,
-      bondDetails: bondDetails || null
     };
-    
-    if (executeImmediately) {
+    orders[orderId] = order;
+
+    if (executeNow) {
       if (side === 'buy') {
         const assetId = `${ticker}_${market}`;
-        let holding = userPort.holdings.find(h => h.assetId === assetId);
-        if (!holding) {
-          holding = {
-            assetId,
-            ticker,
-            market,
-            type,
-            avgPrice: parsedPrice,
-            quantity: parsedQty,
-            optionDetails: optionDetails || null,
-            bondDetails: bondDetails || null
-          };
-          userPort.holdings.push(holding);
-        } else {
-          const totalQty = holding.quantity + parsedQty;
-          holding.avgPrice = ((holding.quantity * holding.avgPrice) + (parsedQty * parsedPrice)) / totalQty;
-          holding.quantity = totalQty;
+        let h = port.holdings.find(x => x.assetId === assetId);
+        if (!h) {
+          h = { assetId, ticker, market, type: 'stock', avgPrice: prc, quantity: 0 };
+          port.holdings.push(h);
         }
-        userPort.investedPrincipal = (userPort.investedPrincipal || 0) + transactionValue;
-      } else {
-        userPort.cash += (transactionValue - fee);
-        userPort.investedPrincipal = Math.max(0, (userPort.investedPrincipal || 0) - transactionValue);
+        h.quantity += qty;
+        h.avgPrice = ((h.quantity - qty) * h.avgPrice + qty * prc) / h.quantity;
       }
-      
-      const history = await readJSONSafe(HISTORY_FILE, {});
-      if (!history[userId]) history[userId] = [];
-      history[userId].push({
-        historyId: `hist_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-        type: 'trade',
-        ticker,
-        side,
-        price: parsedPrice,
-        quantity: parsedQty,
-        amount: side === 'buy' ? -(transactionValue + fee) : (transactionValue - fee),
-        fee,
-        timestamp: new Date().toISOString(),
-        memo: `${ticker} ${parsedQty}주 ${side === 'buy' ? '매수' : '매도'} 체결 완료`
-      });
-      await writeJSONSafe(HISTORY_FILE, history);
     }
-    
-    orders[orderId] = newOrder;
-    await writeJSONSafe(ORDERS_FILE, orders);
-    await writeJSONSafe(PORTFOLIOS_FILE, portfolios);
-    
-    res.json({ ok: true, order: newOrder });
+
+    await writeJSON(PORTFOLIOS_FILE, portfolios);
+    await writeJSON(ORDERS_FILE, orders);
+
+    // write history
+    const history = await readJSON(HISTORY_FILE, {});
+    const hKey = `${userId}_${accountId}`;
+    if (!history[hKey]) history[hKey] = [];
+    history[hKey].push({
+      id: `hist_${Date.now()}`,
+      type: 'trade', ticker, side, price: prc, quantity: qty,
+      amount: side === 'buy' ? -(tv + commission) : (tv - commission),
+      fee: commission,
+      timestamp: new Date().toISOString(),
+      memo: `${ticker} ${qty}주 ${side === 'buy' ? '매수' : '매도'} ${executeNow ? '체결' : '접수'}`,
+    });
+    await writeJSON(HISTORY_FILE, history);
+
+    res.json({ ok: true, order, executed: executeNow });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// 3. Cancel Order
+// Cancel order
 router.post('/cancel', requireAuth, async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.user?.id || req.user?.email || 'guest';
   const { orderId } = req.body;
-  
-  if (!orderId) {
-    return res.status(400).json({ error: 'orderId가 필요합니다.' });
-  }
-  
+  if (!orderId) return res.status(400).json({ error: 'orderId 필요' });
+
   try {
-    const orders = await readJSONSafe(ORDERS_FILE, {});
+    const orders = await readJSON(ORDERS_FILE, {});
     const order = orders[orderId];
-    
-    if (!order || order.userId !== userId) {
-      return res.status(404).json({ error: '해당 주문을 찾을 수 없습니다.' });
-    }
-    
-    if (order.status !== 'pending') {
-      return res.status(400).json({ error: '대기 중인 주문만 취소할 수 있습니다.' });
-    }
-    
-    const portfolios = await readJSONSafe(PORTFOLIOS_FILE, {});
-    const userPort = portfolios[userId];
-    
-    const commissionRate = 0.00015;
-    const transactionValue = order.price * order.quantity;
-    const fee = transactionValue * commissionRate;
-    
+    if (!order || order.userId !== userId) return res.status(404).json({ error: '주문 없음' });
+    if (order.status !== 'pending') return res.status(400).json({ error: '대기 주문만 취소 가능' });
+
+    const portfolios = await readJSON(PORTFOLIOS_FILE, {});
+    const port = portfolios[order.accountId];
+    if (!port) return res.status(404).json({ error: '포트폴리오 없음' });
+
+    const tv = order.price * order.quantity;
+    const fee = tv * 0.00015;
+
     if (order.side === 'buy') {
-      userPort.cash += (transactionValue + fee);
+      if (order.market === 'kr') port.krwBalance += (tv + fee);
+      else port.usdBalance += (tv + fee);
     } else {
       const assetId = `${order.ticker}_${order.market}`;
-      let holding = userPort.holdings.find(h => h.assetId === assetId);
-      if (!holding) {
-        holding = {
-          assetId,
-          ticker: order.ticker,
-          market: order.market,
-          type: order.type,
-          avgPrice: order.price,
-          quantity: order.quantity,
-          optionDetails: order.optionDetails,
-          bondDetails: order.bondDetails
-        };
-        userPort.holdings.push(holding);
-      } else {
-        holding.quantity += order.quantity;
-      }
+      let h = port.holdings.find(x => x.assetId === assetId);
+      if (h) h.quantity += order.quantity;
+      else port.holdings.push({ assetId, ticker: order.ticker, market: order.market, type: 'stock', avgPrice: order.price, quantity: order.quantity });
     }
-    
+
     order.status = 'cancelled';
-    
-    const history = await readJSONSafe(HISTORY_FILE, {});
-    if (!history[userId]) history[userId] = [];
-    history[userId].push({
-      historyId: `hist_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-      type: 'cancel',
-      ticker: order.ticker,
-      side: order.side,
-      price: order.price,
-      quantity: order.quantity,
-      amount: 0,
-      fee: 0,
-      timestamp: new Date().toISOString(),
-      memo: `${order.ticker} ${order.quantity}주 ${order.side === 'buy' ? '매수' : '매도'} 주문 취소`
-    });
-    
-    await writeJSONSafe(ORDERS_FILE, orders);
-    await writeJSONSafe(PORTFOLIOS_FILE, portfolios);
-    await writeJSONSafe(HISTORY_FILE, history);
-    
+    await writeJSON(ORDERS_FILE, orders);
+    await writeJSON(PORTFOLIOS_FILE, portfolios);
+
     res.json({ ok: true, order });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// 4. Get Transaction History
-router.get('/history', requireAuth, async (req, res) => {
-  const userId = req.user.id;
+// ═══════════════════════════════════════════════════════════════════════════
+//  HISTORY / DIVIDENDS
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.get('/history/:accountId', requireAuth, async (req, res) => {
+  const userId = req.user?.id || req.user?.email || 'guest';
+  const { accountId } = req.params;
+  const key = `${userId}_${accountId}`;
   try {
-    const history = await readJSONSafe(HISTORY_FILE, {});
-    res.json(history[userId] || []);
+    const history = await readJSON(HISTORY_FILE, {});
+    const items = history[key] || [];
+    res.json(items.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 100));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// 5. Get Order Book
-router.get('/orderbook', (req, res) => {
-  const { ticker, market, type, strike, expiry, optionType, couponRate, maturityDate, couponFrequency } = req.query;
-  if (!ticker || !market || !type) {
-    return res.status(400).json({ error: 'ticker, market, type 매개변수가 필요합니다.' });
+router.get('/dividends/:accountId', requireAuth, async (req, res) => {
+  const userId = req.user?.id || req.user?.email || 'guest';
+  const { accountId } = req.params;
+  const key = `${userId}_${accountId}`;
+  try {
+    const divs = await readJSON(DIVIDENDS_FILE, {});
+    res.json((divs[key] || []).sort((a, b) => new Date(b.date) - new Date(a.date)));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-  
-  let optionDetails = null;
-  if (type === 'option') {
-    optionDetails = { strike, expiry, optionType };
-  }
-  
-  let bondDetails = null;
-  if (type === 'bond') {
-    bondDetails = { couponRate, maturityDate, couponFrequency };
-  }
-  
-  const orderBook = generateOrderBook(ticker, market, type, optionDetails, bondDetails);
-  if (!orderBook) {
-    return res.status(404).json({ error: '해당 자산의 가격을 조회할 수 없어 호가창을 생성하지 못했습니다.' });
-  }
-  
-  res.json(orderBook);
 });
 
-// 6. SSE Stream
+// ═══════════════════════════════════════════════════════════════════════════
+//  ORDER BOOK
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.get('/orderbook', (req, res) => {
+  const { ticker, market } = req.query;
+  if (!ticker || !market) return res.status(400).json({ error: 'ticker, market 필요' });
+  const ob = generateOrderBook(ticker, market, getAssetPrice(ticker, market));
+  if (!ob) return res.status(404).json({ error: '가격 조회 실패' });
+  res.json(ob);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SSE STREAM
+// ═══════════════════════════════════════════════════════════════════════════
+
 router.get('/stream', (req, res) => {
-  const userId = req.query.userId;
-  if (!userId) {
-    return res.status(400).end('userId required');
-  }
+  const userId = req.query.userId || 'guest';
+  const accountId = req.query.accountId;
+  const mode = req.query.mode || 'virtual';
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
-  
-  sseClients.set(userId, { res, activeTicker: req.query.activeTicker || null, mode: req.query.mode || 'virtual' });
-  
-  req.on('close', () => {
-    sseClients.delete(userId);
-  });
+
+  sseClients.set(userId, { res, accountId, mode, activeTicker: null });
+
+  req.on('close', () => { sseClients.delete(userId); });
 });
 
-// 7. Update SSE Context (change active ticker)
 router.post('/stream/context', express.json(), (req, res) => {
   const { userId, activeTicker, mode } = req.body;
-  if (sseClients.has(userId)) {
-    const client = sseClients.get(userId);
+  const client = sseClients.get(userId);
+  if (client) {
     if (activeTicker) client.activeTicker = activeTicker;
     if (mode) client.mode = mode;
   }
