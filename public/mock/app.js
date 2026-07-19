@@ -1,387 +1,801 @@
-'use strict';
+// Rebuilt Mock Trading App Logic
+const INIT_CAPITAL = 10000000;
+let liveQuotes = {};
+let activeStock = null;
+let orderType = 'buy';
+let currentTab = 'holdings';
+let currentMode = 'virtual';
+let orderAmountString = '0';
 
-let S = {
-  accounts:[], acctType:'realtime', acctId:null, acct:null, portfolio:null, usdkrw:1350,
-  detailStock:null, detailRange:'1d', detailChart:null, detailSeries:null,
-  tradeSide:'buy', tradeType:'limit',
-  fxDir:'krw2usd', rankMarket:'kr', historyFilter:'all',
-  chartInst:null, analyticsChart:null, range:'1m',
-  poll:null, sse:null, view:'home'
-};
-
-const uid = (()=>{
-  let c=document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('sessionToken='));
-  if(c) return decodeURIComponent(c.split('=')[1]);
-  let g=localStorage.getItem('mock_guest_id');
-  if(!g){g='g_'+Date.now()+Math.random().toString(36).slice(2);localStorage.setItem('mock_guest_id',g);}
-  return g;
-})();
-
-async function api(p,o={}){
-  const r=await fetch(p,{headers:{'Content-Type':'application/json'},...o});
-  const d=await r.json();
-  if(!r.ok&&d.error) throw new Error(d.error);
-  return d;
+function getStore(key, def) {
+  try {
+    const val = localStorage.getItem(`mock_${key}`);
+    return val ? JSON.parse(val) : def;
+  } catch(e) { return def; }
+}
+function setStore(key, val) {
+  localStorage.setItem(`mock_${key}`, JSON.stringify(val));
 }
 
-function toast(m){
-  const c=document.getElementById('toastContainer');
-  const e=document.createElement('div');e.className='toast';e.textContent=m;c.appendChild(e);
-  setTimeout(()=>{e.style.opacity='0';e.style.transition='opacity 0.3s';setTimeout(()=>e.remove(),300);},2000);
+let currentMode = getStore('mode', 'virtual');
+
+function getModeStore(key, def) {
+  return getStore(`${currentMode}_${key}`, def);
+}
+function setModeStore(key, val) {
+  setStore(`${currentMode}_${key}`, val);
 }
 
-function goToDashboard(){window.location.href='/';}
+let mockCapital = getModeStore('capital', INIT_CAPITAL);
+let mockHoldings = getModeStore('holdings', {});
+let mockHistory = getModeStore('history', []);
+let mockDividends = getModeStore('dividends', []);
+let mockPendingOrders = getModeStore('pending', []);
 
-// Boot
-(async function boot(){
-  await loadAccts();
-  if(!S.accounts.length){
-    await api('/api/trade/accounts',{method:'POST',body:JSON.stringify({type:'realtime',initialCapital:50000000})});
-    await api('/api/trade/accounts',{method:'POST',body:JSON.stringify({type:'virtual',initialCapital:50000000})});
-    await loadAccts();
-  }
-  autoSel();showApp();switchView('home','snav');loadAll();startPoll();loadIndices();loadRanks();
-})();
+// --- Filter States ---
+let sortOrder = 'return_desc'; // 'return_desc', 'return_asc', 'val_desc'
+let displayMode = 'current'; // 'current', 'val'
+let displayCurrency = 'krw'; // 'krw', 'usd'
+let currentSubTab = 'orders'; // 'orders', 'dividends'
 
-async function loadAccts(){try{S.accounts=await api('/api/trade/accounts');}catch{S.accounts=[];}}
-function autoSel(){
-  let o=S.accounts.filter(a=>a.type===S.acctType);
-  if(o.length){S.acctId=o[0].id;S.acct=o[0];}else if(S.accounts.length){S.acctId=S.accounts[0].id;S.acct=S.accounts[0];S.acctType=S.accounts[0].type;}
-}
-function showApp(){document.getElementById('appMain').style.display='flex';}
+document.addEventListener('DOMContentLoaded', () => {
+  switchMode(currentMode);
+  switchTab('holdings');
+  updatePortfolioTotal(); // Calculate immediately using cached prices / mockCapital
+  fetchMarketData();
+  setInterval(fetchMarketData, 5000);
+});
 
-// View switching
-function switchView(v,src){
-  S.view=v;
-  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
-  document.getElementById('view'+v.charAt(0).toUpperCase()+v.slice(1)).classList.add('active');
-  if(src==='snav'){
-    document.querySelectorAll('.snav-item').forEach(b=>b.classList.remove('active'));
-    document.querySelector(`.snav-item[data-view="${v}"]`).classList.add('active');
-  }
-  if(v==='home') loadAll();
-  if(v==='discover'){loadIndices();loadRanks();}
-  if(v==='history') loadHistoryView();
-  if(v==='analytics') loadAnalytics();
-  if(v!=='detail'){document.getElementById('rightPanelEmpty').style.display='';document.getElementById('rightPanelActive').style.display='none';}
-}
-
-// Account
-async function loadAll(){
-  if(!S.acctId)return;
-  try{S.portfolio=await api('/api/trade/portfolio/'+S.acctId);S.usdkrw=S.portfolio.usdkrw||1350;}catch{S.portfolio=null;}
-  renderHome();renderSidebar();
-}
-function startPoll(){
-  if(S.poll)clearInterval(S.poll);
-  S.poll=setInterval(async()=>{if(!S.acctId)return;try{S.portfolio=await api('/api/trade/portfolio/'+S.acctId);S.usdkrw=S.portfolio.usdkrw||1350;}catch{}renderHome();renderSidebar();},5000);
+// --- UI Logic ---
+function switchMode(mode) {
+  currentMode = mode;
+  setStore('mode', mode);
+  
+  // Reload data for this mode
+  mockCapital = getModeStore('capital', INIT_CAPITAL);
+  mockHoldings = getModeStore('holdings', {});
+  mockHistory = getModeStore('history', []);
+  mockDividends = getModeStore('dividends', []);
+  mockPendingOrders = getModeStore('pending', []);
+  
+  document.getElementById('btnModeVirtual').classList.toggle('active', mode === 'virtual');
+  document.getElementById('btnModeRealtime').classList.toggle('active', mode === 'realtime');
+  
+  const container = document.querySelector('.mode-toggle-container');
+  if (container) container.dataset.mode = mode;
+  showToast(mode === 'virtual' ? '단기 연습모드로 변경되었습니다.' : '실전 롱텀모드로 변경되었습니다.');
+  
+  updatePortfolioTotal();
+  if (currentTab === 'holdings') renderHoldings();
+  if (currentTab === 'history') renderHistory();
 }
 
-function renderSidebar(){
-  const p=S.portfolio;if(!p)return;
-  document.getElementById('sKrw').textContent=Math.round(p.krwBalance).toLocaleString()+'원';
-  document.getElementById('sUsd').textContent='$'+(p.usdBalance||0).toFixed(2);
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  
+  event?.currentTarget?.classList.add('active');
+  document.getElementById(`tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('active');
+  document.querySelector('.toss-tabs').dataset.tab = tab;
+  
+  if(tab === 'holdings') renderHoldings();
+  if(tab === 'shopping') renderShopping();
+  if(tab === 'history') renderHistory();
 }
 
-// Home view
-function renderHome(){
-  const p=S.portfolio;if(!p)return;
-  document.getElementById('totalAsset').textContent=Math.round(p.totalAssetKRW).toLocaleString()+'원';
-  const cls=p.totalProfitPct>=0?'up':'down';
-  document.getElementById('totalProfit').innerHTML=`<span class="ta-profit ${cls}">${p.totalProfit>=0?'+':''}${Math.round(p.totalProfit).toLocaleString()}원</span>`;
-  document.getElementById('totalRate').innerHTML=`<span class="ta-rate ${cls}">${p.totalProfitPct>=0?'+':''}${p.totalProfitPct.toFixed(2)}%</span>`;
-  // daily (simulate)
-  const daily=-4566, dailyPct=-0.2, dCls=daily>=0?'up':'down';
-  document.getElementById('dailyChange').innerHTML=`<span class="ta-daily ${dCls}">오늘 ${daily>=0?'+':''}${daily.toLocaleString()}원 (${dailyPct}%)</span>`;
-  renderHomeChart();
+function switchSubTab(subTab) {
+  currentSubTab = subTab;
+  document.getElementById('subTabOrders').classList.toggle('active', subTab === 'orders');
+  document.getElementById('subTabDividends').classList.toggle('active', subTab === 'dividends');
+  renderHistory();
+}
+
+function toggleSortOrder() {
+  if (sortOrder === 'return_desc') sortOrder = 'return_asc';
+  else if (sortOrder === 'return_asc') sortOrder = 'val_desc';
+  else sortOrder = 'return_desc';
+  
+  const text = sortOrder === 'return_desc' ? '수익률 높은 순' : (sortOrder === 'return_asc' ? '수익률 낮은 순' : '평가금 많은 순');
+  document.getElementById('btnSortOrder').innerHTML = `${text} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><polyline points="6 9 12 15 18 9"/></svg>`;
   renderHoldings();
 }
 
-function switchHomeRange(r,btn){
-  S.range=r;
-  document.querySelectorAll('#viewHome .r-tab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  renderHomeChart();
+function toggleDisplayMode() {
+  displayMode = displayMode === 'current' ? 'val' : 'current';
+  document.getElementById('dispModeCurrent').classList.toggle('active', displayMode === 'current');
+  document.getElementById('dispModeVal').classList.toggle('active', displayMode === 'val');
+  renderHoldings();
 }
-function renderHomeChart(){
-  const p=S.portfolio;const cvs=document.getElementById('homeProfitChart');
-  if(!cvs||!p)return;
-  if(S.chartInst)S.chartInst.destroy();
-  const tot=p.totalAssetKRW,init=p.acct?.initialCapital||tot-p.totalProfit;
-  const pts=genData(init,tot,S.range);
-  S.chartInst=new Chart(cvs.getContext('2d'),{
-    type:'line',data:{labels:pts.labels,datasets:[{data:pts.data,borderColor:tot>=init?'#F04452':'#1570EF',backgroundColor:tot>=init?'rgba(240,68,82,0.03)':'rgba(21,112,239,0.03)',fill:true,tension:0.3,borderWidth:1.5,pointRadius:0}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}
+
+function toggleCurrency() {
+  displayCurrency = displayCurrency === 'krw' ? 'usd' : 'krw';
+  document.getElementById('currKrw').classList.toggle('active', displayCurrency === 'krw');
+  document.getElementById('currUsd').classList.toggle('active', displayCurrency === 'usd');
+  updatePortfolioTotal();
+  renderHoldings();
+  renderShopping();
+  if (currentTab === 'history') renderHistory();
+}
+
+// --- Matching Engine ---
+function processPendingOrders() {
+  let pendingChanged = false;
+  mockPendingOrders = mockPendingOrders.filter(order => {
+    const q = liveQuotes[order.id];
+    if (!q) return true; // keep if no quote
+    
+    let executed = false;
+    if (order.type === 'buy' && q.price <= order.price) {
+      executed = true;
+      if (!mockHoldings[order.id]) {
+        mockHoldings[order.id] = { name: order.name, qty: 0, avgPrice: 0 };
+      }
+      const h = mockHoldings[order.id];
+      const cost = order.qty * order.price;
+      const totalCost = (h.qty * h.avgPrice) + cost;
+      h.qty += order.qty;
+      h.avgPrice = totalCost / h.qty;
+    } 
+    else if (order.type === 'sell' && q.price >= order.price) {
+      executed = true;
+      mockCapital += (order.qty * order.price);
+    }
+    
+    if (executed) {
+      pendingChanged = true;
+      mockHistory.push({ time: Date.now(), id: order.id, name: order.name, type: order.type, price: order.price, qty: order.qty });
+      showToast(`[체결완료] ${order.name} ${order.qty}주 지정가 ${order.type === 'buy' ? '구매' : '판매'}!`);
+      return false; // remove from pending
+    }
+    return true; // keep in pending
   });
-}
-function genData(init,tot,r){
-  const c={'1m':30,'3m':90,'1y':365,'all':730}[r]||30;
-  const l=[],d=[];const df=tot-init;
-  for(let i=0;i<=c;i++){l.push(i);d.push(Math.max(0,init+df*(i/c)+(i===c?0:(Math.random()-0.45)*Math.abs(df)*0.06)));}
-  return{labels:l,data:d};
-}
-
-function renderHoldings(){
-  const list=document.getElementById('holdingsList');
-  const h=S.portfolio?.holdings||[];
-  if(!h.length){list.innerHTML='<div class="empty">보유 종목이 없습니다.</div>';return;}
-  list.innerHTML=h.map(x=>{
-    const cls=x.profitPct>=0?'up':'down';const sym=x.market==='kr'?'':(x.currency==='USD'?'$':'$');
-    return`<div class="holding-card" onclick="openDetail('${x.ticker}','${x.market}','${(x.name||x.ticker).replace(/'/g,"\\'")}')">
-      <div class="hc-left"><div class="hc-symbol ${x.market}">${x.ticker.slice(0,2)}</div><div class="hc-info"><div class="hc-ticker">${x.ticker}</div><div class="hc-qty">${x.quantity}주</div></div></div>
-      <div class="hc-right"><div class="hc-eval">${sym}${x.evaluationValue.toLocaleString(undefined,{maximumFractionDigits:2})}</div><div class="hc-profit ${cls}">${x.profitPct>=0?'+':''}${x.profitPct.toFixed(2)}%</div></div>
-    </div>`;
-  }).join('');
-}
-
-// Discover
-async function loadIndices(){
-  try{
-    const d=await api('/api/indices');
-    document.getElementById('indicesGrid').innerHTML=d.filter(m=>m&&m.name).slice(0,6).map(m=>{
-      const cls=m.change>=0?'up':'down';
-      return`<div class="index-card"><div class="ic-name">${m.name}</div><div class="ic-value">${m.value.toLocaleString(undefined,{maximumFractionDigits:0})}</div><div class="ic-change ${cls}">${m.change>=0?'+':''}${m.change.toFixed(2)}%</div></div>`;
-    }).join('');
-  }catch{}
-}
-function switchRankMarket(mkt,btn){
-  S.rankMarket=mkt;
-  document.querySelectorAll('.seg-sm').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  loadRanks();
-}
-async function loadRanks(){
-  try{
-    const r=await api('/api/search?q=&market='+S.rankMarket);
-    const el=document.getElementById('rankTable');
-    el.innerHTML=r.slice(0,10).map((s,i)=>{
-      const cls=(s.changePct||0)>=0?'up':'down';
-      return`<div class="rank-row" onclick="openDetail('${s.ticker}','${s.market}','${(s.name||s.ticker).replace(/'/g,"\\'")}')">
-        <span class="rank-num">${i+1}</span><span class="rank-ticker">${s.ticker}</span><span class="rank-name">${s.name||''}</span>
-        <span class="rank-price">${s.price?.toLocaleString()||'-'}</span><span class="rank-chg ${cls}">${(s.changePct||0)>=0?'+':''}${(s.changePct||0).toFixed(2)}%</span>
-      </div>`;
-    }).join('');
-  }catch{}
-}
-
-// Detail
-async function openDetail(ticker,market,name){
-  S.detailStock={ticker,market,name};
-  switchView('detail','snav');
-  document.getElementById('detailName').textContent=name;
-  document.getElementById('detailTicker').textContent=ticker;
-  try{const q=await api('/api/quote?symbol='+ticker+'&market='+market);S.detailStock.price=q.price||50000;S.detailStock.changePct=q.changePct||0;}catch{S.detailStock.price=market==='kr'?50000:150;S.detailStock.changePct=0;}
-  const sym=market==='kr'?'':(S.detailStock.currency==='USD'?'$':'$');
-  const cls=S.detailStock.changePct>=0?'up':'down';
-  document.getElementById('detailPrice').textContent=sym+S.detailStock.price.toLocaleString(undefined,{maximumFractionDigits:2});
-  document.getElementById('detailPrice').className='detail-price '+cls;
-  document.getElementById('detailChange').textContent=(S.detailStock.changePct>=0?'+':'')+S.detailStock.changePct.toFixed(2)+'%';
-  document.getElementById('detailChange').className='detail-change '+cls;
-  S.detailRange='1d';
-  document.querySelectorAll('#viewDetail .r-tab').forEach(b=>b.classList.remove('active'));
-  document.querySelector('#viewDetail .r-tab[data-range="1d"]').classList.add('active');
-  loadDetailChart();
-  loadOrderbook();
-  // Show right panel
-  document.getElementById('rightPanelEmpty').style.display='none';
-  document.getElementById('rightPanelActive').style.display='';
-  document.getElementById('tpPrice').value=S.detailStock.price;
-  updateTradeSummary();
-}
-function switchDetailSub(sub,btn){
-  document.querySelectorAll('.dsub').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('detailChartArea').style.display=sub==='chart'?'':'none';
-  document.getElementById('detailOrderbookArea').style.display=sub==='orderbook'?'':'none';
-}
-function switchDetailRange(r,btn){
-  S.detailRange=r;
-  document.querySelectorAll('#viewDetail .r-tab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  loadDetailChart();
-}
-async function loadDetailChart(){
-  const w=document.getElementById('detailChartWrap');
-  if(S.detailChart){S.detailChart.remove();S.detailChart=null;S.detailSeries=null;}
-  w.innerHTML='';
-  try{
-    const c=await api('/api/chart?symbol='+S.detailStock.ticker+'&range='+S.detailRange+'&market='+S.detailStock.market);
-    const up=S.detailStock.changePct>=0;
-    S.detailChart=LightweightCharts.createChart(w,{width:w.clientWidth,height:280,layout:{background:{color:'transparent'},textColor:'#8B95A1',fontSize:10},grid:{vertLines:{visible:false},horzLines:{visible:false}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:false},crosshair:{mode:0},handleScroll:{vertTouchDrag:false}});
-    S.detailSeries=S.detailChart.addAreaSeries({lineColor:up?'#F04452':'#1570EF',topColor:up?'rgba(240,68,82,0.1)':'rgba(21,112,239,0.1)',bottomColor:'rgba(0,0,0,0)',lineWidth:2,priceLineVisible:false});
-    const d=(c.ohlcv||[]).filter(x=>x.close!=null).map(x=>({time:x.time,value:x.close}));
-    if(d.length)S.detailSeries.setData(d);
-  }catch{}
-}
-
-// Orderbook in right panel
-async function loadOrderbook(){
-  const el=document.getElementById('orderbookPanel');
-  try{
-    const ob=await api('/api/trade/orderbook?ticker='+S.detailStock.ticker+'&market='+S.detailStock.market);
-    const maxV=Math.max(...ob.asks.map(a=>a.volume),...ob.bids.map(b=>b.volume),1);
-    el.innerHTML=`
-      ${[...ob.asks].reverse().map(a=>`<div class="ob-row ask" onclick="document.getElementById('tpPrice').value=${a.price};updateTradeSummary()"><span class="ob-price">${a.price.toLocaleString()}</span><div class="ob-bar-wrap"><div class="ob-bar ask" style="width:${(a.volume/maxV*100)}%"></div></div><span class="ob-vol">${a.volume}</span></div>`).join('')}
-      <div class="ob-center">${ob.price.toLocaleString()}</div>
-      ${ob.bids.map(b=>`<div class="ob-row bid" onclick="document.getElementById('tpPrice').value=${b.price};updateTradeSummary()"><span class="ob-price">${b.price.toLocaleString()}</span><div class="ob-bar-wrap"><div class="ob-bar bid" style="width:${(b.volume/maxV*100)}%"></div></div><span class="ob-vol">${b.volume}</span></div>`).join('')}
-      <div class="ob-strength">체결강도 ${((ob.asks[0]?.volume||1)/(ob.bids[0]?.volume||1)*100).toFixed(1)}%</div>`;
-  }catch{}
-}
-
-// Trading
-function setTradeSide(side,btn){
-  S.tradeSide=side;
-  document.querySelectorAll('.tp-tab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active','buy','sell');
-  btn.className='tp-tab active '+side;
-  document.getElementById('tpSubmitBtn').textContent=side==='buy'?'구매하기':'판매하기';
-  document.getElementById('tpSubmitBtn').className='tp-submit-btn '+side;
-  updateTradeSummary();
-}
-function setTradeType(type,btn){
-  S.tradeType=type;
-  document.querySelectorAll('.tp-seg').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('tpPriceField').style.display=type==='limit'?'':'none';
-  updateTradeSummary();
-}
-function setTradeQtyPct(pct){
-  const p=S.portfolio;if(!p||!S.detailStock)return;
-  const price=parseFloat((document.getElementById('tpPrice').value||'').replace(/,/g,''))||S.detailStock.price;
-  if(price<=0)return;
-  let max=0;
-  if(S.tradeSide==='buy'){max=Math.floor((S.detailStock.market==='kr'?p.krwBalance:(p.usdBalance||0)*S.usdkrw)/price*(pct/100));}
-  else{const h=p.holdings.find(h=>h.ticker===S.detailStock.ticker);max=h?Math.floor(h.quantity*(pct/100)):0;}
-  document.getElementById('tpQty').value=Math.max(1,max);
-  updateTradeSummary();
-}
-function updateTradeSummary(){
-  const price=parseFloat((document.getElementById('tpPrice').value||'').replace(/,/g,''))||(S.detailStock?.price||0);
-  const qty=parseInt((document.getElementById('tpQty').value||'').replace(/,/g,''))||0;
-  const p=S.portfolio;
-  if(!S.detailStock||price<=0||qty<=0||!p){
-    document.getElementById('tradeSummary').style.display='none';return;
+  
+  if (pendingChanged) {
+    setModeStore('capital', mockCapital);
+    setModeStore('holdings', mockHoldings);
+    setModeStore('history', mockHistory);
+    setModeStore('pending', mockPendingOrders);
+    
+    updatePortfolioTotal();
+    if(currentTab === 'holdings') renderHoldings();
+    if(currentTab === 'history') renderHistory();
+    if(activeStock) updateSheetPrice();
   }
-  document.getElementById('tradeSummary').style.display='';
-  const tv=price*qty;const isKR=S.detailStock.market==='kr';const sym=isKR?'':(S.detailStock.currency==='USD'?'$':'$');
-  document.getElementById('tpAvail').textContent=sym+(isKR?Math.round(p.krwBalance).toLocaleString():((p.usdBalance||0)).toFixed(2))+(isKR?'원':'');
-  document.getElementById('tpTotal').textContent=sym+tv.toLocaleString()+(isKR?'원':'');
-}
-async function executeTrade(){
-  if(!S.detailStock){toast('종목을 선택해주세요.');return;}
-  const price=parseFloat((document.getElementById('tpPrice').value||'').replace(/,/g,''))||S.detailStock.price;
-  const qty=parseInt((document.getElementById('tpQty').value||'').replace(/,/g,''));
-  if(!price||!qty||qty<=0){toast('가격과 수량을 입력해주세요.');return;}
-  const btn=document.getElementById('tpSubmitBtn');btn.disabled=true;btn.textContent='처리 중...';
-  try{
-    const r=await api('/api/trade/order',{method:'POST',body:JSON.stringify({accountId:S.acctId,ticker:S.detailStock.ticker,market:S.detailStock.market,type:'stock',side:S.tradeSide,price,quantity:qty,mode:S.acct?.type||'realtime'})});
-    if(r.ok){toast(S.detailStock.ticker+' '+qty+'주 '+(S.tradeSide==='buy'?'매수':'매도')+' '+(r.executed?'체결 완료':'접수 완료'));loadAll();}
-  }catch(e){toast(e.message);}
-  btn.disabled=false;btn.textContent=S.tradeSide==='buy'?'구매하기':'판매하기';
 }
 
-// History
-async function loadHistoryView(){
-  const el=document.getElementById('historyList');
-  try{
-    const h=await api('/api/trade/history/'+S.acctId);
-    if(!h.length){el.innerHTML='<div class="empty">거래 내역이 없습니다.</div>';return;}
-    let filtered=h;if(S.historyFilter!=='all')filtered=h.filter(x=>x.market===S.historyFilter||(S.historyFilter==='kr'&&x.ticker.match(/^\d/)));
-    if(!filtered.length){el.innerHTML='<div class="empty">해당 필터의 내역이 없습니다.</div>';return;}
-    el.innerHTML=filtered.slice(0,20).map(x=>{
-      const b=x.side==='buy',t=new Date(x.timestamp).toLocaleString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-      return`<div class="hist-item"><div class="hist-dot ${b?'buy':'sell'}">${b?'B':'S'}</div><div class="hist-info"><div class="hist-ticker">${x.ticker} ${b?'매수':'매도'}</div><div class="hist-detail">${x.quantity}주 ${x.price.toLocaleString()}원</div></div><div class="hist-end"><div class="hist-amt">${b?'-':'+'}${Math.abs(x.amount).toLocaleString()}원</div><div class="hist-time">${t}</div></div></div>`;
-    }).join('');
-  }catch{el.innerHTML='<div class="empty">불러올 수 없습니다</div>';}
-}
-function switchHistoryFilter(f,btn){
-  S.historyFilter=f;
-  document.querySelectorAll('.seg-sm').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  loadHistoryView();
-}
-
-// Analytics
-async function loadAnalytics(){
-  try{
-    const h=await api('/api/trade/history/'+S.acctId);
-    const divs=await api('/api/trade/dividends/'+S.acctId);
-    const sellProfit=0;const divTotal=divs.reduce((s,d)=>s+(d.currency==='KRW'?d.amount:d.amount*S.usdkrw),0);
-    const total=Math.round(sellProfit+divTotal);
-    document.getElementById('analyticsMonth').textContent='실현수익: +'+total.toLocaleString()+'원';
-    document.getElementById('analyticsDetail').innerHTML=`
-      <div class="ad-row"><span class="ad-label">판매수익</span><span class="ad-value">${sellProfit.toLocaleString()}원</span></div>
-      <div class="ad-row"><span class="ad-label">배당금</span><span class="ad-value positive">+${Math.round(divTotal).toLocaleString()}원</span></div>
-      <div class="ad-row"><span class="ad-label">채권 이자</span><span class="ad-value">0원</span></div>`;
-    // chart
-    const cvs=document.getElementById('analyticsChart');
-    if(S.analyticsChart)S.analyticsChart.destroy();
-    if(cvs&&h.length){const pts=genData(0,total,'1m');S.analyticsChart=new Chart(cvs.getContext('2d'),{type:'line',data:{labels:pts.labels,datasets:[{data:pts.data,borderColor:'#1570EF',backgroundColor:'rgba(21,112,239,0.03)',fill:true,tension:0.3,borderWidth:1.5,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}});}
-  }catch{}
-}
-function switchAnalyticsRange(r,btn){
-  document.querySelectorAll('#viewAnalytics .r-tab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  loadAnalytics();
+// --- Data Fetching ---
+async function fetchMarketData() {
+  try {
+    const res = await fetch('/api/stock/top');
+    const data = await res.json();
+    data.forEach(q => {
+      // In virtual mode, we only fetch once to initialize, then let the algorithm take over
+      if (currentMode === 'virtual' && liveQuotes[q.id]) {
+        return; 
+      }
+      liveQuotes[q.id] = q;
+    });
+    
+    if (currentMode === 'realtime') {
+      processPendingOrders();
+      updatePortfolioTotal();
+      if(currentTab === 'holdings') renderHoldings();
+      if(currentTab === 'shopping') renderShopping();
+      if(activeStock) updateSheetPrice();
+    }
+  } catch (e) { console.error('Fetch error', e); }
 }
 
-// Sidebar search
-let _st=null;
-async function onSidebarSearch(q){
-  clearTimeout(_st);
-  const res=document.getElementById('sidebarSearchResults');
-  if(!q.trim()){res.classList.remove('open');return;}
-  _st=setTimeout(async()=>{
-    try{
-      const r=await api('/api/search?q='+encodeURIComponent(q.trim())+'&market=all');
-      res.innerHTML=r.slice(0,8).map(s=>`<div class="ssr-item" onclick="openDetail('${s.ticker}','${s.market}','${s.name.replace(/'/g,"\\'")}')">${s.ticker} - ${s.name}</div>`).join('');
-      res.classList.add('open');
-    }catch{}
-  },200);
-}
-document.addEventListener('click',e=>{if(!e.target.closest('.sidebar-search'))document.getElementById('sidebarSearchResults').classList.remove('open');});
+// --- Virtual Price Algorithm (단기 연습모드 호가 변동 엔진) ---
+setInterval(() => {
+  if (currentMode !== 'virtual') return;
+  
+  let changed = false;
+  Object.keys(liveQuotes).forEach(id => {
+    const q = liveQuotes[id];
+    // Random Walk: -1% to +1% every 2 seconds
+    const fluctuation = (Math.random() - 0.5) * 0.02; 
+    const oldPrice = q.price;
+    q.price = Math.round(q.price * (1 + fluctuation));
+    if (q.price !== oldPrice) changed = true;
+    
+    // Update changePct roughly based on new price
+    if (!q._basePrice) q._basePrice = oldPrice / (1 + (q.changePct / 100));
+    q.changePct = ((q.price - q._basePrice) / q._basePrice) * 100;
+  });
+  
+  if (changed) {
+    processPendingOrders();
+    updatePortfolioTotal();
+    if(currentTab === 'holdings') renderHoldings();
+    if(currentTab === 'shopping') renderShopping();
+    if(activeStock) updateSheetPrice();
+  }
+}, 2000);
 
-// Account sheets
-function openAccountSheet(){
-  document.getElementById('acctOverlay').classList.add('open');
-  document.getElementById('acctSheet').classList.add('open');
-  renderAcctSheet();
-}
-function closeAccountSheet(){document.getElementById('acctOverlay').classList.remove('open');document.getElementById('acctSheet').classList.remove('open');}
-function renderAcctSheet(){
-  document.querySelectorAll('.atype-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===S.acctType));
-  const list=document.getElementById('acctSheetList');
-  const ofType=S.accounts.filter(a=>a.type===S.acctType);
-  list.innerHTML=ofType.map(a=>`<div class="acct-item2 ${a.id===S.acctId?'active':''}" onclick="switchAcct('${a.id}')"><span class="acct-item2-name">${a.label||'계좌'+a.id.slice(-4)}</span><span class="acct-item2-cap">${(a.initialCapital/10000).toFixed(0)}만원</span></div>`).join('');
-}
-async function switchAcct(id){S.acctId=id;S.acct=S.accounts.find(a=>a.id===id);closeAccountSheet();loadAll();startPoll();}
-async function switchAcctType(type,btn){
-  S.acctType=type;document.querySelectorAll('.atype-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
-  const o=S.accounts.filter(a=>a.type===type);if(o.length){S.acctId=o[0].id;S.acct=o[0];}
-  renderAcctSheet();loadAll();startPoll();
-}
-function openNewAcctSheet(){document.getElementById('newAcctOverlay').classList.add('open');document.getElementById('newAcctSheet').classList.add('open');}
-function closeNewAcctSheet(){document.getElementById('newAcctOverlay').classList.remove('open');document.getElementById('newAcctSheet').classList.remove('open');}
-async function createNewAccount(){
-  const tBtn=document.querySelector('#newAcctSheet .atype-btn.active');
-  const cBtn=document.querySelector('#newAcctSheet .cap-btn.active');
-  const type=tBtn?.dataset.mtype||'realtime';
-  const cap=parseInt(cBtn?.dataset.cap||50000000);
-  try{const r=await api('/api/trade/accounts',{method:'POST',body:JSON.stringify({type,initialCapital:cap})});await loadAccts();S.acctType=type;S.acctId=r.account.id;S.acct=r.account;closeNewAcctSheet();closeAccountSheet();loadAll();startPoll();toast('계좌 개설 완료');}catch(e){toast(e.message);}
+// --- Rendering ---
+function renderHoldings() {
+  const list = document.getElementById('holdingsList');
+  const keys = Object.keys(mockHoldings);
+  if(keys.length === 0) {
+    list.innerHTML = `<div class="empty-state">보유중인 주식이 없습니다.</div>`;
+    return;
+  }
+  
+  // Prepare data for sorting
+  let holdingsData = keys.map(id => {
+    const holding = mockHoldings[id];
+    const quote = liveQuotes[id] || { price: holding.avgPrice, changePct: 0 };
+    const currentVal = holding.qty * quote.price;
+    const returnPct = ((quote.price - holding.avgPrice) / holding.avgPrice * 100);
+    const returnAmt = currentVal - (holding.qty * holding.avgPrice);
+    return { id, holding, quote, currentVal, returnPct, returnAmt };
+  }).filter(d => d.holding.qty > 0);
+  
+  // Sort
+  if (sortOrder === 'return_desc') holdingsData.sort((a,b) => b.returnPct - a.returnPct);
+  else if (sortOrder === 'return_asc') holdingsData.sort((a,b) => a.returnPct - b.returnPct);
+  else if (sortOrder === 'val_desc') holdingsData.sort((a,b) => b.currentVal - a.currentVal);
+  
+  let html = '';
+  holdingsData.forEach(d => {
+    const colorClass = d.returnPct > 0 ? 'color-red' : (d.returnPct < 0 ? 'color-blue' : '');
+    
+    // Formatting based on displayCurrency
+    const isUsd = displayCurrency === 'usd';
+    const rate = isUsd ? 1/1350 : 1;
+    const sym = isUsd ? '$' : '';
+    const unit = isUsd ? '' : '원';
+    
+    // Right side top/bottom display logic
+    let topText, btmText;
+    if (displayMode === 'current') {
+      topText = `${sym}${(d.quote.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}`;
+      btmText = `${d.returnPct > 0 ? '+' : ''}${d.returnPct.toFixed(2)}%`;
+    } else {
+      topText = `${sym}${(d.currentVal * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}`;
+      btmText = `${d.returnPct > 0 ? '+' : ''}${d.returnPct.toFixed(2)}% (${sym}${(d.returnAmt * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit})`;
+    }
+    
+    html += `
+      <div onclick="openOrderSheet('${d.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <div style="min-width:0;flex:1;margin-right:12px">
+          <div style="font-weight:700;font-size:16px;color:var(--text);margin-bottom:2px">${d.holding.name}</div>
+          <div style="font-size:13px;color:var(--muted)">${d.holding.qty}주 @ ${sym}${(d.holding.avgPrice * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:16px;color:${colorClass ? 'var(--' + (d.returnPct > 0 ? 'red' : 'blue') + ')' : 'var(--text)'}">${topText}</div>
+          <div style="font-size:13px;color:${colorClass ? 'var(--' + (d.returnPct > 0 ? 'red' : 'blue') + ')' : 'var(--muted)'};font-weight:600">${btmText}</div>
+        </div>
+      </div>
+    `;
+  });
+  list.innerHTML = html || `<div class="empty-state">보유중인 주식이 없습니다.</div>`;
 }
 
-// FX
-function openFXSheet(){document.getElementById('fxOverlay').classList.add('open');document.getElementById('fxSheet').classList.add('open');document.getElementById('fxRateDisp').textContent=S.usdkrw.toLocaleString();document.getElementById('fxAmount').value='';updateFXPreview();}
-function closeFXSheet(){document.getElementById('fxOverlay').classList.remove('open');document.getElementById('fxSheet').classList.remove('open');}
-function setFXDir(dir,btn){S.fxDir=dir;document.querySelectorAll('#fxSheet .atype-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.getElementById('fxLabel').textContent=dir==='krw2usd'?'원화 금액':'달러 금액';updateFXPreview();}
-function updateFXPreview(){
-  const r=S.usdkrw;const s=0.005;const el=document.getElementById('fxPreview');
-  if(S.fxDir==='krw2usd'){const krw=parseInt((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;el.textContent=krw<=0?'금액을 입력하세요':krw.toLocaleString()+'원 -> $'+(krw/(r*(1+s))).toFixed(2);}
-  else{const usd=parseFloat((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;el.textContent=usd<=0?'금액을 입력하세요':'$'+usd.toFixed(2)+' -> '+Math.round(usd*r*(1-s)).toLocaleString()+'원';}
+let lastSearchResults = null;
+
+function renderShopping() {
+  const list = document.getElementById('searchList');
+  const input = document.getElementById('mockSearchInput');
+  
+  if (input && input.value.trim() && lastSearchResults) {
+    renderSearchResults(lastSearchResults);
+    return;
+  }
+  
+  let html = '<div class="section-title" style="font-weight:700; margin-bottom:12px;">인기 종목</div>';
+  
+  const isUsd = displayCurrency === 'usd';
+  const rate = isUsd ? 1/1350 : 1;
+  const sym = isUsd ? '$' : '';
+  const unit = isUsd ? '' : '원';
+
+  const stocks = Object.values(liveQuotes).slice(0, 15); // Show top stocks in default view
+  stocks.forEach(q => {
+    const colorClass = q.changePct > 0 ? 'color-red' : (q.changePct < 0 ? 'color-blue' : '');
+    html += `
+      <div onclick="openOrderSheet('${q.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <div style="min-width:0;flex:1;margin-right:12px">
+          <div style="font-weight:700;font-size:16px;color:var(--text);margin-bottom:2px">${q.name}</div>
+          <div style="font-size:13px;color:var(--muted)">${q.id}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:16px;color:var(--text)">${sym}${(q.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
+          <div style="font-size:13px;color:${colorClass ? 'var(--' + (q.changePct > 0 ? 'red' : 'blue') + ')' : 'var(--muted)'};font-weight:600">${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%</div>
+        </div>
+      </div>
+    `;
+  });
+  list.innerHTML = html;
 }
-function executeFX(){
-  const p=S.portfolio;if(!p)return;const r=S.usdkrw;const s=0.005;
-  if(S.fxDir==='krw2usd'){const krw=parseInt((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;if(krw<=0||p.krwBalance<krw){toast('잔액 부족');return;}p.krwBalance-=krw;p.usdBalance=(p.usdBalance||0)+krw/(r*(1+s));toast(krw.toLocaleString()+'원 환전 완료');}
-  else{const usd=parseFloat((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;if(usd<=0||(p.usdBalance||0)<usd){toast('잔액 부족');return;}p.usdBalance-=usd;p.krwBalance+=usd*r*(1-s);toast('$'+usd.toFixed(2)+' 환전 완료');}
-  closeFXSheet();renderHome();renderSidebar();
+
+async function executeMockSearch() {
+  const query = document.getElementById('mockSearchInput').value.trim();
+  if(!query) {
+    lastSearchResults = null;
+    renderShopping();
+    return;
+  }
+  
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    lastSearchResults = data;
+    
+    // Add to liveQuotes so the algorithm can start fluctuating them and they can be traded
+    data.forEach(item => {
+      if(!liveQuotes[item.id]) {
+         liveQuotes[item.id] = {
+           id: item.id,
+           name: item.name,
+           price: parseFloat(item.price.toString().replace(/,/g, '')) || 0,
+           changePct: parseFloat(item.changePct) || 0
+         };
+      }
+    });
+    
+    renderSearchResults(data);
+  } catch(e) {
+    console.error('Search failed', e);
+  }
+}
+
+function renderSearchResults(data) {
+  const list = document.getElementById('searchList');
+  let html = '<div class="section-title" style="font-weight:700; margin-bottom:12px;">검색 결과</div>';
+  
+  if(data.length === 0) {
+    html += '<div class="empty-state">검색 결과가 없습니다.</div>';
+    list.innerHTML = html;
+    return;
+  }
+
+  const isUsd = displayCurrency === 'usd';
+  const rate = isUsd ? 1/1350 : 1;
+  const sym = isUsd ? '$' : '';
+  const unit = isUsd ? '' : '원';
+
+  data.forEach(q => {
+    // We use liveQuotes so that they fluctuate if in virtual mode
+    const lq = liveQuotes[q.id];
+    if(!lq) return;
+    const colorClass = lq.changePct > 0 ? 'color-red' : (lq.changePct < 0 ? 'color-blue' : '');
+    html += `
+      <div onclick="openOrderSheet('${q.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <div style="min-width:0;flex:1;margin-right:12px">
+          <div style="font-weight:700;font-size:16px;color:var(--text);margin-bottom:2px">${q.name}</div>
+          <div style="font-size:13px;color:var(--muted)">${q.id}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:16px;color:var(--text)">${sym}${(lq.price * rate).toLocaleString(undefined, {maximumFractionDigits: isUsd?2:0})}${unit}</div>
+          <div style="font-size:13px;color:${colorClass ? 'var(--' + (lq.changePct > 0 ? 'red' : 'blue') + ')' : 'var(--muted)'};font-weight:600">${lq.changePct > 0 ? '+' : ''}${lq.changePct.toFixed(2)}%</div>
+        </div>
+      </div>
+    `;
+  });
+  list.innerHTML = html;
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  
+  if (currentSubTab === 'dividends') {
+    if(mockDividends.length === 0) {
+      list.innerHTML = `<div class="empty-state">배당금 내역이 없습니다.</div>`;
+      return;
+    }
+    let html = '<div style="font-size:15px; font-weight:700; color:var(--text); margin-bottom:16px; padding:0 20px;">입금된 배당금</div>';
+    [...mockDividends].reverse().forEach(d => {
+      const dateObj = new Date(d.time);
+      const dateStr = `${dateObj.getMonth() + 1}.${dateObj.getDate()}`;
+      html += `
+        <div style="display:flex; padding:12px 20px; align-items:flex-start;">
+          <div style="width:50px; font-size:15px; font-weight:600; color:var(--text); margin-top:2px;">${dateStr}</div>
+          <div style="flex:1;">
+            <div style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:4px;">${d.name}</div>
+            <div style="font-size:14px; font-weight:500; color:var(--up-color);">+${d.amount.toLocaleString()}원 배당 입금</div>
+          </div>
+        </div>
+      `;
+    });
+    list.innerHTML = html;
+    return;
+  }
+
+  // Orders Tab
+  let html = '';
+  
+  if (mockPendingOrders.length > 0) {
+    html += '<div style="font-size:15px; font-weight:700; color:var(--text); margin-bottom:16px; padding:0 20px;">대기중인 주문</div>';
+    [...mockPendingOrders].reverse().forEach(p => {
+      const typeStr = p.type === 'buy' ? '구매 대기' : '판매 대기';
+      const dateObj = new Date(p.time);
+      const dateStr = `${dateObj.getMonth() + 1}.${dateObj.getDate()}`;
+      const priceStr = p.price > 50000 ? `${p.price.toLocaleString()}원` : `$${(p.price/1350).toFixed(2)}`;
+      
+      html += `
+        <div style="display:flex; padding:12px 20px; align-items:flex-start; opacity: 0.7;">
+          <div style="width:50px; font-size:15px; font-weight:600; color:var(--text); margin-top:2px;">${dateStr}</div>
+          <div style="flex:1;">
+            <div style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:4px;">${p.name} <span style="font-size:12px; font-weight:500; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; margin-left:4px;">대기중</span></div>
+            <div style="font-size:14px; font-weight:500; color:var(--muted);">${priceStr} ${typeStr}</div>
+          </div>
+          <button onclick="cancelPendingOrder(${p.time})" style="padding:6px 12px; background:var(--surface2); color:var(--red); border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer;">취소</button>
+        </div>
+      `;
+    });
+    html += '<div style="height:1px; background:var(--border); margin:16px 20px;"></div>';
+  }
+
+  if(mockHistory.length === 0 && mockPendingOrders.length === 0) {
+    list.innerHTML = `<div class="empty-state">거래 내역이 없습니다.</div>`;
+    return;
+  }
+  
+  if (mockHistory.length > 0) {
+    html += '<div style="font-size:15px; font-weight:700; color:var(--text); margin-bottom:16px; padding:0 20px;">완료된 주문</div>';
+    [...mockHistory].reverse().forEach(h => {
+      const typeStr = h.type === 'buy' ? '구매' : '판매';
+      const dateObj = new Date(h.time);
+      const dateStr = `${dateObj.getMonth() + 1}.${dateObj.getDate()}`;
+      const priceStr = h.price > 50000 ? `${h.price.toLocaleString()}원` : `$${(h.price/1350).toFixed(2)}`;
+      
+      html += `
+        <div style="display:flex; padding:12px 20px; align-items:flex-start;">
+          <div style="width:50px; font-size:15px; font-weight:600; color:var(--text); margin-top:2px;">${dateStr}</div>
+          <div style="flex:1;">
+            <div style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:4px;">${h.name}</div>
+            <div style="font-size:14px; font-weight:500; color:var(--muted);">${priceStr} ${typeStr} 완료</div>
+          </div>
+        </div>
+      `;
+    });
+  }
+  list.innerHTML = html;
+}
+
+function cancelPendingOrder(time) {
+  const orderIdx = mockPendingOrders.findIndex(p => p.time === time);
+  if (orderIdx === -1) return;
+  const order = mockPendingOrders[orderIdx];
+  
+  // Refund reserved cash or stocks
+  if (order.type === 'buy') {
+    mockCapital += (order.qty * order.price);
+    setModeStore('capital', mockCapital);
+  } else {
+    if (!mockHoldings[order.id]) mockHoldings[order.id] = { name: order.name, qty: 0, avgPrice: 0 };
+    mockHoldings[order.id].qty += order.qty;
+    setModeStore('holdings', mockHoldings);
+  }
+  
+  mockPendingOrders.splice(orderIdx, 1);
+  setModeStore('pending', mockPendingOrders);
+  updatePortfolioTotal();
+  renderHistory();
+  showToast('대기 주문이 취소되었습니다.');
+}
+
+function simulateDividend() {
+  const keys = Object.keys(mockHoldings);
+  if (keys.length === 0) return alert('보유중인 주식이 없습니다.');
+  
+  let totalDiv = 0;
+  keys.forEach(id => {
+    const h = mockHoldings[id];
+    if(h.qty <= 0) return;
+    const q = liveQuotes[id] || { price: h.avgPrice };
+    const stockVal = h.qty * q.price;
+    const divAmt = Math.floor(stockVal * (Math.random() * 0.05 + 0.01)); // 1% ~ 6% dividend
+    totalDiv += divAmt;
+    mockDividends.push({ time: Date.now(), id, name: h.name, amount: divAmt });
+  });
+  
+  mockCapital += totalDiv;
+  setModeStore('capital', mockCapital);
+  setModeStore('dividends', mockDividends);
+  updatePortfolioTotal();
+  
+  closeSettingsSheet();
+  alert(`총 ${totalDiv.toLocaleString()}원의 배당금이 예수금으로 지급되었습니다!`);
+  
+  if (currentTab === 'history') {
+    switchSubTab('dividends');
+  }
+}
+
+function updatePortfolioTotal() {
+  let stockVal = 0;
+  let totalCost = 0;
+  
+  for(let id in mockHoldings) {
+    const h = mockHoldings[id];
+    if(h.qty <= 0) continue;
+    const q = liveQuotes[id] || { price: h.avgPrice };
+    stockVal += h.qty * q.price;
+    totalCost += h.qty * h.avgPrice;
+  }
+  
+  const totalAsset = mockCapital + stockVal;
+  const returnAmt = totalAsset - INIT_CAPITAL;
+  const returnPct = ((returnAmt / INIT_CAPITAL) * 100).toFixed(2);
+  
+  const isUsd = displayCurrency === 'usd';
+  const rate = isUsd ? 1/1350 : 1;
+  const sym = isUsd ? '$' : '';
+  const unit = isUsd ? '' : '원';
+  
+  // Total Asset (내 투자)
+  document.getElementById('portfolioTotal').innerText = `${sym}${Math.floor(totalAsset * rate).toLocaleString()}${unit}`;
+  
+  // Return text like: "+217,339원 (14.1%)"
+  const retEl = document.getElementById('portfolioReturn');
+  const sign = returnAmt > 0 ? '+' : '';
+  retEl.innerText = `${sign}${sym}${Math.floor(returnAmt * rate).toLocaleString()}${unit} (${sign}${returnPct}%)`;
+  retEl.className = `portfolio-return ${returnAmt > 0 ? 'color-red' : (returnAmt < 0 ? 'color-blue' : '')}`;
+  
+  // Balance Cards
+  document.getElementById('portfolioCashKrw').innerText = `${Math.floor(mockCapital).toLocaleString()}원`;
+  document.getElementById('portfolioCashUsd').innerText = `$${(mockCapital / 1350).toFixed(2)}`;
+  
+  // Account Name Update
+  const accNameEl = document.getElementById('currentAccountName');
+  if (accNameEl) accNameEl.innerText = mockMode === 'virtual' ? '단기 연습계좌' : '실전 롱텀계좌';
+}
+
+// --- Bottom Sheet Logic ---
+function openOrderSheet(id) {
+  const stock = MOCK_STOCKS.find(s => s.id === id);
+  if(!stock) return;
+  activeStock = stock;
+  
+  document.getElementById('orderStockName').innerText = stock.name;
+  if(stock.icon) {
+    document.getElementById('orderStockIcon').src = stock.icon;
+    document.getElementById('orderStockIcon').style.display = 'block';
+  } else {
+    document.getElementById('orderStockIcon').style.display = 'none';
+  }
+  
+  switchOrderType('buy');
+  document.getElementById('orderAmountInput').value = '';
+  document.getElementById('estimatedQty').innerText = '예상 수량: 0주';
+  
+  updateSheetPrice();
+  renderOrderBook(); // Render fake order book
+  document.getElementById('orderSheetOverlay').classList.add('open');
+}
+
+function closeOrderSheet(e) {
+  if(e && e.target !== document.getElementById('orderSheetOverlay')) return;
+  document.getElementById('orderSheetOverlay').classList.remove('open');
+  activeStock = null;
+}
+
+function updateSheetPrice() {
+  if(!activeStock) return;
+  const q = liveQuotes[activeStock.id] || activeStock;
+  document.getElementById('orderStockPrice').innerText = `${q.price.toLocaleString()}원`;
+  const chgEl = document.getElementById('orderStockChange');
+  chgEl.innerText = `${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%`;
+  chgEl.className = `sheet-change ${q.changePct > 0 ? 'color-red' : (q.changePct < 0 ? 'color-blue' : '')}`;
+}
+
+function switchOrderType(type) {
+  orderType = type;
+  document.getElementById('btnOrderBuy').classList.toggle('active', type === 'buy');
+  document.getElementById('btnOrderSell').classList.toggle('active', type === 'sell');
+  
+  const btn = document.getElementById('btnExecuteOrder');
+  btn.innerText = type === 'buy' ? '구매하기' : '판매하기';
+  btn.className = `toss-btn primary ${type === 'buy' ? 'bg-red' : 'bg-blue'}`;
+  if(type==='sell') btn.style.background = 'var(--blue)';
+  else btn.style.background = 'var(--red)';
+}
+
+function formatOrderInput(el) {
+  let val = el.value.replace(/[^0-9]/g, '');
+  if(!val) {
+    orderAmountString = '0';
+    el.value = '';
+    document.getElementById('estimatedQty').innerText = `예상 수량: 0주`;
+    return;
+  }
+  orderAmountString = val;
+  el.value = parseInt(val).toLocaleString();
+  
+  if(activeStock) {
+    const qty = Math.floor(parseInt(val) / activeStock.price);
+    document.getElementById('estimatedQty').innerText = `예상 수량: ${qty}주`;
+  }
+}
+
+function addOrderAmount(amt) {
+  let current = parseInt(orderAmountString) || 0;
+  if(amt === 'max') {
+    if(orderType === 'buy') {
+      current = Math.floor(mockCapital);
+    } else {
+      const h = mockHoldings[activeStock.id];
+      current = h ? Math.floor(h.qty * activeStock.price) : 0;
+    }
+  } else {
+    current += amt;
+  }
+  
+  const input = document.getElementById('orderAmountInput');
+  input.value = current.toString();
+  formatOrderInput(input);
+}
+
+function executeOrder() {
+  if(!activeStock) return;
+  const amt = parseInt(orderAmountString) || 0;
+  if(amt <= 0) {
+    showToast('금액을 입력해주세요.');
+    return;
+  }
+  
+  const price = activeStock.price;
+  const qty = Math.floor(amt / price);
+  if(qty <= 0) {
+    showToast('해당 금액으로는 1주도 살 수 없습니다.');
+    return;
+  }
+  
+  if(orderType === 'buy') {
+    const cost = qty * price;
+    if(cost > mockCapital) {
+      showToast('예수금이 부족합니다.');
+      return;
+    }
+    
+    mockCapital -= cost;
+    if(!mockHoldings[activeStock.id]) {
+      mockHoldings[activeStock.id] = { name: activeStock.name, qty: 0, avgPrice: 0 };
+    }
+    const h = mockHoldings[activeStock.id];
+    const totalCost = (h.qty * h.avgPrice) + cost;
+    h.qty += qty;
+    h.avgPrice = totalCost / h.qty;
+    
+    mockHistory.push({ time: Date.now(), id: activeStock.id, name: activeStock.name, type: 'buy', price, qty });
+    showToast(`${activeStock.name} ${qty}주 구매 완료!`);
+    
+  } else {
+    const h = mockHoldings[activeStock.id];
+    if(!h || h.qty < qty) {
+      showToast('보유 주식이 부족합니다.');
+      return;
+    }
+    
+    const revenue = qty * price;
+    mockCapital += revenue;
+    h.qty -= qty;
+    if(h.qty === 0) delete mockHoldings[activeStock.id];
+    
+    mockHistory.push({ time: Date.now(), id: activeStock.id, name: activeStock.name, type: 'sell', price, qty });
+    showToast(`${activeStock.name} ${qty}주 판매 완료!`);
+  }
+  
+  setStore('capital', mockCapital);
+  setStore('holdings', mockHoldings);
+  setModeStore('capital', mockCapital);
+  setModeStore('holdings', mockHoldings);
+  setModeStore('history', mockHistory);
+  
+  closeOrderSheet();
+  updatePortfolioTotal();
+  if(currentTab === 'holdings') renderHoldings();
+  if(currentTab === 'history') renderHistory();
+}
+
+// --- Settings ---
+function toggleSettingsDrawer() {
+  document.getElementById('settingsSheetOverlay').classList.add('open');
+}
+function closeSettingsSheet(e) {
+  if(e && e.target !== document.getElementById('settingsSheetOverlay')) return;
+  document.getElementById('settingsSheetOverlay').classList.remove('open');
+}
+function resetMockData() {
+  if(!confirm('초기 투자금 1,000만원으로 리셋하시겠습니까? (현재 모드만 초기화됩니다)')) return;
+  mockCapital = INIT_CAPITAL;
+  mockHoldings = {};
+  mockHistory = [];
+  mockDividends = [];
+  mockPendingOrders = [];
+  setModeStore('capital', mockCapital);
+  setModeStore('holdings', mockHoldings);
+  setModeStore('history', mockHistory);
+  setModeStore('dividends', mockDividends);
+  setModeStore('pending', mockPendingOrders);
+  updatePortfolioTotal();
+  if(currentTab === 'holdings') renderHoldings();
+  if(currentTab === 'history') renderHistory();
+  closeSettingsSheet();
+  showToast('현재 모드 초기화 완료');
+}
+
+function clearAllData() {
+  if(!confirm('모든 모드의 모의투자 데이터를 완전히 삭제하시겠습니까?')) return;
+  const keys = Object.keys(localStorage);
+  for (const k of keys) {
+    if (k.startsWith('mock_')) {
+      localStorage.removeItem(k);
+    }
+  }
+  window.location.reload();
+}
+
+// --- Utilities ---
+let toastTimeout;
+function showToast(msg) {
+  const t = document.getElementById('toastMsg');
+  t.innerText = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+let mockLimitPrice = 0;
+
+function setMockLimitPrice(p) {
+  mockLimitPrice = p;
+  const input = document.getElementById('orderAmountInput');
+  if (input) {
+    // Usually in Toss, clicking an orderbook row might set the limit price, but here we just have an amount input
+    // To keep it simple, we just re-render to show selection
+    renderOrderBook();
+  }
+}
+
+function renderOrderBook() {
+  if (!activeStock) return;
+  const currentPrice = (liveQuotes[activeStock.id] || activeStock).price;
+  const tickSize = currentPrice > 100000 ? 500 : (currentPrice > 10000 ? 50 : 5);
+  
+  const ob = document.getElementById('mockOrderBook');
+  if (!ob) return;
+
+  let html = '';
+  // 5 Sell Levels
+  for (let i = 5; i >= 1; i--) {
+    const p = currentPrice + (i * tickSize);
+    const vol = Math.floor(Math.random() * 5000) + 100;
+    const isSelected = p === mockLimitPrice;
+    html += `
+      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--blue); position:relative; overflow:hidden;">
+        <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((vol/5000)*100, 100)}%; background:rgba(49, 130, 246, 0.08); z-index:0;"></div>
+        <span style="position:relative; z-index:1; font-weight:700;">${p.toLocaleString()}</span>
+        <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${vol.toLocaleString()}</span>
+      </div>
+    `;
+  }
+  
+  // Current Price
+  html += `
+    <div style="display:flex; justify-content:space-between; padding:12px 12px; background:var(--surface2); border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin:4px 0;">
+      <span style="color:var(--text); font-weight:800; font-size:15px;">${currentPrice.toLocaleString()} (현재가)</span>
+      <span style="color:var(--text); opacity:0.5; font-weight:700;">-</span>
+    </div>
+  `;
+
+  // 5 Buy Levels
+  for (let i = 1; i <= 5; i++) {
+    const p = currentPrice - (i * tickSize);
+    const vol = Math.floor(Math.random() * 5000) + 100;
+    const isSelected = p === mockLimitPrice;
+    html += `
+      <div onclick="setMockLimitPrice(${p})" style="display:flex; justify-content:space-between; padding:10px 12px; cursor:pointer; background:${isSelected ? 'var(--bg)' : 'transparent'}; color:var(--red); position:relative; overflow:hidden;">
+        <div style="position:absolute; right:0; top:0; bottom:0; width:${Math.min((vol/5000)*100, 100)}%; background:rgba(240, 68, 82, 0.08); z-index:0;"></div>
+        <span style="position:relative; z-index:1; font-weight:700;">${p.toLocaleString()}</span>
+        <span style="position:relative; z-index:1; opacity:0.6; font-weight:600;">${vol.toLocaleString()}</span>
+      </div>
+    `;
+  }
+  
+  ob.innerHTML = html;
 }
