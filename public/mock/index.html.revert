@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache">
+<title>StockLens 모의투자</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
+<link rel="stylesheet" href="style.css?v=6">
+</head>
+<body>
+
+<div class="dashboard" id="appMain">
+
+  <!-- LEFT PANEL: 사이드바 -->
+  <aside class="sidebar">
+    <div class="sidebar-logo" onclick="goToDashboard()">StockLens</div>
+    <div class="sidebar-search">
+      <input type="text" placeholder="종목 검색" oninput="onSidebarSearch(this.value)">
+      <div class="sidebar-search-results" id="sidebarSearchResults"></div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="snav-item active" data-view="home" onclick="switchView('home','snav')">주식 홈</button>
+      <button class="snav-item" data-view="discover" onclick="switchView('discover','snav')">발견</button>
+      <button class="snav-item" data-view="history" onclick="switchView('history','snav')">주문내역</button>
+      <button class="snav-item" data-view="analytics" onclick="switchView('analytics','snav')">자산분석</button>
+    </nav>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-account">
+      <div class="sa-header" onclick="openAccountSheet()">
+        <span class="sa-label">기본계좌</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B95A1" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="sa-balances">
+        <div class="sa-row"><span>원화</span><span id="sKrw">0원</span></div>
+        <div class="sa-row"><span>달러</span><span id="sUsd">$0.00</span></div>
+      </div>
+      <div class="sa-actions">
+        <button class="sa-btn">채우기</button>
+        <button class="sa-btn" onclick="openFXSheet()">환전</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CENTER PANEL -->
+  <main class="main-panel">
+
+    <!-- View: Home (내 투자 현황) -->
+    <div class="view active" id="viewHome">
+      <div class="total-asset-hero">
+        <div class="ta-label">총 평가자산</div>
+        <div class="ta-value" id="totalAsset">0원</div>
+        <div class="ta-meta-row">
+          <span class="ta-profit" id="totalProfit"></span>
+          <span class="ta-rate" id="totalRate"></span>
+          <span class="ta-daily" id="dailyChange"></span>
+        </div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-tabs">
+          <button class="r-tab active" data-range="1m" onclick="switchHomeRange('1m',this)">1개월</button>
+          <button class="r-tab" data-range="3m" onclick="switchHomeRange('3m',this)">3개월</button>
+          <button class="r-tab" data-range="1y" onclick="switchHomeRange('1y',this)">1년</button>
+          <button class="r-tab" data-range="all" onclick="switchHomeRange('all',this)">전체</button>
+        </div>
+        <div class="chart-wrap"><canvas id="homeProfitChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">보유종목</div>
+        <div class="holdings-list" id="holdingsList">
+          <div class="empty">보유 종목이 없습니다.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View: Discover (발견/시장) -->
+    <div class="view" id="viewDiscover" style="display:none;">
+      <div class="indices-grid" id="indicesGrid"></div>
+      <div class="card">
+        <div class="card-title-row">
+          <span>실시간 순위</span>
+          <div class="segmented-sm">
+            <button class="seg-sm active" data-mkt="kr" onclick="switchRankMarket('kr',this)">국내</button>
+            <button class="seg-sm" data-mkt="us" onclick="switchRankMarket('us',this)">해외</button>
+          </div>
+        </div>
+        <div class="rank-table" id="rankTable"></div>
+      </div>
+    </div>
+
+    <!-- View: Stock Detail -->
+    <div class="view" id="viewDetail" style="display:none;">
+      <div class="detail-header">
+        <button class="back-link" onclick="switchView('discover','snav')">← 뒤로</button>
+        <div>
+          <div class="detail-stock-name" id="detailName"></div>
+          <div class="detail-stock-ticker" id="detailTicker"></div>
+        </div>
+      </div>
+      <div class="detail-price-block">
+        <span class="detail-price" id="detailPrice"></span>
+        <span class="detail-change" id="detailChange"></span>
+      </div>
+      <div class="detail-subtabs">
+        <button class="dsub active" data-sub="chart" onclick="switchDetailSub('chart',this)">차트</button>
+        <button class="dsub" data-sub="orderbook" onclick="switchDetailSub('orderbook',this)">호가</button>
+      </div>
+      <div class="detail-chart-area" id="detailChartArea">
+        <div class="chart-tabs">
+          <button class="r-tab active" data-range="1d" onclick="switchDetailRange('1d',this)">1일</button>
+          <button class="r-tab" data-range="1w" onclick="switchDetailRange('1w',this)">1주</button>
+          <button class="r-tab" data-range="1m" onclick="switchDetailRange('1m',this)">1개월</button>
+          <button class="r-tab" data-range="3m" onclick="switchDetailRange('3m',this)">3개월</button>
+          <button class="r-tab" data-range="1y" onclick="switchDetailRange('1y',this)">1년</button>
+        </div>
+        <div class="chart-wrap" id="detailChartWrap"></div>
+      </div>
+      <div class="detail-orderbook-area" id="detailOrderbookArea" style="display:none;"></div>
+    </div>
+
+    <!-- View: History -->
+    <div class="view" id="viewHistory" style="display:none;">
+      <div class="card">
+        <div class="card-title-row">
+          <span>주문내역</span>
+          <div class="segmented-sm">
+            <button class="seg-sm active" data-hmkt="all" onclick="switchHistoryFilter('all',this)">전체</button>
+            <button class="seg-sm" data-hmkt="kr" onclick="switchHistoryFilter('kr',this)">국내</button>
+            <button class="seg-sm" data-hmkt="us" onclick="switchHistoryFilter('us',this)">해외</button>
+          </div>
+        </div>
+        <div class="history-list" id="historyList">
+          <div class="empty">거래 내역이 없습니다.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View: Analytics -->
+    <div class="view" id="viewAnalytics" style="display:none;">
+      <div class="card">
+        <div class="card-title">수익 분석</div>
+        <div class="chart-tabs">
+          <button class="r-tab active" data-range="1m" onclick="switchAnalyticsRange('1m',this)">1개월</button>
+          <button class="r-tab" data-range="3m" onclick="switchAnalyticsRange('3m',this)">3개월</button>
+          <button class="r-tab" data-range="1y" onclick="switchAnalyticsRange('1y',this)">1년</button>
+          <button class="r-tab" data-range="all" onclick="switchAnalyticsRange('all',this)">전체</button>
+        </div>
+        <div class="chart-wrap"><canvas id="analyticsChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title" id="analyticsMonth">실현수익</div>
+        <div class="analytics-detail" id="analyticsDetail"></div>
+      </div>
+      <div class="legal-footer">
+        토스증권에서 제공하는 투자 정보는 단순 참고용이며, 투자 손실에 대한 책임을 지지 않습니다.
+      </div>
+    </div>
+
+  </main>
+
+  <!-- RIGHT PANEL: 호가창 + 주문 터미널 -->
+  <aside class="right-panel" id="rightPanel">
+    <div class="right-panel-empty" id="rightPanelEmpty">
+      <div class="rpe-text">종목을 선택하면<br>호가창과 주문이 표시됩니다</div>
+    </div>
+    <div class="right-panel-active" id="rightPanelActive" style="display:none;">
+      <div class="orderbook-panel" id="orderbookPanel"></div>
+      <div class="trading-panel">
+        <div class="tp-tabs">
+          <button class="tp-tab active" data-side="buy" onclick="setTradeSide('buy',this)">구매</button>
+          <button class="tp-tab" data-side="sell" onclick="setTradeSide('sell',this)">판매</button>
+        </div>
+        <div class="tp-segmented">
+          <button class="tp-seg active" data-otype="limit" onclick="setTradeType('limit',this)">지정가</button>
+          <button class="tp-seg" data-otype="market" onclick="setTradeType('market',this)">시장가</button>
+        </div>
+        <div class="tp-field" id="tpPriceField">
+          <label>주문 가격</label>
+          <input type="text" id="tpPrice" placeholder="가격" oninput="updateTradeSummary()">
+        </div>
+        <div class="tp-field">
+          <label>수량</label>
+          <div class="tp-qty-row">
+            <input type="text" id="tpQty" placeholder="0" oninput="updateTradeSummary()">
+            <span class="tp-unit">주</span>
+          </div>
+          <div class="tp-qty-presets">
+            <button onclick="setTradeQtyPct(10)">10%</button>
+            <button onclick="setTradeQtyPct(25)">25%</button>
+            <button onclick="setTradeQtyPct(50)">50%</button>
+            <button onclick="setTradeQtyPct(100)">최대</button>
+          </div>
+        </div>
+        <div class="tp-summary" id="tradeSummary">
+          <div class="tp-row"><span>주문 가능</span><span id="tpAvail">0원</span></div>
+          <div class="tp-row"><span>총 주문금액</span><span id="tpTotal">0원</span></div>
+        </div>
+        <button class="tp-submit-btn" id="tpSubmitBtn" onclick="executeTrade()">구매하기</button>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- 계좌 관리 바텀시트 -->
+<div class="sheet-overlay" id="acctOverlay" onclick="closeAccountSheet()"></div>
+<div class="bottom-sheet" id="acctSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><h3>계좌 관리</h3><button class="sheet-close" onclick="closeAccountSheet()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B95A1" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="sheet-body">
+    <div class="acct-type-row">
+      <button class="atype-btn active" data-type="realtime" onclick="switchAcctType('realtime',this)">실시간 투자</button>
+      <button class="atype-btn" data-type="virtual" onclick="switchAcctType('virtual',this)">가상 시뮬레이션</button>
+    </div>
+    <div class="acct-sheet-list" id="acctSheetList"></div>
+    <button class="sheet-btn" onclick="openNewAcctSheet()">+ 새 계좌 추가</button>
+  </div>
+</div>
+
+<!-- 새 계좌 바텀시트 -->
+<div class="sheet-overlay" id="newAcctOverlay" onclick="closeNewAcctSheet()"></div>
+<div class="bottom-sheet" id="newAcctSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><h3>새 계좌</h3><button class="sheet-close" onclick="closeNewAcctSheet()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B95A1" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="sheet-body">
+    <div class="acct-type-row">
+      <button class="atype-btn active" data-mtype="realtime" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">실시간</button>
+      <button class="atype-btn" data-mtype="virtual" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">가상</button>
+    </div>
+    <div class="cap-grid">
+      <button class="cap-btn" data-cap="10000000" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">1,000만</button>
+      <button class="cap-btn active" data-cap="50000000" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">5,000만</button>
+      <button class="cap-btn" data-cap="100000000" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">1억</button>
+      <button class="cap-btn" data-cap="1000000000" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">10억</button>
+    </div>
+    <button class="sheet-btn primary" onclick="createNewAccount()">개설하기</button>
+  </div>
+</div>
+
+<!-- 환전 바텀시트 -->
+<div class="sheet-overlay" id="fxOverlay" onclick="closeFXSheet()"></div>
+<div class="bottom-sheet" id="fxSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><h3>환전</h3><button class="sheet-close" onclick="closeFXSheet()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B95A1" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="sheet-body">
+    <div class="fx-rate"><span>1 USD = <b id="fxRateDisp">1,350</b>원</span></div>
+    <div class="acct-type-row">
+      <button class="atype-btn active" data-fxdir="krw2usd" onclick="setFXDir('krw2usd',this)">원화 → 달러</button>
+      <button class="atype-btn" data-fxdir="usd2krw" onclick="setFXDir('usd2krw',this)">달러 → 원화</button>
+    </div>
+    <div class="tp-field"><label id="fxLabel">원화 금액</label><input type="text" id="fxAmount" placeholder="금액" oninput="updateFXPreview()"></div>
+    <div class="fx-preview" id="fxPreview"></div>
+    <button class="sheet-btn primary" onclick="executeFX()">환전하기</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="app.js?v=6"></script>
+</body>
+</html>
