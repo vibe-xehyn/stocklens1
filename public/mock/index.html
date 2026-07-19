@@ -8,255 +8,250 @@
 <meta http-equiv="Expires" content="0">
 <title>StockLens 모의투자</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
-<!-- ── 온보딩 오버레이 ── -->
-<div id="onboardingOverlay" class="onboard-overlay">
-  <div class="onboard-card">
-    <div class="onboard-icon"></div>
-    <h2>StockLens 모의투자</h2>
-    <p>실전 감각을 키우는 가상 투자 플랫폼</p>
-
-    <div class="onboard-section">
-      <div class="onboard-label">계좌 타입 선택</div>
-      <div class="onboard-type-grid">
-        <button class="onboard-type-btn active" data-type="realtime" onclick="selectAcctType('realtime', this)">
-          <div class="ot-title">실시간 투자</div>
-          <div class="ot-desc">실제 시세 데이터 기반<br>정규장 시간에만 거래</div>
-        </button>
-        <button class="onboard-type-btn" data-type="virtual" onclick="selectAcctType('virtual', this)">
-          <div class="ot-title">가상 시뮬레이션</div>
-          <div class="ot-desc">24시간 속도감 있는<br>틱 시뮬레이션 체험</div>
-        </button>
-      </div>
-    </div>
-
-    <div class="onboard-section">
-      <div class="onboard-label">초기 가상 자본금</div>
-      <div class="onboard-capital-grid">
-        <button class="onboard-capital-btn" data-capital="10000000" onclick="selectCapital('10000000', this)">1,000만원</button>
-        <button class="onboard-capital-btn active" data-capital="50000000" onclick="selectCapital('50000000', this)">5,000만원</button>
-        <button class="onboard-capital-btn" data-capital="100000000" onclick="selectCapital('100000000', this)">1억원</button>
-        <button class="onboard-capital-btn" data-capital="1000000000" onclick="selectCapital('1000000000', this)">10억원</button>
-      </div>
-    </div>
-
-    <button class="onboard-create-btn" onclick="createAccount()">
-      계좌 개설하기 →
-    </button>
-  </div>
-</div>
-
-<!-- ── 메인 앱 ── -->
 <div id="appMain" class="app-main" style="display:none;">
-  
+
   <!-- 헤더 -->
   <header class="mock-header">
-    <div class="mock-header-left">
-      <span class="mock-logo" onclick="goToDashboard()">Stock<span>Lens</span> 모의투자</span>
-    </div>
-    <div class="mock-header-center">
-      <div class="account-switcher" id="accountSwitcher">
-        <button class="acct-switch-btn" onclick="toggleAcctDropdown()">
-          <span id="currentAcctLabel">계좌 선택</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="acct-dropdown" id="acctDropdown"></div>
-      </div>
-      <button class="mock-action-btn" onclick="openNewAcctModal()">+ 새 계좌</button>
-      <button class="mock-action-btn danger" onclick="resetAccount()">리셋</button>
-    </div>
-    <div class="mock-header-right">
-      <div class="mock-mode-badge" id="mockModeBadge">실시간</div>
-      <a href="/" class="mock-exit-btn">대시보드로</a>
+    <div class="mock-header-inner">
+      <span class="mock-logo" onclick="goToDashboard()">StockLens</span>
+      <div class="header-spacer"></div>
+      <a href="/" class="mock-exit-btn">종료</a>
     </div>
   </header>
 
-  <!-- 메인 콘텐츠 -->
+  <!-- 계좌 탭 바 -->
+  <div class="account-tab-bar" id="accountTabBar">
+    <button class="acct-tab active" data-type="realtime" onclick="switchAccountType('realtime')">실시간 투자</button>
+    <button class="acct-tab" data-type="virtual" onclick="switchAccountType('virtual')">가상 시뮬레이션</button>
+  </div>
+
+  <!-- 계좌 리스트 (해당 타입의 계좌들) -->
+  <div class="account-list-bar" id="accountListBar"></div>
+
   <main class="mock-content">
-    
-    <!-- 자산 현황 섹션 -->
-    <section class="asset-section">
-      <div class="asset-card total">
-        <div class="asset-card-label">총 평가자산</div>
-        <div class="asset-card-value" id="totalAsset">₩0</div>
-        <div class="asset-card-sub" id="totalProfit"></div>
+
+    <!-- 총 평가자산 -->
+    <section class="total-asset-section">
+      <div class="total-asset-label">총 평가자산</div>
+      <div class="total-asset-value" id="totalAsset">0원</div>
+      <div class="total-asset-change" id="totalChange"></div>
+      <div class="total-asset-sub" id="totalSub"></div>
+    </section>
+
+    <!-- 누적 수익률 차트 -->
+    <section class="chart-section">
+      <div class="chart-tabs-row">
+        <button class="range-tab active" data-range="1w" onclick="switchRange('1w', this)">1주</button>
+        <button class="range-tab" data-range="1m" onclick="switchRange('1m', this)">1개월</button>
+        <button class="range-tab" data-range="3m" onclick="switchRange('3m', this)">3개월</button>
+        <button class="range-tab" data-range="all" onclick="switchRange('all', this)">전체</button>
       </div>
-      <div class="asset-card profit">
-        <div class="asset-card-label">총 손익</div>
-        <div class="asset-card-value" id="totalProfitVal">₩0</div>
-        <div class="asset-card-sub" id="totalProfitPct"></div>
+      <div class="chart-wrap">
+        <canvas id="profitChart"></canvas>
       </div>
     </section>
 
-    <!-- 예수금 섹션 (KRW / USD 분리) -->
-    <section class="balance-section">
-      <div class="balance-card krw" onclick="openFXModal()">
-        <div class="balance-flag"></div>
-        <div class="balance-info">
-          <div class="balance-label">원화 예수금</div>
-          <div class="balance-value" id="krwBalance">₩0</div>
-        </div>
-        <div class="balance-action">환전하기 →</div>
+    <!-- 자산 배분 (파이 차트) -->
+    <section class="allocation-section">
+      <div class="section-title-row">
+        <span class="section-title">자산 배분</span>
       </div>
-      <div class="balance-card usd" onclick="openFXModal()">
-        <div class="balance-flag"></div>
-        <div class="balance-info">
-          <div class="balance-label">달러 예수금</div>
-          <div class="balance-value" id="usdBalance">$0.00</div>
-          <div class="balance-krw" id="usdInKRW">≈ ₩0</div>
+      <div class="allocation-grid">
+        <div class="pie-chart-wrap">
+          <canvas id="allocationPie"></canvas>
         </div>
-        <div class="balance-action">환전하기 →</div>
+        <div class="allocation-legend" id="allocationLegend"></div>
       </div>
     </section>
 
-    <!-- 거래 액션 (매수/매도 버튼) -->
-    <div class="trade-actions">
-      <button class="trade-btn buy" onclick="openOrderSheet('buy')">매수</button>
-      <button class="trade-btn sell" onclick="openOrderSheet('sell')">매도</button>
-    </div>
+    <!-- 예수금 -->
+    <section class="balance-section" id="balanceSection">
+      <div class="balance-row" onclick="openFXModal()">
+        <div class="balance-label-area">
+          <span class="balance-dot krw"></span>
+          <span class="balance-currency">원화 예수금</span>
+        </div>
+        <div class="balance-value-area">
+          <span class="balance-value" id="krwBalance">0원</span>
+          <span class="balance-action">환전</span>
+        </div>
+      </div>
+      <div class="balance-row" onclick="openFXModal()">
+        <div class="balance-label-area">
+          <span class="balance-dot usd"></span>
+          <span class="balance-currency">달러 예수금</span>
+        </div>
+        <div class="balance-value-area">
+          <span class="balance-value" id="usdBalance">$0.00</span>
+          <span class="balance-krw-sub" id="usdInKRW"></span>
+          <span class="balance-action">환전</span>
+        </div>
+      </div>
+    </section>
 
-    <!-- 탭 네비게이션 -->
-    <div class="mock-tabs">
-      <button class="mock-tab active" data-tab="holdings" onclick="switchMockTab('holdings', this)">보유종목</button>
-      <button class="mock-tab" data-tab="history" onclick="switchMockTab('history', this)">거래내역</button>
-      <button class="mock-tab" data-tab="dividends" onclick="switchMockTab('dividends', this)">배당내역</button>
-    </div>
-
-    <!-- 보유종목 탭 -->
-    <div class="mock-tab-content active" id="tabHoldings">
+    <!-- 보유종목 -->
+    <section class="holdings-section">
+      <div class="section-title-row">
+        <span class="section-title">보유종목</span>
+        <span class="section-count" id="holdingsCount">0개</span>
+      </div>
       <div class="holdings-list" id="holdingsList">
-        <div class="empty-state">보유 종목이 없습니다.<br>매수 버튼을 눌러 첫 투자를 시작하세요!</div>
+        <div class="empty-state">보유 종목이 없습니다.<br>하단 매수 버튼을 눌러 첫 투자를 시작하세요.</div>
       </div>
-    </div>
+    </section>
 
-    <!-- 거래내역 탭 -->
-    <div class="mock-tab-content" id="tabHistory" style="display:none;">
+    <!-- 관심종목 -->
+    <section class="watchlist-section">
+      <div class="section-title-row">
+        <span class="section-title">관심종목</span>
+      </div>
+      <div class="watchlist-scroll" id="watchlistScroll">
+        <div class="empty-state">관심종목을 추가해 보세요.</div>
+      </div>
+    </section>
+
+    <!-- 거래내역 -->
+    <section class="history-section">
+      <div class="section-title-row">
+        <span class="section-title">최근 거래내역</span>
+      </div>
       <div class="history-list" id="historyList">
         <div class="empty-state">거래 내역이 없습니다.</div>
       </div>
-    </div>
+    </section>
 
-    <!-- 배당내역 탭 -->
-    <div class="mock-tab-content" id="tabDividends" style="display:none;">
-      <div class="dividend-list" id="dividendList">
-        <div class="empty-state">배당 내역이 없습니다.</div>
-      </div>
-    </div>
+    <!-- 하단 여백 (FAB 공간) -->
+    <div style="height:80px;"></div>
 
   </main>
 </div>
 
-<!-- ── Bottom Sheet: 매수/매도 주문 ── -->
-<div class="bottom-sheet-overlay" id="orderSheetOverlay" onclick="closeOrderSheet()"></div>
+<!-- FAB 버튼 -->
+<div class="fab-container">
+  <button class="fab-btn buy" onclick="openOrderSheet('buy')">매수</button>
+  <button class="fab-btn sell" onclick="openOrderSheet('sell')">매도</button>
+</div>
+
+<!-- Bottom Sheet: 매수/매도 주문 -->
+<div class="sheet-overlay" id="orderSheetOverlay" onclick="closeOrderSheet()"></div>
 <div class="bottom-sheet" id="orderSheet">
   <div class="sheet-handle"></div>
   <div class="sheet-header">
-    <h3 id="orderSheetTitle">매수 주문</h3>
-    <button class="sheet-close" onclick="closeOrderSheet()">×</button>
+    <h3 id="orderSheetTitle">매수</h3>
+    <button class="sheet-close-btn" onclick="closeOrderSheet()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8B95A1" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   </div>
   <div class="sheet-body">
+
     <!-- 종목 검색 -->
     <div class="sheet-field">
-      <label>종목</label>
       <div class="search-wrap">
-        <input type="text" id="orderTickerInput" placeholder="종목명 또는 티커 검색..." oninput="searchStocks(this.value)" autocomplete="off">
+        <input type="text" id="orderTickerInput" placeholder="종목명 또는 티커 검색" oninput="searchStocks(this.value)" autocomplete="off">
         <div class="search-dropdown" id="orderSearchDropdown"></div>
       </div>
     </div>
 
     <!-- 선택된 종목 정보 -->
     <div class="selected-stock-info" id="selectedStockInfo" style="display:none;">
-      <div class="ssi-name" id="ssiName"></div>
-      <div class="ssi-price" id="ssiPrice"></div>
-      <div class="ssi-market" id="ssiMarket"></div>
+      <div class="ssi-row">
+        <span class="ssi-name" id="ssiName"></span>
+        <span class="ssi-market-badge" id="ssiMarket"></span>
+      </div>
+      <div class="ssi-price-row">
+        <span class="ssi-price" id="ssiPrice"></span>
+        <span class="ssi-change" id="ssiChange"></span>
+      </div>
     </div>
 
-    <!-- 호가창 미리보기 -->
-    <div class="mini-orderbook" id="miniOrderbook" style="display:none;"></div>
+    <!-- 호가창 -->
+    <div class="orderbook" id="orderBook" style="display:none;"></div>
 
-    <!-- 주문 타입 -->
+    <!-- 주문 유형 -->
     <div class="sheet-field">
-      <label>주문 유형</label>
-      <div class="segmented">
+      <div class="segmented-row">
         <button class="seg-btn active" data-otype="limit" onclick="setOrderType('limit', this)">지정가</button>
         <button class="seg-btn" data-otype="market" onclick="setOrderType('market', this)">시장가</button>
       </div>
     </div>
 
-    <!-- 지정가 가격 -->
+    <!-- 가격 -->
     <div class="sheet-field" id="limitPriceField">
-      <label>주문 가격</label>
-      <input type="number" id="orderPrice" placeholder="가격 입력" step="any">
+      <label class="sheet-label">주문 가격</label>
+      <input type="text" id="orderPrice" placeholder="가격 입력" inputmode="decimal">
     </div>
 
     <!-- 수량 -->
     <div class="sheet-field">
-      <label>수량</label>
-      <div class="qty-control">
-        <input type="number" id="orderQty" placeholder="수량 입력" min="1" step="1" oninput="updateOrderSummary()">
-        <div class="qty-presets">
-          <button onclick="setQtyPercent(10)">10%</button>
-          <button onclick="setQtyPercent(25)">25%</button>
-          <button onclick="setQtyPercent(50)">50%</button>
-          <button onclick="setQtyPercent(100)">100%</button>
-        </div>
+      <label class="sheet-label">수량</label>
+      <div class="qty-row">
+        <input type="text" id="orderQty" placeholder="0" inputmode="numeric" oninput="updateOrderSummary()">
+        <span class="qty-unit">주</span>
+      </div>
+      <div class="qty-presets">
+        <button onclick="setQtyPercent(10)">10%</button>
+        <button onclick="setQtyPercent(25)">25%</button>
+        <button onclick="setQtyPercent(50)">50%</button>
+        <button onclick="setQtyPercent(100)">전체</button>
       </div>
     </div>
 
     <!-- 주문 요약 -->
     <div class="order-summary" id="orderSummary">
-      <div class="os-row"><span>예상 체결금액</span><span id="osTotal">₩0</span></div>
-      <div class="os-row"><span>수수료 (0.015%)</span><span id="osFee">₩0</span></div>
-      <div class="os-row" id="osFxRow" style="display:none;"><span>자동 환전 예상</span><span id="osFx">-</span></div>
-      <div class="os-row total"><span>총 필요금액</span><span id="osNeed">₩0</span></div>
+      <div class="os-row"><span>체결 예상금액</span><span id="osTotal">0원</span></div>
+      <div class="os-row"><span>수수료 (0.015%)</span><span id="osFee">0원</span></div>
+      <div class="os-row" id="osFxRow" style="display:none;"><span>자동 환전</span><span id="osFx">-</span></div>
+      <div class="os-divider"></div>
+      <div class="os-row os-total"><span>필요금액</span><span id="osNeed">0원</span></div>
     </div>
 
-    <button class="sheet-submit-btn" id="orderSubmitBtn" onclick="submitOrder()">
-      매수 주문하기
-    </button>
+    <button class="sheet-submit-btn" id="orderSubmitBtn" onclick="submitOrder()">매수하기</button>
   </div>
 </div>
 
-<!-- ── Bottom Sheet: 환전 ── -->
-<div class="bottom-sheet-overlay" id="fxSheetOverlay" onclick="closeFXModal()"></div>
+<!-- Bottom Sheet: 환전 -->
+<div class="sheet-overlay" id="fxSheetOverlay" onclick="closeFXModal()"></div>
 <div class="bottom-sheet" id="fxSheet">
   <div class="sheet-handle"></div>
   <div class="sheet-header">
     <h3>환전</h3>
-    <button class="sheet-close" onclick="closeFXModal()">×</button>
+    <button class="sheet-close-btn" onclick="closeFXModal()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8B95A1" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   </div>
   <div class="sheet-body">
-    <div class="fx-rate-display">
-      <div class="fx-rate-label">현재 환율</div>
-      <div class="fx-rate-value" id="fxRateDisplay">1 USD = ₩1,350</div>
+    <div class="fx-rate-card">
+      <span class="fx-rate-label">현재 환율</span>
+      <span class="fx-rate-value" id="fxRateDisplay">1 USD = 1,350원</span>
     </div>
     <div class="sheet-field">
-      <label>환전 방향</label>
-      <div class="segmented">
-        <button class="seg-btn active" data-fxdir="krw2usd" onclick="setFXDir('krw2usd', this)">원화 → 달러</button>
-        <button class="seg-btn" data-fxdir="usd2krw" onclick="setFXDir('usd2krw', this)">달러 → 원화</button>
+      <div class="segmented-row">
+        <button class="seg-btn active" data-fxdir="krw2usd" onclick="setFXDir('krw2usd', this)">원화로 달러 사기</button>
+        <button class="seg-btn" data-fxdir="usd2krw" onclick="setFXDir('usd2krw', this)">달러로 원화 사기</button>
       </div>
     </div>
     <div class="sheet-field" id="fxKrwField">
-      <label>원화 금액</label>
-      <input type="number" id="fxKrwAmount" placeholder="KRW 금액" oninput="updateFXPreview()">
+      <label class="sheet-label">원화 금액</label>
+      <input type="text" id="fxKrwAmount" placeholder="KRW" inputmode="decimal" oninput="updateFXPreview()">
     </div>
     <div class="sheet-field" id="fxUsdField" style="display:none;">
-      <label>달러 금액</label>
-      <input type="number" id="fxUsdAmount" placeholder="USD 금액" oninput="updateFXPreview()" step="0.01">
+      <label class="sheet-label">달러 금액</label>
+      <input type="text" id="fxUsdAmount" placeholder="USD" inputmode="decimal" oninput="updateFXPreview()">
     </div>
     <div class="fx-preview" id="fxPreview"></div>
-    <button class="sheet-submit-btn" onclick="executeFX()">환전 실행</button>
+    <button class="sheet-submit-btn neutral" onclick="executeFX()">환전하기</button>
   </div>
 </div>
 
-<!-- ── Toast 알림 ── -->
+<!-- Toast -->
 <div class="toast-container" id="toastContainer"></div>
 
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
