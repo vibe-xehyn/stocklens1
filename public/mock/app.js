@@ -1,576 +1,387 @@
 'use strict';
 
-// =========================================================================
-// State
-// =========================================================================
-let state = {
-  accounts: [],
-  currentAcctType: 'realtime',
-  currentAccountId: null,
-  currentAccount: null,
-  portfolio: null,
-  usdkrw: 1350,
-  orderSide: 'buy',
-  orderType: 'limit',
-  selectedStock: null,
-  fxDirection: 'krw2usd',
-  eventSource: null,
-  profitChart: null,
-  pieChart: null,
-  currentRange: '1m',
-  onboardType: 'realtime',
-  onboardCapital: 50000000,
-  pollTimer: null,
+let S = {
+  accounts:[], acctType:'realtime', acctId:null, acct:null, portfolio:null, usdkrw:1350,
+  detailStock:null, detailRange:'1d', detailChart:null, detailSeries:null,
+  tradeSide:'buy', tradeType:'limit',
+  fxDir:'krw2usd', rankMarket:'kr', historyFilter:'all',
+  chartInst:null, analyticsChart:null, range:'1m',
+  poll:null, sse:null, view:'home'
 };
 
-const uid = (() => {
-  const c = document.cookie.split(';').map(c => c.trim());
-  const s = c.find(x => x.startsWith('sessionToken='));
-  if (s) return decodeURIComponent(s.split('=')[1]);
-  let g = localStorage.getItem('mock_guest_id');
-  if (!g) { g = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2); localStorage.setItem('mock_guest_id', g); }
+const uid = (()=>{
+  let c=document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('sessionToken='));
+  if(c) return decodeURIComponent(c.split('=')[1]);
+  let g=localStorage.getItem('mock_guest_id');
+  if(!g){g='g_'+Date.now()+Math.random().toString(36).slice(2);localStorage.setItem('mock_guest_id',g);}
   return g;
 })();
 
-// =========================================================================
-// API
-// =========================================================================
-async function api(path, options = {}) {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
-  const d = await res.json();
-  if (!res.ok && d.error) throw new Error(d.error);
+async function api(p,o={}){
+  const r=await fetch(p,{headers:{'Content-Type':'application/json'},...o});
+  const d=await r.json();
+  if(!r.ok&&d.error) throw new Error(d.error);
   return d;
 }
 
-// =========================================================================
-// Toast
-// =========================================================================
-function toast(msg) {
-  const c = document.getElementById('toastContainer');
-  const e = document.createElement('div'); e.className = 'toast'; e.textContent = msg;
-  c.appendChild(e);
-  setTimeout(() => { e.style.opacity = '0'; e.style.transition = 'opacity 0.3s'; setTimeout(() => e.remove(), 300); }, 2500);
+function toast(m){
+  const c=document.getElementById('toastContainer');
+  const e=document.createElement('div');e.className='toast';e.textContent=m;c.appendChild(e);
+  setTimeout(()=>{e.style.opacity='0';e.style.transition='opacity 0.3s';setTimeout(()=>e.remove(),300);},2000);
 }
 
-// =========================================================================
+function goToDashboard(){window.location.href='/';}
+
 // Boot
-// =========================================================================
-(async function boot() {
-  await loadAccounts();
-  if (!state.accounts.length) {
-    showOnboarding();
-  } else {
-    autoSelectAccount();
-    showApp();
-    loadEverything();
-    startPolling();
+(async function boot(){
+  await loadAccts();
+  if(!S.accounts.length){
+    await api('/api/trade/accounts',{method:'POST',body:JSON.stringify({type:'realtime',initialCapital:50000000})});
+    await api('/api/trade/accounts',{method:'POST',body:JSON.stringify({type:'virtual',initialCapital:50000000})});
+    await loadAccts();
   }
+  autoSel();showApp();switchView('home','snav');loadAll();startPoll();loadIndices();loadRanks();
 })();
 
-async function loadAccounts() {
-  try { state.accounts = await api('/api/trade/accounts'); } catch { state.accounts = []; }
+async function loadAccts(){try{S.accounts=await api('/api/trade/accounts');}catch{S.accounts=[];}}
+function autoSel(){
+  let o=S.accounts.filter(a=>a.type===S.acctType);
+  if(o.length){S.acctId=o[0].id;S.acct=o[0];}else if(S.accounts.length){S.acctId=S.accounts[0].id;S.acct=S.accounts[0];S.acctType=S.accounts[0].type;}
 }
+function showApp(){document.getElementById('appMain').style.display='flex';}
 
-function autoSelectAccount() {
-  const ofType = state.accounts.filter(a => a.type === state.currentAcctType);
-  if (ofType.length) {
-    state.currentAccountId = ofType[0].id;
-    state.currentAccount = ofType[0];
-  } else if (state.accounts.length) {
-    state.currentAccountId = state.accounts[0].id;
-    state.currentAccount = state.accounts[0];
-    state.currentAcctType = state.accounts[0].type;
+// View switching
+function switchView(v,src){
+  S.view=v;
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  document.getElementById('view'+v.charAt(0).toUpperCase()+v.slice(1)).classList.add('active');
+  if(src==='snav'){
+    document.querySelectorAll('.snav-item').forEach(b=>b.classList.remove('active'));
+    document.querySelector(`.snav-item[data-view="${v}"]`).classList.add('active');
   }
+  if(v==='home') loadAll();
+  if(v==='discover'){loadIndices();loadRanks();}
+  if(v==='history') loadHistoryView();
+  if(v==='analytics') loadAnalytics();
+  if(v!=='detail'){document.getElementById('rightPanelEmpty').style.display='';document.getElementById('rightPanelActive').style.display='none';}
 }
 
-function showOnboarding() {
-  document.getElementById('onboardingOverlay').style.display = 'flex';
-  document.getElementById('appMain').style.display = 'none';
+// Account
+async function loadAll(){
+  if(!S.acctId)return;
+  try{S.portfolio=await api('/api/trade/portfolio/'+S.acctId);S.usdkrw=S.portfolio.usdkrw||1350;}catch{S.portfolio=null;}
+  renderHome();renderSidebar();
+}
+function startPoll(){
+  if(S.poll)clearInterval(S.poll);
+  S.poll=setInterval(async()=>{if(!S.acctId)return;try{S.portfolio=await api('/api/trade/portfolio/'+S.acctId);S.usdkrw=S.portfolio.usdkrw||1350;}catch{}renderHome();renderSidebar();},5000);
 }
 
-function showApp() {
-  document.getElementById('onboardingOverlay').style.display = 'none';
-  document.getElementById('appMain').style.display = 'block';
-  updateAcctTabUI();
-  renderAccountChips();
+function renderSidebar(){
+  const p=S.portfolio;if(!p)return;
+  document.getElementById('sKrw').textContent=Math.round(p.krwBalance).toLocaleString()+'원';
+  document.getElementById('sUsd').textContent='$'+(p.usdBalance||0).toFixed(2);
 }
 
-function goToDashboard() { window.location.href = '/'; }
-
-// =========================================================================
-// Onboarding
-// =========================================================================
-function selectOnboardType(type, btn) {
-  state.onboardType = type;
-  document.querySelectorAll('.onboard-type-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-}
-function selectOnboardCapital(capital, btn) {
-  state.onboardCapital = parseInt(capital);
-  document.querySelectorAll('.onboard-capital-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-}
-async function createOnboardAccount() {
-  try {
-    const r = await api('/api/trade/accounts', { method: 'POST', body: JSON.stringify({ type: state.onboardType, initialCapital: state.onboardCapital }) });
-    if (r.ok) {
-      state.currentAcctType = state.onboardType;
-      await loadAccounts();
-      state.currentAccountId = r.account.id;
-      state.currentAccount = r.account;
-      showApp();
-      loadEverything();
-      startPolling();
-    }
-  } catch (e) { toast('계좌 생성 실패: ' + e.message); }
-}
-
-// =========================================================================
-// Account Tabs & Chips
-// =========================================================================
-function updateAcctTabUI() {
-  document.querySelectorAll('.acct-tab').forEach(b => b.classList.toggle('active', b.dataset.type === state.currentAcctType));
-}
-function switchAccountType(type) {
-  state.currentAcctType = type;
-  updateAcctTabUI();
-  const ofType = state.accounts.filter(a => a.type === type);
-  if (ofType.length) {
-    state.currentAccountId = ofType[0].id;
-    state.currentAccount = ofType[0];
-  }
-  renderAccountChips();
-  loadEverything();
-  startPolling();
-}
-function renderAccountChips() {
-  const bar = document.getElementById('accountListBar');
-  const ofType = state.accounts.filter(a => a.type === state.currentAcctType);
-  if (ofType.length <= 1) { bar.innerHTML = ''; return; }
-  bar.innerHTML = ofType.map(a => `<button class="acct-chip ${a.id === state.currentAccountId ? 'active' : ''}" onclick="switchToAccount('${a.id}')">${a.label || ('계좌 ' + a.id.slice(-4))}</button>`).join('');
-}
-async function switchToAccount(id) {
-  state.currentAccountId = id;
-  state.currentAccount = state.accounts.find(a => a.id === id);
-  renderAccountChips();
-  loadEverything();
-}
-
-// =========================================================================
-// New Account Modal
-// =========================================================================
-function openNewAccountModal() {
-  document.getElementById('newAcctOverlay').classList.add('open');
-  document.getElementById('newAcctSheet').classList.add('open');
-}
-function closeNewAccountModal() {
-  document.getElementById('newAcctOverlay').classList.remove('open');
-  document.getElementById('newAcctSheet').classList.remove('open');
-}
-async function submitNewAccount() {
-  const typeBtn = document.querySelector('#newAcctSheet .onboard-type-btn.active');
-  const capBtn = document.querySelector('#newAcctSheet .onboard-capital-btn.active');
-  const type = typeBtn?.dataset.mtype || 'realtime';
-  const capital = parseInt(capBtn?.dataset.mcap || 50000000);
-  try {
-    const r = await api('/api/trade/accounts', { method: 'POST', body: JSON.stringify({ type, initialCapital: capital }) });
-    if (r.ok) {
-      await loadAccounts();
-      state.currentAcctType = type;
-      state.currentAccountId = r.account.id;
-      state.currentAccount = r.account;
-      updateAcctTabUI();
-      renderAccountChips();
-      loadEverything();
-      startPolling();
-      closeNewAccountModal();
-      toast('새 계좌가 개설되었습니다.');
-    }
-  } catch (e) { toast('계좌 생성 실패: ' + e.message); }
-}
-
-// =========================================================================
-// Load Everything
-// =========================================================================
-async function loadEverything() {
-  if (!state.currentAccountId) return;
-  try {
-    state.portfolio = await api(`/api/trade/portfolio/${state.currentAccountId}`);
-    state.usdkrw = state.portfolio.usdkrw || 1350;
-  } catch { state.portfolio = null; }
-  renderTotalAsset();
-  renderProfitChart();
-  renderAllocation();
-  renderBalance();
+// Home view
+function renderHome(){
+  const p=S.portfolio;if(!p)return;
+  document.getElementById('totalAsset').textContent=Math.round(p.totalAssetKRW).toLocaleString()+'원';
+  const cls=p.totalProfitPct>=0?'up':'down';
+  document.getElementById('totalProfit').innerHTML=`<span class="ta-profit ${cls}">${p.totalProfit>=0?'+':''}${Math.round(p.totalProfit).toLocaleString()}원</span>`;
+  document.getElementById('totalRate').innerHTML=`<span class="ta-rate ${cls}">${p.totalProfitPct>=0?'+':''}${p.totalProfitPct.toFixed(2)}%</span>`;
+  // daily (simulate)
+  const daily=-4566, dailyPct=-0.2, dCls=daily>=0?'up':'down';
+  document.getElementById('dailyChange').innerHTML=`<span class="ta-daily ${dCls}">오늘 ${daily>=0?'+':''}${daily.toLocaleString()}원 (${dailyPct}%)</span>`;
+  renderHomeChart();
   renderHoldings();
-  loadDividends();
-  loadHistory();
-  connectSSE();
 }
 
-// =========================================================================
-// Polling (real-time data refresh)
-// =========================================================================
-function startPolling() {
-  if (state.pollTimer) clearInterval(state.pollTimer);
-  state.pollTimer = setInterval(async () => {
-    if (!state.currentAccountId) return;
-    try {
-      state.portfolio = await api(`/api/trade/portfolio/${state.currentAccountId}`);
-      state.usdkrw = state.portfolio.usdkrw || 1350;
-    } catch {}
-    renderTotalAsset();
-    renderBalance();
-    renderHoldings();
-    renderAllocation();
-  }, state.currentAccount?.type === 'virtual' ? 3000 : 5000);
-}
-
-// =========================================================================
-// Total Asset
-// =========================================================================
-function renderTotalAsset() {
-  const p = state.portfolio; if (!p) return;
-  document.getElementById('totalAsset').textContent = Math.round(p.totalAssetKRW).toLocaleString() + '원';
-  const cls = p.totalProfitPct >= 0 ? 'up' : 'down';
-  document.getElementById('totalChange').innerHTML = `<span class="total-asset-change ${cls}">${p.totalProfitPct >= 0 ? '+' : ''}${p.totalProfitPct.toFixed(2)}%</span>`;
-  document.getElementById('totalSub').textContent = (p.totalProfit >= 0 ? '+' : '') + Math.round(p.totalProfit).toLocaleString() + '원';
-}
-
-// =========================================================================
-// Profit Chart
-// =========================================================================
-function switchRange(range, btn) {
-  state.currentRange = range;
-  document.querySelectorAll('.range-tab').forEach(b => b.classList.remove('active'));
+function switchHomeRange(r,btn){
+  S.range=r;
+  document.querySelectorAll('#viewHome .r-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  renderProfitChart();
+  renderHomeChart();
 }
-function renderProfitChart() {
-  const p = state.portfolio;
-  const canvas = document.getElementById('profitChart');
-  if (!canvas || !p) return;
-  if (state.profitChart) state.profitChart.destroy();
-  const total = p.totalAssetKRW;
-  const init = p.account?.initialCapital || total - p.totalProfit;
-  const pts = genData(init, total, state.currentRange);
-  const up = total >= init;
-  state.profitChart = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: { labels: pts.labels, datasets: [{ data: pts.data, borderColor: up ? '#F04452' : '#3182F6', backgroundColor: up ? 'rgba(240,68,82,0.04)' : 'rgba(49,130,246,0.04)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { display: false } }, y: { grid: { display: false }, ticks: { display: false } } } }
+function renderHomeChart(){
+  const p=S.portfolio;const cvs=document.getElementById('homeProfitChart');
+  if(!cvs||!p)return;
+  if(S.chartInst)S.chartInst.destroy();
+  const tot=p.totalAssetKRW,init=p.acct?.initialCapital||tot-p.totalProfit;
+  const pts=genData(init,tot,S.range);
+  S.chartInst=new Chart(cvs.getContext('2d'),{
+    type:'line',data:{labels:pts.labels,datasets:[{data:pts.data,borderColor:tot>=init?'#F04452':'#1570EF',backgroundColor:tot>=init?'rgba(240,68,82,0.03)':'rgba(21,112,239,0.03)',fill:true,tension:0.3,borderWidth:1.5,pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}
   });
-  canvas.parentElement.style.height = '200px';
 }
-function genData(init, total, range) {
-  const c = { '1w': 7, '1m': 30, '3m': 90, 'all': 365 }[range] || 30;
-  const l = [], d = []; const diff = total - init;
-  for (let i = 0; i <= c; i++) {
-    const n = (Math.random() - 0.45) * (Math.abs(diff) * 0.08);
-    l.push(i); d.push(Math.max(0, init + (diff * (i / c)) + (i === c ? 0 : n)));
-  }
-  return { labels: l, data: d };
+function genData(init,tot,r){
+  const c={'1m':30,'3m':90,'1y':365,'all':730}[r]||30;
+  const l=[],d=[];const df=tot-init;
+  for(let i=0;i<=c;i++){l.push(i);d.push(Math.max(0,init+df*(i/c)+(i===c?0:(Math.random()-0.45)*Math.abs(df)*0.06)));}
+  return{labels:l,data:d};
 }
 
-// =========================================================================
-// Allocation Pie
-// =========================================================================
-function renderAllocation() {
-  const p = state.portfolio; if (!p) return;
-  const krw = p.krwBalance, usd = (p.usdBalance || 0) * state.usdkrw, stock = p.totalHoldingsValueKRW || 0;
-  const t = krw + usd + stock; if (t === 0) return;
-  if (state.pieChart) state.pieChart.destroy();
-  state.pieChart = new Chart(document.getElementById('allocationPie').getContext('2d'), {
-    type: 'doughnut',
-    data: { labels: ['원화', '달러', '주식'], datasets: [{ data: [krw, usd, stock], backgroundColor: ['#3182F6', '#F04452', '#191F28'], borderWidth: 0 }] },
-    options: { responsive: true, cutout: '70%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
-  });
-  document.getElementById('allocationLegend').innerHTML = `
-    <div class="legend-row"><span class="legend-dot" style="background:#3182F6"></span><span class="legend-label">원화</span><span class="legend-value">${Math.round(krw).toLocaleString()}원</span><span class="legend-pct">${(krw/t*100).toFixed(1)}%</span></div>
-    <div class="legend-row"><span class="legend-dot" style="background:#F04452"></span><span class="legend-label">달러</span><span class="legend-value">${Math.round(usd).toLocaleString()}원</span><span class="legend-pct">${(usd/t*100).toFixed(1)}%</span></div>
-    <div class="legend-row"><span class="legend-dot" style="background:#191F28"></span><span class="legend-label">주식</span><span class="legend-value">${Math.round(stock).toLocaleString()}원</span><span class="legend-pct">${(stock/t*100).toFixed(1)}%</span></div>`;
-}
-
-// =========================================================================
-// Balance
-// =========================================================================
-function renderBalance() {
-  const p = state.portfolio; if (!p) return;
-  document.getElementById('krwBalance').textContent = Math.round(p.krwBalance).toLocaleString() + '원';
-  document.getElementById('usdBalance').textContent = '$' + (p.usdBalance || 0).toFixed(2);
-  document.getElementById('usdInKRW').textContent = Math.round((p.usdBalance || 0) * state.usdkrw).toLocaleString() + '원';
-}
-
-// =========================================================================
-// Holdings
-// =========================================================================
-function renderHoldings() {
-  const list = document.getElementById('holdingsList');
-  const holdings = state.portfolio?.holdings || [];
-  document.getElementById('holdingsCount').textContent = holdings.length + '개';
-  if (!holdings.length) { list.innerHTML = '<div class="empty-state">보유 종목이 없습니다.<br>하단 매수 버튼을 눌러 첫 투자를 시작하세요.</div>'; return; }
-  const totalEval = state.portfolio.totalHoldingsValueKRW || 1;
-  list.innerHTML = holdings.map(h => {
-    const cls = h.profitPct >= 0 ? 'up' : 'down';
-    const sym = h.market === 'kr' ? '' : '$';
-    const evalKRW = h.market === 'kr' ? h.evaluationValue : (h.evaluationValue * state.usdkrw);
-    const weight = (evalKRW / totalEval * 100).toFixed(1);
-    return `<div class="holding-card">
-      <div class="holding-top"><div><div class="holding-name">${h.ticker}</div><div class="holding-ticker">${h.market === 'kr' ? '한국' : '미국'} | ${h.quantity}주</div></div>
-      <div class="holding-eval"><div class="holding-eval-price">${sym}${h.evaluationValue.toLocaleString(undefined, {maximumFractionDigits:2})}</div><div class="holding-eval-profit ${cls}">${h.profitPct >= 0 ? '+' : ''}${h.profitPct.toFixed(2)}%</div></div></div>
-      <div class="holding-meta"><span class="holding-qty-info">평균 ${sym}${h.avgPrice.toLocaleString(undefined, {maximumFractionDigits:2})}</span><div class="holding-weight-bar"><div class="holding-weight-fill" style="width:${weight}%"></div></div><span class="holding-qty-info">${weight}%</span></div>
+function renderHoldings(){
+  const list=document.getElementById('holdingsList');
+  const h=S.portfolio?.holdings||[];
+  if(!h.length){list.innerHTML='<div class="empty">보유 종목이 없습니다.</div>';return;}
+  list.innerHTML=h.map(x=>{
+    const cls=x.profitPct>=0?'up':'down';const sym=x.market==='kr'?'':(x.currency==='USD'?'$':'$');
+    return`<div class="holding-card" onclick="openDetail('${x.ticker}','${x.market}','${(x.name||x.ticker).replace(/'/g,"\\'")}')">
+      <div class="hc-left"><div class="hc-symbol ${x.market}">${x.ticker.slice(0,2)}</div><div class="hc-info"><div class="hc-ticker">${x.ticker}</div><div class="hc-qty">${x.quantity}주</div></div></div>
+      <div class="hc-right"><div class="hc-eval">${sym}${x.evaluationValue.toLocaleString(undefined,{maximumFractionDigits:2})}</div><div class="hc-profit ${cls}">${x.profitPct>=0?'+':''}${x.profitPct.toFixed(2)}%</div></div>
     </div>`;
   }).join('');
 }
 
-// =========================================================================
-// Dividends
-// =========================================================================
-async function loadDividends() {
-  const el = document.getElementById('dividendList');
-  try {
-    const divs = await api(`/api/trade/dividends/${state.currentAccountId}`);
-    if (!divs.length) { el.innerHTML = '<div class="empty-state">배당 내역이 없습니다.</div>'; return; }
-    el.innerHTML = divs.map(d => `<div class="div-item"><div class="div-dot">D</div><div class="div-info"><div class="div-ticker">${d.ticker}</div><div class="div-date">배당락: ${d.date}</div></div><div class="div-end"><div class="div-amount">+${d.currency === 'KRW' ? '' : '$'}${d.amount.toLocaleString(undefined, {maximumFractionDigits:2})}</div><div class="div-qty">${d.quantity}주</div></div></div>`).join('');
-  } catch { el.innerHTML = '<div class="empty-state">배당 내역을 불러올 수 없습니다.</div>'; }
-}
-
-// =========================================================================
-// History
-// =========================================================================
-async function loadHistory() {
-  const el = document.getElementById('historyList');
-  try {
-    const history = await api(`/api/trade/history/${state.currentAccountId}`);
-    if (!history.length) { el.innerHTML = '<div class="empty-state">거래 내역이 없습니다.</div>'; return; }
-    el.innerHTML = history.slice(0, 15).map(h => {
-      const isBuy = h.side === 'buy'; const sideTag = isBuy ? 'buy' : 'sell';
-      const time = new Date(h.timestamp).toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-      return `<div class="history-item"><div class="history-dot-icon ${sideTag}">${isBuy ? 'B' : 'S'}</div><div class="history-info"><div class="history-ticker-row"><span class="history-ticker">${h.ticker}</span><span class="history-side-tag ${sideTag}">${isBuy ? '매수' : '매도'}</span></div><div class="history-detail">${h.quantity}주 ${h.price.toLocaleString()}원</div></div><div class="history-end"><div class="history-amount">${isBuy ? '-' : '+'}${Math.abs(h.amount).toLocaleString()}원</div><div class="history-time">${time}</div></div></div>`;
+// Discover
+async function loadIndices(){
+  try{
+    const d=await api('/api/indices');
+    document.getElementById('indicesGrid').innerHTML=d.filter(m=>m&&m.name).slice(0,6).map(m=>{
+      const cls=m.change>=0?'up':'down';
+      return`<div class="index-card"><div class="ic-name">${m.name}</div><div class="ic-value">${m.value.toLocaleString(undefined,{maximumFractionDigits:0})}</div><div class="ic-change ${cls}">${m.change>=0?'+':''}${m.change.toFixed(2)}%</div></div>`;
     }).join('');
-  } catch { el.innerHTML = '<div class="empty-state">거래 내역을 불러올 수 없습니다.</div>'; }
+  }catch{}
 }
-
-// =========================================================================
-// Order Sheet
-// =========================================================================
-function openOrderSheet(side) {
-  state.orderSide = side; state.selectedStock = null; state.orderType = 'limit';
-  const title = side === 'buy' ? '매수' : '매도';
-  document.getElementById('orderSheetTitle').textContent = title;
-  document.getElementById('orderSubmitBtn').textContent = title + '하기';
-  document.getElementById('orderSubmitBtn').className = 'sheet-submit-btn ' + side;
-  document.getElementById('orderTickerInput').value = '';
-  document.getElementById('orderPrice').value = '';
-  document.getElementById('orderQty').value = '';
-  document.getElementById('selectedStockInfo').style.display = 'none';
-  document.getElementById('orderBook').style.display = 'none';
-  document.getElementById('orderSearchDropdown').classList.remove('open');
-  document.getElementById('orderSummary').style.display = 'none';
-  document.getElementById('limitPriceField').style.display = '';
-  document.querySelectorAll('#orderSheet .seg-btn').forEach(b => b.classList.remove('active'));
-  const l = document.querySelector('#orderSheet .seg-btn[data-otype="limit"]');
-  if (l) l.classList.add('active');
-  document.getElementById('orderSheetOverlay').classList.add('open');
-  document.getElementById('orderSheet').classList.add('open');
-  setTimeout(() => document.getElementById('orderTickerInput').focus(), 400);
-}
-function closeOrderSheet() {
-  document.getElementById('orderSheetOverlay').classList.remove('open');
-  document.getElementById('orderSheet').classList.remove('open');
-}
-function setOrderType(type, btn) {
-  state.orderType = type;
-  document.querySelectorAll('#orderSheet .seg-btn').forEach(b => b.classList.remove('active'));
+function switchRankMarket(mkt,btn){
+  S.rankMarket=mkt;
+  document.querySelectorAll('.seg-sm').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('limitPriceField').style.display = type === 'limit' ? '' : 'none';
-  updateOrderSummary();
+  loadRanks();
+}
+async function loadRanks(){
+  try{
+    const r=await api('/api/search?q=&market='+S.rankMarket);
+    const el=document.getElementById('rankTable');
+    el.innerHTML=r.slice(0,10).map((s,i)=>{
+      const cls=(s.changePct||0)>=0?'up':'down';
+      return`<div class="rank-row" onclick="openDetail('${s.ticker}','${s.market}','${(s.name||s.ticker).replace(/'/g,"\\'")}')">
+        <span class="rank-num">${i+1}</span><span class="rank-ticker">${s.ticker}</span><span class="rank-name">${s.name||''}</span>
+        <span class="rank-price">${s.price?.toLocaleString()||'-'}</span><span class="rank-chg ${cls}">${(s.changePct||0)>=0?'+':''}${(s.changePct||0).toFixed(2)}%</span>
+      </div>`;
+    }).join('');
+  }catch{}
 }
 
-// =========================================================================
-// Stock Search
-// =========================================================================
-let _st = null;
-async function searchStocks(q) {
-  clearTimeout(_st);
-  const dd = document.getElementById('orderSearchDropdown');
-  if (!q.trim()) { dd.classList.remove('open'); return; }
-  _st = setTimeout(async () => {
-    try {
-      const r = await api(`/api/search?q=${encodeURIComponent(q.trim())}&market=all`);
-      dd.innerHTML = r.slice(0, 10).map(s => `<div class="search-dropdown-item" onclick="selectOrderStock('${s.ticker}','${s.market}','${s.name.replace(/'/g,"\\'")}',${s.price||50000})"><span><span class="sdi-ticker">${s.ticker}</span> <span class="sdi-name">${s.name}</span></span><span class="sdi-market">${s.market==='kr'?'한국':'미국'} / ${s.exchange||''}</span></div>`).join('');
-      dd.classList.add('open');
-    } catch { dd.innerHTML = '<div class="search-dropdown-item">검색 실패</div>'; dd.classList.add('open'); }
-  }, 250);
+// Detail
+async function openDetail(ticker,market,name){
+  S.detailStock={ticker,market,name};
+  switchView('detail','snav');
+  document.getElementById('detailName').textContent=name;
+  document.getElementById('detailTicker').textContent=ticker;
+  try{const q=await api('/api/quote?symbol='+ticker+'&market='+market);S.detailStock.price=q.price||50000;S.detailStock.changePct=q.changePct||0;}catch{S.detailStock.price=market==='kr'?50000:150;S.detailStock.changePct=0;}
+  const sym=market==='kr'?'':(S.detailStock.currency==='USD'?'$':'$');
+  const cls=S.detailStock.changePct>=0?'up':'down';
+  document.getElementById('detailPrice').textContent=sym+S.detailStock.price.toLocaleString(undefined,{maximumFractionDigits:2});
+  document.getElementById('detailPrice').className='detail-price '+cls;
+  document.getElementById('detailChange').textContent=(S.detailStock.changePct>=0?'+':'')+S.detailStock.changePct.toFixed(2)+'%';
+  document.getElementById('detailChange').className='detail-change '+cls;
+  S.detailRange='1d';
+  document.querySelectorAll('#viewDetail .r-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelector('#viewDetail .r-tab[data-range="1d"]').classList.add('active');
+  loadDetailChart();
+  loadOrderbook();
+  // Show right panel
+  document.getElementById('rightPanelEmpty').style.display='none';
+  document.getElementById('rightPanelActive').style.display='';
+  document.getElementById('tpPrice').value=S.detailStock.price;
+  updateTradeSummary();
+}
+function switchDetailSub(sub,btn){
+  document.querySelectorAll('.dsub').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('detailChartArea').style.display=sub==='chart'?'':'none';
+  document.getElementById('detailOrderbookArea').style.display=sub==='orderbook'?'':'none';
+}
+function switchDetailRange(r,btn){
+  S.detailRange=r;
+  document.querySelectorAll('#viewDetail .r-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  loadDetailChart();
+}
+async function loadDetailChart(){
+  const w=document.getElementById('detailChartWrap');
+  if(S.detailChart){S.detailChart.remove();S.detailChart=null;S.detailSeries=null;}
+  w.innerHTML='';
+  try{
+    const c=await api('/api/chart?symbol='+S.detailStock.ticker+'&range='+S.detailRange+'&market='+S.detailStock.market);
+    const up=S.detailStock.changePct>=0;
+    S.detailChart=LightweightCharts.createChart(w,{width:w.clientWidth,height:280,layout:{background:{color:'transparent'},textColor:'#8B95A1',fontSize:10},grid:{vertLines:{visible:false},horzLines:{visible:false}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:false},crosshair:{mode:0},handleScroll:{vertTouchDrag:false}});
+    S.detailSeries=S.detailChart.addAreaSeries({lineColor:up?'#F04452':'#1570EF',topColor:up?'rgba(240,68,82,0.1)':'rgba(21,112,239,0.1)',bottomColor:'rgba(0,0,0,0)',lineWidth:2,priceLineVisible:false});
+    const d=(c.ohlcv||[]).filter(x=>x.close!=null).map(x=>({time:x.time,value:x.close}));
+    if(d.length)S.detailSeries.setData(d);
+  }catch{}
 }
 
-async function selectOrderStock(ticker, market, name, fp) {
-  state.selectedStock = { ticker, market, name };
-  document.getElementById('orderTickerInput').value = ticker;
-  document.getElementById('orderSearchDropdown').classList.remove('open');
-  try {
-    const q = await api(`/api/quote?symbol=${ticker}&market=${market}`);
-    state.selectedStock.price = q.price || fp;
-    state.selectedStock.changePct = q.changePct || 0;
-    state.selectedStock.currency = market === 'kr' ? 'KRW' : 'USD';
-  } catch {
-    state.selectedStock.price = fp; state.selectedStock.changePct = 0; state.selectedStock.currency = market === 'kr' ? 'KRW' : 'USD';
-  }
-  const sym = market === 'kr' ? '' : '$';
-  const cls = state.selectedStock.changePct >= 0 ? 'up' : 'down';
-  document.getElementById('selectedStockInfo').style.display = '';
-  document.getElementById('ssiName').textContent = ticker;
-  document.getElementById('ssiMarket').textContent = market === 'kr' ? '한국' : '미국';
-  document.getElementById('ssiPrice').textContent = sym + state.selectedStock.price.toLocaleString(undefined, {maximumFractionDigits:2});
-  document.getElementById('ssiPrice').className = 'ssi-price ' + cls;
-  document.getElementById('ssiChange').textContent = (state.selectedStock.changePct >= 0 ? '+' : '') + state.selectedStock.changePct.toFixed(2) + '%';
-  document.getElementById('ssiChange').className = 'ssi-change ' + cls;
-  document.getElementById('orderPrice').value = state.selectedStock.price;
-  loadOrderBook(ticker, market);
-  updateOrderSummary();
-}
-
-async function loadOrderBook(ticker, market) {
-  try {
-    const ob = await api(`/api/trade/orderbook?ticker=${ticker}&market=${market}`);
-    const maxV = Math.max(...ob.asks.map(a => a.volume), ...ob.bids.map(b => b.volume));
-    document.getElementById('orderBook').style.display = '';
-    document.getElementById('orderBook').innerHTML = `
-      ${[...ob.asks].reverse().map(a => `<div class="ob-row ask" onclick="setPriceClick(${a.price})"><span class="ob-price">${a.price.toLocaleString()}</span><div class="ob-bar-wrap"><div class="ob-bar ask" style="width:${(a.volume/maxV*100)}%"></div></div><span class="ob-vol">${a.volume}</span></div>`).join('')}
+// Orderbook in right panel
+async function loadOrderbook(){
+  const el=document.getElementById('orderbookPanel');
+  try{
+    const ob=await api('/api/trade/orderbook?ticker='+S.detailStock.ticker+'&market='+S.detailStock.market);
+    const maxV=Math.max(...ob.asks.map(a=>a.volume),...ob.bids.map(b=>b.volume),1);
+    el.innerHTML=`
+      ${[...ob.asks].reverse().map(a=>`<div class="ob-row ask" onclick="document.getElementById('tpPrice').value=${a.price};updateTradeSummary()"><span class="ob-price">${a.price.toLocaleString()}</span><div class="ob-bar-wrap"><div class="ob-bar ask" style="width:${(a.volume/maxV*100)}%"></div></div><span class="ob-vol">${a.volume}</span></div>`).join('')}
       <div class="ob-center">${ob.price.toLocaleString()}</div>
-      ${ob.bids.map(b => `<div class="ob-row bid" onclick="setPriceClick(${b.price})"><span class="ob-price">${b.price.toLocaleString()}</span><div class="ob-bar-wrap"><div class="ob-bar bid" style="width:${(b.volume/maxV*100)}%"></div></div><span class="ob-vol">${b.volume}</span></div>`).join('')}`;
-  } catch {}
+      ${ob.bids.map(b=>`<div class="ob-row bid" onclick="document.getElementById('tpPrice').value=${b.price};updateTradeSummary()"><span class="ob-price">${b.price.toLocaleString()}</span><div class="ob-bar-wrap"><div class="ob-bar bid" style="width:${(b.volume/maxV*100)}%"></div></div><span class="ob-vol">${b.volume}</span></div>`).join('')}
+      <div class="ob-strength">체결강도 ${((ob.asks[0]?.volume||1)/(ob.bids[0]?.volume||1)*100).toFixed(1)}%</div>`;
+  }catch{}
 }
 
-function setPriceClick(price) { document.getElementById('orderPrice').value = price; updateOrderSummary(); }
-
-// =========================================================================
-// Quantity Presets
-// =========================================================================
-function setQtyPercent(pct) {
-  const p = state.portfolio; if (!p || !state.selectedStock) return;
-  const price = parseFloat(document.getElementById('orderPrice').value.replace(/,/g,'')) || state.selectedStock.price;
-  if (price <= 0) return;
-  let max = 0;
-  if (state.orderSide === 'buy') {
-    const avail = state.selectedStock.market === 'kr' ? p.krwBalance : (p.usdBalance || 0) * state.usdkrw;
-    max = Math.floor(avail / price * (pct / 100));
-  } else {
-    const h = p.holdings.find(h => h.ticker === state.selectedStock.ticker);
-    max = h ? Math.floor(h.quantity * (pct / 100)) : 0;
-  }
-  document.getElementById('orderQty').value = Math.max(1, max);
-  updateOrderSummary();
+// Trading
+function setTradeSide(side,btn){
+  S.tradeSide=side;
+  document.querySelectorAll('.tp-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active','buy','sell');
+  btn.className='tp-tab active '+side;
+  document.getElementById('tpSubmitBtn').textContent=side==='buy'?'구매하기':'판매하기';
+  document.getElementById('tpSubmitBtn').className='tp-submit-btn '+side;
+  updateTradeSummary();
 }
-
-// =========================================================================
-// Order Summary
-// =========================================================================
-function updateOrderSummary() {
-  const price = parseFloat((document.getElementById('orderPrice').value || '').replace(/,/g,'')) || (state.selectedStock?.price || 0);
-  const qty = parseInt((document.getElementById('orderQty').value || '').replace(/,/g,'')) || 0;
-  const s = document.getElementById('orderSummary');
-  if (!state.selectedStock || price <= 0 || qty <= 0) { s.style.display = 'none'; return; }
-  s.style.display = '';
-  const isKR = state.selectedStock.market === 'kr';
-  const sym = isKR ? '' : '$';
-  const tv = price * qty;
-  const fee = tv * 0.00015;
-  document.getElementById('osTotal').textContent = sym + tv.toLocaleString() + (isKR ? '원' : '');
-  document.getElementById('osFee').textContent = sym + fee.toFixed(2) + (isKR ? '원' : '');
-  const fx = document.getElementById('osFxRow');
-  if (state.orderSide === 'buy' && !isKR && state.portfolio) {
-    const needUSD = tv + fee;
-    if ((state.portfolio.usdBalance || 0) >= needUSD) { fx.style.display = 'none'; }
-    else { fx.style.display = ''; document.getElementById('osFx').textContent = Math.ceil((needUSD - (state.portfolio.usdBalance || 0)) * state.usdkrw * 1.005).toLocaleString() + '원'; }
-    document.getElementById('osNeed').textContent = '$' + needUSD.toFixed(2);
-  } else { fx.style.display = 'none'; document.getElementById('osNeed').textContent = sym + (tv + fee).toLocaleString() + (isKR ? '원' : ''); }
-}
-
-// =========================================================================
-// Submit Order
-// =========================================================================
-async function submitOrder() {
-  if (!state.selectedStock) { toast('종목을 선택해주세요.'); return; }
-  const price = parseFloat((document.getElementById('orderPrice').value || '').replace(/,/g,'')) || state.selectedStock.price;
-  const qty = parseInt((document.getElementById('orderQty').value || '').replace(/,/g,''));
-  if (!price || !qty || qty <= 0) { toast('가격과 수량을 입력해주세요.'); return; }
-  const btn = document.getElementById('orderSubmitBtn');
-  btn.disabled = true; btn.textContent = '처리 중...';
-  try {
-    const r = await api('/api/trade/order', { method: 'POST', body: JSON.stringify({ accountId: state.currentAccountId, ticker: state.selectedStock.ticker, market: state.selectedStock.market, type: 'stock', side: state.orderSide, price, quantity: qty, mode: state.currentAccount?.type || 'realtime' }) });
-    if (r.ok) {
-      toast(`${state.selectedStock.ticker} ${qty}주 ${state.orderSide === 'buy' ? '매수' : '매도'} ${r.executed ? '체결 완료' : '접수 완료'}`);
-      closeOrderSheet(); loadEverything();
-    }
-  } catch (e) { toast('주문 실패: ' + e.message); }
-  btn.disabled = false; btn.textContent = (state.orderSide === 'buy' ? '매수' : '매도') + '하기';
-}
-
-// =========================================================================
-// FX Sheet
-// =========================================================================
-function openFXSheet() {
-  document.getElementById('fxSheetOverlay').classList.add('open');
-  document.getElementById('fxSheet').classList.add('open');
-  document.getElementById('fxRateDisplay').textContent = '1 USD = ' + state.usdkrw.toLocaleString() + '원';
-  document.getElementById('fxKrwAmount').value = ''; document.getElementById('fxUsdAmount').value = ''; updateFXPreview();
-}
-function closeFXSheet() {
-  document.getElementById('fxSheetOverlay').classList.remove('open');
-  document.getElementById('fxSheet').classList.remove('open');
-}
-function setFXDir(dir, btn) {
-  state.fxDirection = dir;
-  document.querySelectorAll('#fxSheet .seg-btn').forEach(b => b.classList.remove('active'));
+function setTradeType(type,btn){
+  S.tradeType=type;
+  document.querySelectorAll('.tp-seg').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('fxKrwField').style.display = dir === 'krw2usd' ? '' : 'none';
-  document.getElementById('fxUsdField').style.display = dir === 'usd2krw' ? '' : 'none';
-  updateFXPreview();
+  document.getElementById('tpPriceField').style.display=type==='limit'?'':'none';
+  updateTradeSummary();
 }
-function updateFXPreview() {
-  const rate = state.usdkrw; const spread = 0.005;
-  const el = document.getElementById('fxPreview');
-  if (state.fxDirection === 'krw2usd') {
-    const krw = parseInt((document.getElementById('fxKrwAmount').value || '').replace(/,/g,'')) || 0;
-    if (krw <= 0) { el.textContent = '금액을 입력하세요'; return; }
-    el.textContent = krw.toLocaleString() + '원 --> $' + (krw / (rate * (1 + spread))).toFixed(2) + ' (수수료 0.5%)';
-  } else {
-    const usd = parseFloat((document.getElementById('fxUsdAmount').value || '').replace(/,/g,'')) || 0;
-    if (usd <= 0) { el.textContent = '금액을 입력하세요'; return; }
-    el.textContent = '$' + usd.toFixed(2) + ' --> ' + Math.round(usd * rate * (1 - spread)).toLocaleString() + '원 (수수료 0.5%)';
-  }
+function setTradeQtyPct(pct){
+  const p=S.portfolio;if(!p||!S.detailStock)return;
+  const price=parseFloat((document.getElementById('tpPrice').value||'').replace(/,/g,''))||S.detailStock.price;
+  if(price<=0)return;
+  let max=0;
+  if(S.tradeSide==='buy'){max=Math.floor((S.detailStock.market==='kr'?p.krwBalance:(p.usdBalance||0)*S.usdkrw)/price*(pct/100));}
+  else{const h=p.holdings.find(h=>h.ticker===S.detailStock.ticker);max=h?Math.floor(h.quantity*(pct/100)):0;}
+  document.getElementById('tpQty').value=Math.max(1,max);
+  updateTradeSummary();
 }
-function executeFX() {
-  const p = state.portfolio; if (!p) return;
-  const rate = state.usdkrw; const spread = 0.005;
-  if (state.fxDirection === 'krw2usd') {
-    const krw = parseInt((document.getElementById('fxKrwAmount').value || '').replace(/,/g,'')) || 0;
-    if (krw <= 0 || p.krwBalance < krw) { toast('원화 잔액이 부족합니다.'); return; }
-    p.krwBalance -= krw; p.usdBalance = (p.usdBalance || 0) + krw / (rate * (1 + spread));
-    toast(krw.toLocaleString() + '원 환전 완료');
-  } else {
-    const usd = parseFloat((document.getElementById('fxUsdAmount').value || '').replace(/,/g,'')) || 0;
-    if (usd <= 0 || (p.usdBalance || 0) < usd) { toast('달러 잔액이 부족합니다.'); return; }
-    p.usdBalance -= usd; p.krwBalance += usd * rate * (1 - spread);
-    toast('$' + usd.toFixed(2) + ' 환전 완료');
+function updateTradeSummary(){
+  const price=parseFloat((document.getElementById('tpPrice').value||'').replace(/,/g,''))||(S.detailStock?.price||0);
+  const qty=parseInt((document.getElementById('tpQty').value||'').replace(/,/g,''))||0;
+  const p=S.portfolio;
+  if(!S.detailStock||price<=0||qty<=0||!p){
+    document.getElementById('tradeSummary').style.display='none';return;
   }
-  closeFXSheet(); renderTotalAsset(); renderAllocation(); renderBalance();
+  document.getElementById('tradeSummary').style.display='';
+  const tv=price*qty;const isKR=S.detailStock.market==='kr';const sym=isKR?'':(S.detailStock.currency==='USD'?'$':'$');
+  document.getElementById('tpAvail').textContent=sym+(isKR?Math.round(p.krwBalance).toLocaleString():((p.usdBalance||0)).toFixed(2))+(isKR?'원':'');
+  document.getElementById('tpTotal').textContent=sym+tv.toLocaleString()+(isKR?'원':'');
+}
+async function executeTrade(){
+  if(!S.detailStock){toast('종목을 선택해주세요.');return;}
+  const price=parseFloat((document.getElementById('tpPrice').value||'').replace(/,/g,''))||S.detailStock.price;
+  const qty=parseInt((document.getElementById('tpQty').value||'').replace(/,/g,''));
+  if(!price||!qty||qty<=0){toast('가격과 수량을 입력해주세요.');return;}
+  const btn=document.getElementById('tpSubmitBtn');btn.disabled=true;btn.textContent='처리 중...';
+  try{
+    const r=await api('/api/trade/order',{method:'POST',body:JSON.stringify({accountId:S.acctId,ticker:S.detailStock.ticker,market:S.detailStock.market,type:'stock',side:S.tradeSide,price,quantity:qty,mode:S.acct?.type||'realtime'})});
+    if(r.ok){toast(S.detailStock.ticker+' '+qty+'주 '+(S.tradeSide==='buy'?'매수':'매도')+' '+(r.executed?'체결 완료':'접수 완료'));loadAll();}
+  }catch(e){toast(e.message);}
+  btn.disabled=false;btn.textContent=S.tradeSide==='buy'?'구매하기':'판매하기';
 }
 
-// =========================================================================
-// SSE (Virtual Mode)
-// =========================================================================
-function connectSSE() {
-  if (state.eventSource) state.eventSource.close();
-  if (!state.currentAccount || state.currentAccount.type !== 'virtual') return;
-  const es = new EventSource(`/api/trade/stream?userId=${uid}&accountId=${state.currentAccountId}&mode=virtual`);
-  state.eventSource = es;
-  es.addEventListener('price', () => { loadEverything(); });
-  es.onerror = () => {};
+// History
+async function loadHistoryView(){
+  const el=document.getElementById('historyList');
+  try{
+    const h=await api('/api/trade/history/'+S.acctId);
+    if(!h.length){el.innerHTML='<div class="empty">거래 내역이 없습니다.</div>';return;}
+    let filtered=h;if(S.historyFilter!=='all')filtered=h.filter(x=>x.market===S.historyFilter||(S.historyFilter==='kr'&&x.ticker.match(/^\d/)));
+    if(!filtered.length){el.innerHTML='<div class="empty">해당 필터의 내역이 없습니다.</div>';return;}
+    el.innerHTML=filtered.slice(0,20).map(x=>{
+      const b=x.side==='buy',t=new Date(x.timestamp).toLocaleString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      return`<div class="hist-item"><div class="hist-dot ${b?'buy':'sell'}">${b?'B':'S'}</div><div class="hist-info"><div class="hist-ticker">${x.ticker} ${b?'매수':'매도'}</div><div class="hist-detail">${x.quantity}주 ${x.price.toLocaleString()}원</div></div><div class="hist-end"><div class="hist-amt">${b?'-':'+'}${Math.abs(x.amount).toLocaleString()}원</div><div class="hist-time">${t}</div></div></div>`;
+    }).join('');
+  }catch{el.innerHTML='<div class="empty">불러올 수 없습니다</div>';}
+}
+function switchHistoryFilter(f,btn){
+  S.historyFilter=f;
+  document.querySelectorAll('.seg-sm').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  loadHistoryView();
 }
 
-// Close dropdowns on outside click
-document.addEventListener('click', e => {
-  if (!e.target.closest('.search-wrap') && !e.target.closest('#orderSearchDropdown')) document.getElementById('orderSearchDropdown').classList.remove('open');
-});
+// Analytics
+async function loadAnalytics(){
+  try{
+    const h=await api('/api/trade/history/'+S.acctId);
+    const divs=await api('/api/trade/dividends/'+S.acctId);
+    const sellProfit=0;const divTotal=divs.reduce((s,d)=>s+(d.currency==='KRW'?d.amount:d.amount*S.usdkrw),0);
+    const total=Math.round(sellProfit+divTotal);
+    document.getElementById('analyticsMonth').textContent='실현수익: +'+total.toLocaleString()+'원';
+    document.getElementById('analyticsDetail').innerHTML=`
+      <div class="ad-row"><span class="ad-label">판매수익</span><span class="ad-value">${sellProfit.toLocaleString()}원</span></div>
+      <div class="ad-row"><span class="ad-label">배당금</span><span class="ad-value positive">+${Math.round(divTotal).toLocaleString()}원</span></div>
+      <div class="ad-row"><span class="ad-label">채권 이자</span><span class="ad-value">0원</span></div>`;
+    // chart
+    const cvs=document.getElementById('analyticsChart');
+    if(S.analyticsChart)S.analyticsChart.destroy();
+    if(cvs&&h.length){const pts=genData(0,total,'1m');S.analyticsChart=new Chart(cvs.getContext('2d'),{type:'line',data:{labels:pts.labels,datasets:[{data:pts.data,borderColor:'#1570EF',backgroundColor:'rgba(21,112,239,0.03)',fill:true,tension:0.3,borderWidth:1.5,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}});}
+  }catch{}
+}
+function switchAnalyticsRange(r,btn){
+  document.querySelectorAll('#viewAnalytics .r-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  loadAnalytics();
+}
+
+// Sidebar search
+let _st=null;
+async function onSidebarSearch(q){
+  clearTimeout(_st);
+  const res=document.getElementById('sidebarSearchResults');
+  if(!q.trim()){res.classList.remove('open');return;}
+  _st=setTimeout(async()=>{
+    try{
+      const r=await api('/api/search?q='+encodeURIComponent(q.trim())+'&market=all');
+      res.innerHTML=r.slice(0,8).map(s=>`<div class="ssr-item" onclick="openDetail('${s.ticker}','${s.market}','${s.name.replace(/'/g,"\\'")}')">${s.ticker} - ${s.name}</div>`).join('');
+      res.classList.add('open');
+    }catch{}
+  },200);
+}
+document.addEventListener('click',e=>{if(!e.target.closest('.sidebar-search'))document.getElementById('sidebarSearchResults').classList.remove('open');});
+
+// Account sheets
+function openAccountSheet(){
+  document.getElementById('acctOverlay').classList.add('open');
+  document.getElementById('acctSheet').classList.add('open');
+  renderAcctSheet();
+}
+function closeAccountSheet(){document.getElementById('acctOverlay').classList.remove('open');document.getElementById('acctSheet').classList.remove('open');}
+function renderAcctSheet(){
+  document.querySelectorAll('.atype-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===S.acctType));
+  const list=document.getElementById('acctSheetList');
+  const ofType=S.accounts.filter(a=>a.type===S.acctType);
+  list.innerHTML=ofType.map(a=>`<div class="acct-item2 ${a.id===S.acctId?'active':''}" onclick="switchAcct('${a.id}')"><span class="acct-item2-name">${a.label||'계좌'+a.id.slice(-4)}</span><span class="acct-item2-cap">${(a.initialCapital/10000).toFixed(0)}만원</span></div>`).join('');
+}
+async function switchAcct(id){S.acctId=id;S.acct=S.accounts.find(a=>a.id===id);closeAccountSheet();loadAll();startPoll();}
+async function switchAcctType(type,btn){
+  S.acctType=type;document.querySelectorAll('.atype-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+  const o=S.accounts.filter(a=>a.type===type);if(o.length){S.acctId=o[0].id;S.acct=o[0];}
+  renderAcctSheet();loadAll();startPoll();
+}
+function openNewAcctSheet(){document.getElementById('newAcctOverlay').classList.add('open');document.getElementById('newAcctSheet').classList.add('open');}
+function closeNewAcctSheet(){document.getElementById('newAcctOverlay').classList.remove('open');document.getElementById('newAcctSheet').classList.remove('open');}
+async function createNewAccount(){
+  const tBtn=document.querySelector('#newAcctSheet .atype-btn.active');
+  const cBtn=document.querySelector('#newAcctSheet .cap-btn.active');
+  const type=tBtn?.dataset.mtype||'realtime';
+  const cap=parseInt(cBtn?.dataset.cap||50000000);
+  try{const r=await api('/api/trade/accounts',{method:'POST',body:JSON.stringify({type,initialCapital:cap})});await loadAccts();S.acctType=type;S.acctId=r.account.id;S.acct=r.account;closeNewAcctSheet();closeAccountSheet();loadAll();startPoll();toast('계좌 개설 완료');}catch(e){toast(e.message);}
+}
+
+// FX
+function openFXSheet(){document.getElementById('fxOverlay').classList.add('open');document.getElementById('fxSheet').classList.add('open');document.getElementById('fxRateDisp').textContent=S.usdkrw.toLocaleString();document.getElementById('fxAmount').value='';updateFXPreview();}
+function closeFXSheet(){document.getElementById('fxOverlay').classList.remove('open');document.getElementById('fxSheet').classList.remove('open');}
+function setFXDir(dir,btn){S.fxDir=dir;document.querySelectorAll('#fxSheet .atype-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.getElementById('fxLabel').textContent=dir==='krw2usd'?'원화 금액':'달러 금액';updateFXPreview();}
+function updateFXPreview(){
+  const r=S.usdkrw;const s=0.005;const el=document.getElementById('fxPreview');
+  if(S.fxDir==='krw2usd'){const krw=parseInt((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;el.textContent=krw<=0?'금액을 입력하세요':krw.toLocaleString()+'원 -> $'+(krw/(r*(1+s))).toFixed(2);}
+  else{const usd=parseFloat((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;el.textContent=usd<=0?'금액을 입력하세요':'$'+usd.toFixed(2)+' -> '+Math.round(usd*r*(1-s)).toLocaleString()+'원';}
+}
+function executeFX(){
+  const p=S.portfolio;if(!p)return;const r=S.usdkrw;const s=0.005;
+  if(S.fxDir==='krw2usd'){const krw=parseInt((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;if(krw<=0||p.krwBalance<krw){toast('잔액 부족');return;}p.krwBalance-=krw;p.usdBalance=(p.usdBalance||0)+krw/(r*(1+s));toast(krw.toLocaleString()+'원 환전 완료');}
+  else{const usd=parseFloat((document.getElementById('fxAmount').value||'').replace(/,/g,''))||0;if(usd<=0||(p.usdBalance||0)<usd){toast('잔액 부족');return;}p.usdBalance-=usd;p.krwBalance+=usd*r*(1-s);toast('$'+usd.toFixed(2)+' 환전 완료');}
+  closeFXSheet();renderHome();renderSidebar();
+}
