@@ -398,6 +398,53 @@ body {
 
 .stock-row-card:hover {
   border-color: var(--accent);
+
+/* ── Full Page Account Setup Screen ── */
+.full-page-setup {
+  max-width: 680px;
+  margin: 40px auto;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  padding: 36px;
+  box-shadow: var(--shadow-md);
+}
+
+.setup-header {
+  margin-bottom: 24px;
+}
+
+.setup-mode-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup-mode-card {
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.setup-mode-card:hover, .setup-mode-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.setup-mode-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.setup-mode-desc {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+}
   box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
 }
