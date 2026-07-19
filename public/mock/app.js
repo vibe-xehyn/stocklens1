@@ -183,10 +183,10 @@ async function openNewAcctModal() {
         <div class="onboard-label">계좌 타입</div>
         <div class="onboard-type-grid">
           <button class="onboard-type-btn active" data-mtype="realtime" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
-            <div class="ot-icon">📊</div><div class="ot-title">실시간</div><div class="ot-desc">실제 시세 기반</div>
+            <div class="ot-title">실시간</div><div class="ot-desc">실제 시세 기반</div>
           </button>
           <button class="onboard-type-btn" data-mtype="virtual" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
-            <div class="ot-icon">⚡</div><div class="ot-title">가상</div><div class="ot-desc">24시간 시뮬레이션</div>
+            <div class="ot-title">가상</div><div class="ot-desc">24시간 시뮬레이션</div>
           </button>
         </div>
       </div>
