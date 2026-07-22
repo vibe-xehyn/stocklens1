@@ -169,6 +169,16 @@ async function loadServerOrLocalStorage() {
       if (parsed.watchlist) MockState.watchlist = new Set(parsed.watchlist);
     } catch (e) {}
   }
+
+  if (!Object.keys(MockState.accounts).length) {
+    createAccount('realtime', 10000000);
+    const defaultAcc = MockState.accounts['realtime'];
+    if (defaultAcc) {
+      defaultAcc.holdings['005930'] = { ticker: '005930', name: '삼성전자', market: 'kr', qty: 20, avgPrice: 75000, exchange: 'KOSPI' };
+      defaultAcc.holdings['NVDA'] = { ticker: 'NVDA', name: '엔비디아 (NVIDIA)', market: 'us', qty: 5, avgPrice: 120.00, exchange: 'NASDAQ' };
+      saveState();
+    }
+  }
 }
 
 async function saveState() {
