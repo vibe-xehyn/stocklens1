@@ -40,6 +40,12 @@
           <div id="accountDropdownList"></div>
         </div>
       </div>
+
+      <!-- Global Stock Search Input (Toss WTS Style) -->
+      <div style="position:relative; width:220px; margin-left:12px;">
+        <input type="text" id="globalStockSearchInput" class="select-control" style="width:100%; padding:6px 12px; font-size:12.5px; border-radius:99px;" placeholder="종목명 또는 티커 검색 (예: 삼성전자, NVDA)" oninput="handleGlobalStockSearch(this.value)" onfocus="handleGlobalStockSearch(this.value)">
+        <div id="globalSearchDropdownMenu" class="dropdown-menu" style="width:280px; max-height:300px; overflow-y:auto; top:110%;"></div>
+      </div>
     </div>
 
     <div style="display:flex; align-items:center; gap:16px;">

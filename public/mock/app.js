@@ -82,6 +82,59 @@ function setupNavTabListeners() {
       if (tab) switchNavTab(tab);
     });
   });
+
+  document.addEventListener('click', (e) => {
+    const searchWrapper = document.getElementById('globalStockSearchInput');
+    const menu = document.getElementById('globalSearchDropdownMenu');
+    if (menu && searchWrapper && !searchWrapper.contains(e.target) && !menu.contains(e.target)) {
+      menu.classList.remove('active');
+    }
+  });
+}
+
+function handleGlobalStockSearch(query) {
+  const menu = document.getElementById('globalSearchDropdownMenu');
+  if (!menu) return;
+
+  const q = (query || '').trim().toLowerCase();
+  if (!q) {
+    menu.classList.remove('active');
+    return;
+  }
+
+  const matches = MOCK_STOCK_DEFS.filter(s => 
+    s.name.toLowerCase().includes(q) || 
+    s.ticker.toLowerCase().includes(q) ||
+    s.category.toLowerCase().includes(q)
+  );
+
+  if (!matches.length) {
+    menu.innerHTML = `<div style="font-size:12px; color:var(--muted); padding:10px 12px; text-align:center;">검색 결과가 없습니다.</div>`;
+    menu.classList.add('active');
+    return;
+  }
+
+  let html = `<div style="font-size:11px; font-weight:800; color:var(--muted); padding:6px 12px; border-bottom:1px solid var(--border);">종목 검색 결과 (${matches.length}건)</div>`;
+  matches.slice(0, 8).forEach(s => {
+    const qObj = MockState.quotes[s.id] || s;
+    const upClass = qObj.changePct > 0 ? 'up' : (qObj.changePct < 0 ? 'down' : 'flat');
+    const sign = qObj.changePct > 0 ? '+' : '';
+    html += `
+      <div class="dropdown-item" onclick="openStockDetailModal('${s.id}'); document.getElementById('globalSearchDropdownMenu').classList.remove('active');">
+        <div>
+          <div style="font-weight:800; font-size:13px; color:var(--text);">${s.name}</div>
+          <div style="font-size:11px; color:var(--muted);">${s.ticker} · ${s.category}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:800; font-size:13px;">${s.market === 'us' ? '$' + qObj.price.toFixed(2) : 'KRW ' + Math.round(qObj.price).toLocaleString()}</div>
+          <div class="stock-change-sub ${upClass}" style="font-size:11px;">${sign}${qObj.changePct.toFixed(2)}%</div>
+        </div>
+      </div>
+    `;
+  });
+
+  menu.innerHTML = html;
+  menu.classList.add('active');
 }
 
 function switchNavTab(tabName) {
