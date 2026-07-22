@@ -10,11 +10,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
   
-  <!-- Lightweight Charts Standalone Library -->
+  <!-- Chart.js & Lightweight Charts Standalone Library -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=20260719_v3">
+  <link rel="stylesheet" href="style.css?v=20260722_v4">
 </head>
 <body>
 
@@ -145,7 +146,7 @@
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
-          <button id="modalFavBtn" class="pill-btn" onclick="toggleModalWatchlist()">♡ 관심종목 추가</button>
+          <button id="modalFavBtn" class="pill-btn" onclick="toggleModalWatchlist()">관심종목 추가</button>
           <button class="modal-close-btn" onclick="closeModal('stockDetailModal')">✕</button>
         </div>
       </div>

@@ -1,68 +1,69 @@
-// ── StockLens Mock Investment Masterclass Engine (Toss White Style) ──
+// ── StockLens Mock Investment Masterclass Engine (Gemini 3.6 Flash Edition) ──
 
-// ── Default Stock Definitions ──
+// ── Default Stock Definitions Universe ──
 const MOCK_STOCK_DEFS = [
   // 국내 KOSPI / KOSDAQ
-  { id: '005930', ticker: '005930', name: '삼성전자', market: 'kr', exchange: 'KOSPI', price: 78500, changePct: 1.25, divYield: 2.45, category: '국내주식', valScore: 88, growthScore: 82 },
-  { id: '000660', ticker: '000660', name: 'SK하이닉스', market: 'kr', exchange: 'KOSPI', price: 183000, changePct: -12.10, divYield: 1.20, category: '국내주식', valScore: 92, growthScore: 95 },
-  { id: '373220', ticker: '373220', name: 'LG에너지솔루션', market: 'kr', exchange: 'KOSPI', price: 382000, changePct: 0.52, divYield: 0.00, category: '국내주식', valScore: 75, growthScore: 85 },
-  { id: '005380', ticker: '005380', name: '현대차', market: 'kr', exchange: 'KOSPI', price: 253500, changePct: -9.30, divYield: 4.80, category: '국내주식', valScore: 85, growthScore: 78 },
-  { id: '035420', ticker: '035420', name: 'NAVER', market: 'kr', exchange: 'KOSPI', price: 172000, changePct: -0.86, divYield: 0.95, category: '국내주식', valScore: 80, growthScore: 75 },
-  { id: '035720', ticker: '035720', name: '카카오', market: 'kr', exchange: 'KOSPI', price: 42100, changePct: -1.41, divYield: 0.70, category: '국내주식', valScore: 70, growthScore: 72 },
-  { id: '068270', ticker: '068270', name: '셀트리온', market: 'kr', exchange: 'KOSPI', price: 194000, changePct: 1.84, divYield: 0.45, category: '국내주식', valScore: 84, growthScore: 86 },
-  { id: '000270', ticker: '000270', name: '기아', market: 'kr', exchange: 'KOSPI', price: 118500, changePct: 2.60, divYield: 5.10, category: '국내주식', valScore: 86, growthScore: 80 },
-  { id: '105560', ticker: '105560', name: 'KB금융', market: 'kr', exchange: 'KOSPI', price: 79200, changePct: 4.21, divYield: 4.10, category: '국내주식', valScore: 89, growthScore: 76 },
-  { id: '005490', ticker: '005490', name: 'POSCO홀딩스', market: 'kr', exchange: 'KOSPI', price: 365000, changePct: -0.54, divYield: 2.80, category: '국내주식', valScore: 78, growthScore: 70 },
-  { id: '012450', ticker: '012450', name: '한화에어로스페이스', market: 'kr', exchange: 'KOSPI', price: 298000, changePct: 5.80, divYield: 0.80, category: '국내주식', valScore: 94, growthScore: 98 },
-  { id: '006400', ticker: '006400', name: '삼성SDI', market: 'kr', exchange: 'KOSPI', price: 345000, changePct: -3.20, divYield: 1.10, category: '국내주식', valScore: 76, growthScore: 74 },
+  { id: '005930', ticker: '005930', name: '삼성전자', market: 'kr', exchange: 'KOSPI', price: 78500, changePct: 1.25, divYield: 2.45, category: '국내주식', valScore: 88, growthScore: 82, whaleScore: 90 },
+  { id: '000660', ticker: '000660', name: 'SK하이닉스', market: 'kr', exchange: 'KOSPI', price: 183000, changePct: -2.10, divYield: 1.20, category: '국내주식', valScore: 92, growthScore: 95, whaleScore: 94 },
+  { id: '373220', ticker: '373220', name: 'LG에너지솔루션', market: 'kr', exchange: 'KOSPI', price: 382000, changePct: 0.52, divYield: 0.00, category: '국내주식', valScore: 75, growthScore: 85, whaleScore: 78 },
+  { id: '005380', ticker: '005380', name: '현대차', market: 'kr', exchange: 'KOSPI', price: 253500, changePct: -1.30, divYield: 4.80, category: '국내주식', valScore: 85, growthScore: 78, whaleScore: 84 },
+  { id: '035420', ticker: '035420', name: 'NAVER', market: 'kr', exchange: 'KOSPI', price: 172000, changePct: -0.86, divYield: 0.95, category: '국내주식', valScore: 80, growthScore: 75, whaleScore: 76 },
+  { id: '035720', ticker: '035720', name: '카카오', market: 'kr', exchange: 'KOSPI', price: 42100, changePct: -1.41, divYield: 0.70, category: '국내주식', valScore: 70, growthScore: 72, whaleScore: 68 },
+  { id: '068270', ticker: '068270', name: '셀트리온', market: 'kr', exchange: 'KOSPI', price: 194000, changePct: 1.84, divYield: 0.45, category: '국내주식', valScore: 84, growthScore: 86, whaleScore: 88 },
+  { id: '000270', ticker: '000270', name: '기아', market: 'kr', exchange: 'KOSPI', price: 118500, changePct: 2.60, divYield: 5.10, category: '국내주식', valScore: 86, growthScore: 80, whaleScore: 82 },
+  { id: '105560', ticker: '105560', name: 'KB금융', market: 'kr', exchange: 'KOSPI', price: 79200, changePct: 3.21, divYield: 4.10, category: '국내주식', valScore: 89, growthScore: 76, whaleScore: 85 },
+  { id: '005490', ticker: '005490', name: 'POSCO홀딩스', market: 'kr', exchange: 'KOSPI', price: 365000, changePct: -0.54, divYield: 2.80, category: '국내주식', valScore: 78, growthScore: 70, whaleScore: 74 },
+  { id: '012450', ticker: '012450', name: '한화에어로스페이스', market: 'kr', exchange: 'KOSPI', price: 298000, changePct: 4.80, divYield: 0.80, category: '국내주식', valScore: 94, growthScore: 98, whaleScore: 96 },
+  { id: '006400', ticker: '006400', name: '삼성SDI', market: 'kr', exchange: 'KOSPI', price: 345000, changePct: -1.20, divYield: 1.10, category: '국내주식', valScore: 76, growthScore: 74, whaleScore: 72 },
 
-  // 해외 US Tech & Leaders
-  { id: 'NVDA', ticker: 'NVDA', name: '엔비디아 (NVIDIA)', market: 'us', exchange: 'NASDAQ', price: 128.50, changePct: 3.85, divYield: 0.12, category: '해외주식', valScore: 98, growthScore: 99 },
-  { id: 'AAPL', ticker: 'AAPL', name: '애플 (Apple)', market: 'us', exchange: 'NASDAQ', price: 224.30, changePct: 0.75, divYield: 0.45, category: '해외주식', valScore: 92, growthScore: 88 },
-  { id: 'MSFT', ticker: 'MSFT', name: '마이크로소프트 (MSFT)', market: 'us', exchange: 'NASDAQ', price: 448.90, changePct: -0.42, divYield: 0.68, category: '해외주식', valScore: 95, growthScore: 92 },
-  { id: 'GOOGL', ticker: 'GOOGL', name: '알파벳 A (Google)', market: 'us', exchange: 'NASDAQ', price: 178.20, changePct: -1.10, divYield: 0.45, category: '해외주식', valScore: 90, growthScore: 89 },
-  { id: 'AMZN', ticker: 'AMZN', name: '아마존 (Amazon)', market: 'us', exchange: 'NASDAQ', price: 186.40, changePct: 1.50, divYield: 0.00, category: '해외주식', valScore: 88, growthScore: 91 },
-  { id: 'META', ticker: 'META', name: '메타 (Meta)', market: 'us', exchange: 'NASDAQ', price: 495.20, changePct: 2.15, divYield: 0.40, category: '해외주식', valScore: 91, growthScore: 93 },
-  { id: 'TSLA', ticker: 'TSLA', name: '테슬라 (Tesla)', market: 'us', exchange: 'NASDAQ', price: 248.80, changePct: 5.60, divYield: 0.00, category: '해외주식', valScore: 82, growthScore: 95 },
-  { id: 'PLTR', ticker: 'PLTR', name: '팔란티어 (Palantir)', market: 'us', exchange: 'NYSE', price: 28.40, changePct: 4.30, divYield: 0.00, category: '해외주식', valScore: 93, growthScore: 97 },
-  { id: 'AVGO', ticker: 'AVGO', name: '브로드컴 (Broadcom)', market: 'us', exchange: 'NASDAQ', price: 172.60, changePct: -1.80, divYield: 1.25, category: '해외주식', valScore: 89, growthScore: 90 },
-  { id: 'JPM', ticker: 'JPM', name: 'JP모건 체이스', market: 'us', exchange: 'NYSE', price: 206.50, changePct: 1.10, divYield: 2.25, category: '해외주식', valScore: 87, growthScore: 80 },
+  // 해외 US Tech & Market Leaders
+  { id: 'NVDA', ticker: 'NVDA', name: '엔비디아 (NVIDIA)', market: 'us', exchange: 'NASDAQ', price: 128.50, changePct: 3.85, divYield: 0.12, category: '해외주식', valScore: 98, growthScore: 99, whaleScore: 99 },
+  { id: 'AAPL', ticker: 'AAPL', name: '애플 (Apple)', market: 'us', exchange: 'NASDAQ', price: 224.30, changePct: 0.75, divYield: 0.45, category: '해외주식', valScore: 92, growthScore: 88, whaleScore: 93 },
+  { id: 'MSFT', ticker: 'MSFT', name: '마이크로소프트 (MSFT)', market: 'us', exchange: 'NASDAQ', price: 448.90, changePct: -0.42, divYield: 0.68, category: '해외주식', valScore: 95, growthScore: 92, whaleScore: 95 },
+  { id: 'GOOGL', ticker: 'GOOGL', name: '알파벳 A (Google)', market: 'us', exchange: 'NASDAQ', price: 178.20, changePct: -1.10, divYield: 0.45, category: '해외주식', valScore: 90, growthScore: 89, whaleScore: 91 },
+  { id: 'AMZN', ticker: 'AMZN', name: '아마존 (Amazon)', market: 'us', exchange: 'NASDAQ', price: 186.40, changePct: 1.50, divYield: 0.00, category: '해외주식', valScore: 88, growthScore: 91, whaleScore: 90 },
+  { id: 'META', ticker: 'META', name: '메타 (Meta)', market: 'us', exchange: 'NASDAQ', price: 495.20, changePct: 2.15, divYield: 0.40, category: '해외주식', valScore: 91, growthScore: 93, whaleScore: 92 },
+  { id: 'TSLA', ticker: 'TSLA', name: '테슬라 (Tesla)', market: 'us', exchange: 'NASDAQ', price: 248.80, changePct: 4.60, divYield: 0.00, category: '해외주식', valScore: 82, growthScore: 95, whaleScore: 89 },
+  { id: 'PLTR', ticker: 'PLTR', name: '팔란티어 (Palantir)', market: 'us', exchange: 'NYSE', price: 28.40, changePct: 4.30, divYield: 0.00, category: '해외주식', valScore: 93, growthScore: 97, whaleScore: 94 },
+  { id: 'AVGO', ticker: 'AVGO', name: '브로드컴 (Broadcom)', market: 'us', exchange: 'NASDAQ', price: 172.60, changePct: -1.80, divYield: 1.25, category: '해외주식', valScore: 89, growthScore: 90, whaleScore: 87 },
+  { id: 'JPM', ticker: 'JPM', name: 'JP모건 체이스', market: 'us', exchange: 'NYSE', price: 206.50, changePct: 1.10, divYield: 2.25, category: '해외주식', valScore: 87, growthScore: 80, whaleScore: 86 },
 
   // 채권 & ETF
-  { id: 'SPY', ticker: 'SPY', name: 'S&P 500 ETF (SPY)', market: 'us', exchange: 'NYSE', price: 556.80, changePct: 0.45, divYield: 1.22, category: 'ETF', valScore: 90, growthScore: 85 },
-  { id: 'QQQ', ticker: 'QQQ', name: '나스닥 100 ETF (QQQ)', market: 'us', exchange: 'NASDAQ', price: 492.10, changePct: 0.88, divYield: 0.58, category: 'ETF', valScore: 94, growthScore: 92 },
-  { id: 'TLT', ticker: 'TLT', name: '미국 20년+ 국채 ETF (TLT)', market: 'us', exchange: 'NASDAQ', price: 94.50, changePct: -0.30, divYield: 3.85, category: '채권', valScore: 80, growthScore: 70 },
-  { id: 'TIGER200', ticker: '102110', name: 'TIGER 200 (KOSPI 200)', market: 'kr', exchange: 'KOSPI', price: 36200, changePct: 0.84, divYield: 1.90, category: 'ETF', valScore: 82, growthScore: 78 },
+  { id: 'SPY', ticker: 'SPY', name: 'S&P 500 ETF (SPY)', market: 'us', exchange: 'NYSE', price: 556.80, changePct: 0.45, divYield: 1.22, category: 'ETF', valScore: 90, growthScore: 85, whaleScore: 92 },
+  { id: 'QQQ', ticker: 'QQQ', name: '나스닥 100 ETF (QQQ)', market: 'us', exchange: 'NASDAQ', price: 492.10, changePct: 0.88, divYield: 0.58, category: 'ETF', valScore: 94, growthScore: 92, whaleScore: 95 },
+  { id: 'TLT', ticker: 'TLT', name: '미국 20년+ 국채 ETF (TLT)', market: 'us', exchange: 'NASDAQ', price: 94.50, changePct: -0.30, divYield: 3.85, category: '채권', valScore: 80, growthScore: 70, whaleScore: 75 },
+  { id: 'TIGER200', ticker: '102110', name: 'TIGER 200 (KOSPI 200)', market: 'kr', exchange: 'KOSPI', price: 36200, changePct: 0.84, divYield: 1.90, category: 'ETF', valScore: 82, growthScore: 78, whaleScore: 80 },
 ];
 
-// ── App State ──
+// ── Master Application State Engine ──
 let MockState = {
-  accounts: {}, // { realtime: {...}, virtual: {...} }
-  activeAccountId: null, // 'realtime' or 'virtual'
+  accounts: {},
+  activeAccountId: null,
   liveRate: 1380.50,
   watchlist: new Set(['005930', 'NVDA', 'AAPL', 'TSLA']),
-  quotes: {}, // ticker -> quote
-  currentTab: 'base', // 'base', 'watchlist', 'discovery', 'feed', 'exchange'
-  holdingFilter: 'all', // 'all', 'kr', 'us'
-  currencyView: 'krw', // 'krw', 'usd'
+  quotes: {},
+  currentTab: 'base',
+  holdingFilter: 'all',
+  currencyView: 'krw',
   sortOrder: 'val_desc',
-  discoveryCategory: 'all', // 'all', 'us', 'kr', 'bond', 'etf'
-  discoveryRankType: 'volume', // 'val', 'volume', 'up', 'down', 'popular'
+  discoveryCategory: 'all',
+  discoveryRankType: 'val',
   activeDetailStock: null,
-  orderType: 'buy', // 'buy', 'sell'
-  orderPriceMode: 'market', // 'market', 'limit'
+  orderType: 'buy',
+  orderPriceMode: 'market',
   setupModeType: 'realtime',
   setupCapitalAmount: 10000000,
-  isSetupForSecondAccount: false,
+  exchangeDir: 'KRW',
   tvChartObj: null,
   scenarioTimer: null,
+  feedItems: null,
 };
 
-// ── App Startup ──
+// ── Startup Event Listener ──
 document.addEventListener('DOMContentLoaded', async () => {
   initQuotes();
   await loadServerOrLocalStorage();
-  setupEventListeners();
+  setupNavTabListeners();
   startLiveRateFetcher();
   startVirtualScenarioEngine();
   renderApp();
@@ -74,7 +75,24 @@ function initQuotes() {
   });
 }
 
-// ── Persistence Layer (Server + LocalStorage) ──
+function setupNavTabListeners() {
+  document.querySelectorAll('.bnav-tab-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tab = e.currentTarget.getAttribute('data-tab');
+      if (tab) switchNavTab(tab);
+    });
+  });
+}
+
+function switchNavTab(tabName) {
+  MockState.currentTab = tabName;
+  document.querySelectorAll('.bnav-tab-item').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
+  });
+  renderApp();
+}
+
+// ── Data Persistence Layer (Server API + LocalStorage Fallback) ──
 async function loadServerOrLocalStorage() {
   try {
     const res = await fetch('/api/mock/data');
@@ -89,7 +107,7 @@ async function loadServerOrLocalStorage() {
     }
   } catch (e) {}
 
-  const saved = localStorage.getItem('stocklens_mock_master_state_v2');
+  const saved = localStorage.getItem('stocklens_mock_master_state_v3');
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
@@ -107,7 +125,7 @@ async function saveState() {
     watchlist: Array.from(MockState.watchlist),
   };
 
-  localStorage.setItem('stocklens_mock_master_state_v2', JSON.stringify(payload));
+  localStorage.setItem('stocklens_mock_master_state_v3', JSON.stringify(payload));
 
   try {
     await fetch('/api/mock/data', {
@@ -123,12 +141,12 @@ function getActiveAccount() {
   return MockState.accounts[MockState.activeAccountId];
 }
 
-// ── Account Creation Logic ──
+// ── Account Engine & Creation ──
 function createAccount(modeType, initialCapitalKRW) {
   const isReal = modeType === 'realtime';
   const newAccount = {
-    id: modeType, // 'realtime' or 'virtual'
-    name: isReal ? '실시간 실전 계좌' : '가상상황 쾌속 계좌',
+    id: modeType,
+    name: isReal ? '실시간 실전형 계좌' : '가상상황 쾌속형 계좌',
     type: modeType,
     krwCash: initialCapitalKRW,
     usdCash: 0,
@@ -143,10 +161,10 @@ function createAccount(modeType, initialCapitalKRW) {
   MockState.accounts[modeType] = newAccount;
   MockState.activeAccountId = modeType;
   saveState();
-  showToast(`${newAccount.name}가 ₩${(initialCapitalKRW / 10000).toLocaleString()}만원으로 개설되었습니다!`);
+  showToast(`${newAccount.name}가 생성되었습니다. (초기 예수금: ${Math.floor(initialCapitalKRW / 10000).toLocaleString()}만원)`);
 }
 
-// ── Rate & Virtual Scenario Engine ──
+// ── Live Exchange Rate Fetcher & Virtual Simulation Engine ──
 async function startLiveRateFetcher() {
   async function updateRate() {
     try {
@@ -156,7 +174,7 @@ async function startLiveRateFetcher() {
         if (data.usdkrw && data.usdkrw.value) {
           MockState.liveRate = parseFloat(data.usdkrw.value);
           const el = document.getElementById('headerLiveRate');
-          if (el) el.textContent = `1$ = ₩${MockState.liveRate.toLocaleString(undefined, { minimumFractionDigits: 1 })}`;
+          if (el) el.textContent = `1 USD = KRW ${MockState.liveRate.toLocaleString(undefined, { minimumFractionDigits: 1 })}`;
         }
       }
     } catch (e) {}
@@ -175,7 +193,7 @@ function startVirtualScenarioEngine() {
       if (!q) return;
 
       if (acc && acc.type === 'virtual') {
-        const delta = (Math.random() - 0.49) * 0.04;
+        const delta = (Math.random() - 0.49) * 0.035;
         const newPrice = Math.max(1, q.price * (1 + delta));
         q.changePct = ((newPrice - s.price) / s.price) * 100;
         q.price = newPrice;
@@ -184,7 +202,7 @@ function startVirtualScenarioEngine() {
 
     if (acc) checkPendingLimitOrders(acc);
 
-    if (acc && acc.type === 'virtual' && Math.random() < 0.15) {
+    if (acc && acc.type === 'virtual' && Math.random() < 0.12) {
       triggerFastDividend(acc);
     }
 
@@ -198,18 +216,19 @@ function checkPendingLimitOrders(acc) {
   if (!acc.pendingOrders || !acc.pendingOrders.length) return;
 
   const remaining = [];
-  acc.pendingOrders.forEach(o => {
-    const q = MockState.quotes[o.ticker];
-    if (!q) { remaining.push(o); return; }
+  acc.pendingOrders.forEach(order => {
+    const q = MockState.quotes[order.ticker];
+    if (!q) { remaining.push(order); return; }
 
-    let matched = false;
-    if (o.type === 'buy' && q.price <= o.price) matched = true;
-    if (o.type === 'sell' && q.price >= o.price) matched = true;
+    let isFilled = false;
+    if (order.type === 'buy' && q.price <= order.price) isFilled = true;
+    if (order.type === 'sell' && q.price >= order.price) isFilled = true;
 
-    if (matched) {
-      executeOrderMatch(acc, o, q.price);
+    if (isFilled) {
+      executeTrade(acc, order.ticker, order.type, order.qty, order.price, order.market);
+      showToast(`[지정가 체결] ${order.name} ${order.qty}주 ${order.type === 'buy' ? '매수' : '매도'} 완료`);
     } else {
-      remaining.push(o);
+      remaining.push(order);
     }
   });
 
@@ -217,272 +236,119 @@ function checkPendingLimitOrders(acc) {
   saveState();
 }
 
-function executeOrderMatch(acc, order, fillPrice) {
-  const isUsd = order.market === 'us';
-  if (order.type === 'buy') {
-    if (!acc.holdings[order.ticker]) {
-      acc.holdings[order.ticker] = { ticker: order.ticker, name: order.name, market: order.market, qty: 0, avgPrice: 0, totalCost: 0 };
-    }
-    const h = acc.holdings[order.ticker];
-    const newCost = isUsd ? (fillPrice * order.qty * MockState.liveRate) : (fillPrice * order.qty);
-    h.qty += order.qty;
-    h.totalCost += newCost;
-    h.avgPrice = (h.totalCost / (h.qty * (isUsd ? MockState.liveRate : 1)));
-
-    acc.executedOrders.unshift({
-      id: 'ord_' + Date.now(),
-      time: Date.now(),
-      ticker: order.ticker,
-      name: order.name,
-      type: 'buy',
-      price: fillPrice,
-      qty: order.qty,
-      market: order.market,
-      totalKRW: newCost,
-    });
-  } else {
-    const h = acc.holdings[order.ticker];
-    if (h) {
-      const revenueKRW = isUsd ? (fillPrice * order.qty * MockState.liveRate) : (fillPrice * order.qty);
-      if (isUsd) acc.usdCash += (fillPrice * order.qty);
-      else acc.krwCash += revenueKRW;
-
-      const pnlKRW = isUsd ? (fillPrice - h.avgPrice) * order.qty * MockState.liveRate : (fillPrice - h.avgPrice) * order.qty;
-      const returnPct = ((fillPrice - h.avgPrice) / h.avgPrice) * 100;
-
-      acc.realizedPnl.unshift({
-        id: 'pnl_' + Date.now(),
-        time: Date.now(),
-        ticker: order.ticker,
-        name: order.name,
-        pnlKRW,
-        returnPct,
-        qty: order.qty,
-        market: order.market,
-      });
-
-      h.qty -= order.qty;
-      if (h.qty <= 0) delete acc.holdings[order.ticker];
-
-      acc.executedOrders.unshift({
-        id: 'ord_' + Date.now(),
-        time: Date.now(),
-        ticker: order.ticker,
-        name: order.name,
-        type: 'sell',
-        price: fillPrice,
-        qty: order.qty,
-        market: order.market,
-        totalKRW: revenueKRW,
-      });
-    }
-  }
-  showToast(`[지정가 체결] ${order.name} ${order.type === 'buy' ? '매수' : '매도'} 완료!`);
-}
-
 function triggerFastDividend(acc) {
   const holdingKeys = Object.keys(acc.holdings);
   if (!holdingKeys.length) return;
 
-  const randomKey = holdingKeys[Math.floor(Math.random() * holdingKeys.length)];
-  const h = acc.holdings[randomKey];
-  if (!h || h.qty <= 0) return;
+  const randomTicker = holdingKeys[Math.floor(Math.random() * holdingKeys.length)];
+  const h = acc.holdings[randomTicker];
+  if (!h) return;
 
-  const q = MockState.quotes[h.ticker];
-  const isUsd = h.market === 'us';
-  const divPerShare = isUsd ? (q.price * 0.005) : (q.price * 0.008);
-  const totalDiv = Math.round(divPerShare * h.qty * 100) / 100;
+  const divPerShare = h.market === 'us' ? (Math.random() * 1.5 + 0.2) : (Math.floor(Math.random() * 500) + 100);
+  const totalDiv = divPerShare * h.qty;
 
-  if (isUsd) acc.usdCash = (acc.usdCash || 0) + totalDiv;
-  else acc.krwCash = (acc.krwCash || 0) + totalDiv;
+  if (h.market === 'us') {
+    acc.usdCash = (acc.usdCash || 0) + totalDiv;
+    showToast(`[배당금 입금] ${h.name} $${totalDiv.toFixed(2)} 달러 입금 완료`);
+  } else {
+    acc.krwCash = (acc.krwCash || 0) + totalDiv;
+    showToast(`[배당금 입금] ${h.name} KRW ${Math.round(totalDiv).toLocaleString()}원 입금 완료`);
+  }
 
+  acc.dividendHistory = acc.dividendHistory || [];
   acc.dividendHistory.unshift({
-    id: 'div_' + Date.now(),
-    time: Date.now(),
     ticker: h.ticker,
     name: h.name,
     amount: totalDiv,
-    isUsd,
+    market: h.market,
+    timestamp: Date.now()
   });
 
   saveState();
-  showToast(`[배당금 입금] ${h.name} +${isUsd ? '$' + totalDiv.toFixed(2) : '₩' + Math.floor(totalDiv).toLocaleString()} 배당 입금!`);
 }
 
-// ── Auto Currency Exchange Trading Engine ──
-function executeBuyOrder(ticker, qty, targetPrice, isMarket) {
-  const acc = getActiveAccount();
-  if (!acc) return;
+// ── Trade Execution Core ──
+function executeTrade(acc, ticker, orderType, qty, tradePrice, market) {
+  const isUsd = market === 'us';
+  const totalCost = tradePrice * qty;
 
-  const q = MockState.quotes[ticker];
-  if (!q) return;
-
-  const executionPrice = isMarket ? q.price : targetPrice;
-  const isUsd = q.market === 'us';
-
-  if (!isMarket) {
-    // Limit Order: Push to Pending Orders
-    const costInKRW = isUsd ? (executionPrice * qty * MockState.liveRate) : (executionPrice * qty);
+  if (orderType === 'buy') {
     if (isUsd) {
-      if ((acc.usdCash * MockState.liveRate + acc.krwCash) < costInKRW) {
-        showToast('지정가 주문을 위한 예수금이 부족합니다.');
-        return;
+      if ((acc.usdCash || 0) < totalCost) {
+        // Auto Currency Conversion from KRW if needed
+        const neededUsd = totalCost - (acc.usdCash || 0);
+        const neededKrw = neededUsd * MockState.liveRate;
+        if (acc.krwCash < neededKrw) {
+          showToast('주문 필요 예수금(달러 및 원화)이 부족합니다.');
+          return false;
+        }
+        acc.krwCash -= neededKrw;
+        acc.usdCash = 0;
+      } else {
+        acc.usdCash -= totalCost;
       }
     } else {
-      if (acc.krwCash < costInKRW) {
-        showToast('원화 예수금이 부족합니다.');
-        return;
+      if (acc.krwCash < totalCost) {
+        showToast('주문 필요 원화 예수금이 부족합니다.');
+        return false;
       }
+      acc.krwCash -= totalCost;
     }
 
-    acc.pendingOrders.unshift({
-      id: 'ord_' + Date.now(),
-      time: Date.now(),
-      ticker: q.ticker,
-      name: q.name,
-      type: 'buy',
-      price: executionPrice,
-      qty,
-      market: q.market,
+    // Holdings update
+    if (!acc.holdings[ticker]) {
+      acc.holdings[ticker] = {
+        ticker: ticker,
+        name: MockState.quotes[ticker]?.name || ticker,
+        qty: qty,
+        avgPrice: tradePrice,
+        market: market,
+      };
+    } else {
+      const h = acc.holdings[ticker];
+      const oldTotal = h.qty * h.avgPrice;
+      const newTotal = oldTotal + totalCost;
+      h.qty += qty;
+      h.avgPrice = newTotal / h.qty;
+    }
+  } else if (orderType === 'sell') {
+    const h = acc.holdings[ticker];
+    if (!h || h.qty < qty) {
+      showToast('매도 가능한 보유 수량이 부족합니다.');
+      return false;
+    }
+
+    const pnl = (tradePrice - h.avgPrice) * qty;
+    h.qty -= qty;
+    if (h.qty === 0) delete acc.holdings[ticker];
+
+    if (isUsd) acc.usdCash = (acc.usdCash || 0) + totalCost;
+    else acc.krwCash += totalCost;
+
+    acc.realizedPnl = acc.realizedPnl || [];
+    acc.realizedPnl.unshift({
+      ticker: ticker,
+      name: h.name,
+      pnl: pnl,
+      market: market,
+      timestamp: Date.now()
     });
-    saveState();
-    showToast(`${q.name} ${qty}주 지정가 매수 주문이 제출되었습니다.`);
-    closeModal('stockDetailModal');
-    renderApp();
-    return;
   }
 
-  // Market Order Execution
-  if (isUsd) {
-    const costUSD = executionPrice * qty;
-    let usdAvail = acc.usdCash || 0;
-
-    if (usdAvail >= costUSD) {
-      acc.usdCash -= costUSD;
-    } else {
-      // Auto Currency Exchange (자동 환전)
-      const missingUSD = costUSD - usdAvail;
-      const requiredKRW = missingUSD * MockState.liveRate;
-
-      if ((acc.krwCash || 0) < requiredKRW) {
-        showToast('예수금이 부족합니다. (원화 + 달러 합산 부족)');
-        return;
-      }
-
-      acc.krwCash -= requiredKRW;
-      acc.usdCash = 0;
-      showToast(`USD 부족으로 ₩${Math.round(requiredKRW).toLocaleString()}원이 $${missingUSD.toFixed(2)}로 자동 환전되어 매수되었습니다.`);
-    }
-  } else {
-    const costKRW = executionPrice * qty;
-    if ((acc.krwCash || 0) < costKRW) {
-      showToast('원화 예수금이 부족합니다.');
-      return;
-    }
-    acc.krwCash -= costKRW;
-  }
-
-  if (!acc.holdings[ticker]) {
-    acc.holdings[ticker] = { ticker: q.ticker, name: q.name, market: q.market, qty: 0, avgPrice: 0, totalCost: 0 };
-  }
-
-  const h = acc.holdings[ticker];
-  const newCostKRW = isUsd ? (executionPrice * qty * MockState.liveRate) : (executionPrice * qty);
-
-  h.qty += qty;
-  h.totalCost += newCostKRW;
-  h.avgPrice = (h.totalCost / (h.qty * (isUsd ? MockState.liveRate : 1)));
-
+  acc.executedOrders = acc.executedOrders || [];
   acc.executedOrders.unshift({
     id: 'ord_' + Date.now(),
-    time: Date.now(),
-    ticker: q.ticker,
-    name: q.name,
-    type: 'buy',
-    price: executionPrice,
-    qty,
-    market: q.market,
-    totalKRW: newCostKRW,
+    ticker: ticker,
+    name: MockState.quotes[ticker]?.name || ticker,
+    type: orderType,
+    qty: qty,
+    price: tradePrice,
+    market: market,
+    timestamp: Date.now()
   });
 
   saveState();
-  showToast(`${q.name} ${qty}주 매수 완료!`);
-  closeModal('stockDetailModal');
-  renderApp();
-}
-
-function executeSellOrder(ticker, qty, targetPrice, isMarket) {
-  const acc = getActiveAccount();
-  if (!acc) return;
-
-  const h = acc.holdings[ticker];
-  if (!h || h.qty < qty) {
-    showToast('보유 수량이 부족합니다.');
-    return;
-  }
-
-  const q = MockState.quotes[ticker];
-  const executionPrice = isMarket ? q.price : targetPrice;
-  const isUsd = q.market === 'us';
-
-  if (!isMarket) {
-    acc.pendingOrders.unshift({
-      id: 'ord_' + Date.now(),
-      time: Date.now(),
-      ticker: q.ticker,
-      name: q.name,
-      type: 'sell',
-      price: executionPrice,
-      qty,
-      market: q.market,
-    });
-    saveState();
-    showToast(`${q.name} ${qty}주 지정가 매도 주문이 제출되었습니다.`);
-    closeModal('stockDetailModal');
-    renderApp();
-    return;
-  }
-
-  const revenueUSD = isUsd ? executionPrice * qty : 0;
-  const revenueKRW = isUsd ? (executionPrice * qty * MockState.liveRate) : (executionPrice * qty);
-
-  if (isUsd) acc.usdCash = (acc.usdCash || 0) + revenueUSD;
-  else acc.krwCash = (acc.krwCash || 0) + revenueKRW;
-
-  const pnlKRW = isUsd ? (executionPrice - h.avgPrice) * qty * MockState.liveRate : (executionPrice - h.avgPrice) * qty;
-  const returnPct = ((executionPrice - h.avgPrice) / h.avgPrice) * 100;
-
-  acc.realizedPnl.unshift({
-    id: 'pnl_' + Date.now(),
-    time: Date.now(),
-    ticker: q.ticker,
-    name: q.name,
-    pnlKRW,
-    returnPct,
-    qty,
-    market: q.market,
-  });
-
-  h.qty -= qty;
-  h.totalCost -= (isUsd ? h.avgPrice * qty * MockState.liveRate : h.avgPrice * qty);
-  if (h.qty <= 0) delete acc.holdings[ticker];
-
-  acc.executedOrders.unshift({
-    id: 'ord_' + Date.now(),
-    time: Date.now(),
-    ticker: q.ticker,
-    name: q.name,
-    type: 'sell',
-    price: executionPrice,
-    qty,
-    market: q.market,
-    totalKRW: revenueKRW,
-  });
-
-  saveState();
-  showToast(`${q.name} ${qty}주 매도 완료 (실현손익: ${pnlKRW >= 0 ? '+' : ''}₩${Math.round(pnlKRW).toLocaleString()})`);
-  closeModal('stockDetailModal');
-  renderApp();
+  return true;
 }
 
 function executeManualExchange(fromCurrency, amount) {
@@ -497,7 +363,7 @@ function executeManualExchange(fromCurrency, amount) {
     const acquiredUSD = amount / MockState.liveRate;
     acc.krwCash -= amount;
     acc.usdCash = (acc.usdCash || 0) + acquiredUSD;
-    showToast(`₩${amount.toLocaleString()}원 → $${acquiredUSD.toFixed(2)} 달러 환전 완료!`);
+    showToast(`KRW ${Math.floor(amount).toLocaleString()} -> USD ${acquiredUSD.toFixed(2)} 환전 완료`);
   } else {
     if ((acc.usdCash || 0) < amount) {
       showToast('환전할 달러 잔고가 부족합니다.');
@@ -506,7 +372,7 @@ function executeManualExchange(fromCurrency, amount) {
     const acquiredKRW = amount * MockState.liveRate;
     acc.usdCash -= amount;
     acc.krwCash += acquiredKRW;
-    showToast(`$${amount.toFixed(2)} 달러 → ₩${Math.round(acquiredKRW).toLocaleString()}원 환전 완료!`);
+    showToast(`USD ${amount.toFixed(2)} -> KRW ${Math.floor(acquiredKRW).toLocaleString()} 환전 완료`);
   }
 
   saveState();
@@ -514,19 +380,17 @@ function executeManualExchange(fromCurrency, amount) {
   renderApp();
 }
 
-// ── Main Page Renderer ──
+// ── Application Main Renderer ──
 function renderApp() {
   const acc = getActiveAccount();
   const root = document.getElementById('appMainRoot');
   if (!root) return;
 
-  // 1. If 0 accounts, render FULL PAGE Account Creation Page directly!
   if (!acc && Object.keys(MockState.accounts).length === 0) {
     renderAccountCreationPage(root, 'realtime', false);
     return;
   }
 
-  // 2. Render Main Platform Layout
   renderAccountDropdown();
   renderHeroSummary();
 
@@ -543,7 +407,7 @@ function renderApp() {
   else if (MockState.currentTab === 'exchange') renderExchangePage(mainTabContent);
 }
 
-// ── Full Page Account Setup Screen ──
+// ── Full-Page Account Creation Screen (No Emojis) ──
 function renderAccountCreationPage(container, defaultMode, isSecond) {
   const modeToShow = defaultMode || 'realtime';
   MockState.setupModeType = modeToShow;
@@ -552,14 +416,14 @@ function renderAccountCreationPage(container, defaultMode, isSecond) {
     <div class="full-page-setup">
       <div class="setup-header">
         <div style="font-size:24px; font-weight:900; color:var(--text);">StockLens 모의투자 계좌 개설</div>
-        <div style="font-size:14px; color:var(--muted); margin-top:4px;">
-          ${isSecond ? '두 번째 계좌 개설을 위해 방식을 확인하고 초기 예수금을 설정하세요.' : '모의투자를 시작하기 위해 첫 번째 계좌 방식을 선택하고 예수금을 설정합니다.'}
+        <div style="font-size:14px; color:var(--muted); margin-top:6px;">
+          ${isSecond ? '두 번째 계좌 개설을 위해 투자의 방식을 선택하고 초기 모의 예수금을 설정하세요.' : '모의투자를 시작하기 위해 투자 방식과 초기 모의 예수금을 설정합니다.'}
         </div>
       </div>
 
-      <!-- Step 1: Mode Selection -->
-      <div style="margin-bottom:24px;">
-        <div style="font-size:14px; font-weight:800; color:var(--muted); margin-bottom:12px;">STEP 1. 투자 방식 선택</div>
+      <!-- Step 1: Investment Mode Selection -->
+      <div style="margin-bottom:28px;">
+        <div style="font-size:13px; font-weight:800; color:var(--muted); margin-bottom:12px;">STEP 1. 투자 방식 선택</div>
         
         <div class="setup-mode-grid">
   `;
@@ -569,7 +433,7 @@ function renderAccountCreationPage(container, defaultMode, isSecond) {
       <div id="setup_opt_realtime" class="setup-mode-card ${MockState.setupModeType === 'realtime' ? 'selected' : ''}" onclick="selectSetupMode('realtime')">
         <div class="setup-mode-title">실시간 실전형 계좌 (Real-Time Mode)</div>
         <div class="setup-mode-desc">
-          실제 KOSPI/NASDAQ 개장 시간에 맞춰 실시간 주가, 호가, 거래량 데이터로 거래합니다. 실제 시장 수익률과 똑같은 환경의 장기 투자 시뮬레이션입니다.
+          실제 KOSPI 및 NASDAQ 개장 시간에 맞춰 실시간 주가, 호가, 거래량 데이터로 거래합니다. 실제 시장 수익률과 동일한 환경의 장기 시뮬레이션입니다.
         </div>
       </div>
     `;
@@ -580,7 +444,7 @@ function renderAccountCreationPage(container, defaultMode, isSecond) {
       <div id="setup_opt_virtual" class="setup-mode-card ${MockState.setupModeType === 'virtual' ? 'selected' : ''}" onclick="selectSetupMode('virtual')">
         <div class="setup-mode-title">가상상황 쾌속형 계좌 (Virtual Scenario Mode)</div>
         <div class="setup-mode-desc">
-          30분 동안 신속하고 다이나믹하게 모의투자를 즐길 수 있습니다! 주가 변동성이 높고, 초고속 배당금 입금과 가상 호가가 적용되는 게임형 쾌속 모드입니다.
+          30분 동안 신속하고 다이나믹하게 모의투자를 진행할 수 있습니다. 주가 변동성이 높고, 자동 배당금 입금 및 가상 호가가 적용되는 쾌속 모드입니다.
         </div>
       </div>
     `;
@@ -591,25 +455,24 @@ function renderAccountCreationPage(container, defaultMode, isSecond) {
       </div>
 
       <!-- Step 2: Capital Selection -->
-      <div style="margin-bottom:28px;">
-        <div style="font-size:14px; font-weight:800; color:var(--muted); margin-bottom:12px;">STEP 2. 초기 모의 예수금 지불 지원</div>
-        <div style="font-size:13px; color:var(--text2); margin-bottom:12px;">원하는 초기 모의 예수금 규모를 선택해주세요.</div>
+      <div style="margin-bottom:32px;">
+        <div style="font-size:13px; font-weight:800; color:var(--muted); margin-bottom:12px;">STEP 2. 초기 모의 예수금 지원 선택</div>
 
         <div class="capital-btn-grid">
           <div class="capital-btn ${MockState.setupCapitalAmount === 1000000 ? 'selected' : ''}" onclick="selectSetupCapital(1000000, this)">
-            <div>₩100만원</div>
+            <div>KRW 100만원</div>
             <div style="font-size:11px; font-weight:500; opacity:0.8; margin-top:2px;">소액 스타트 펀드</div>
           </div>
           <div class="capital-btn ${MockState.setupCapitalAmount === 10000000 ? 'selected' : ''}" onclick="selectSetupCapital(10000000, this)">
-            <div>₩1,000만원</div>
+            <div>KRW 1,000만원</div>
             <div style="font-size:11px; font-weight:500; opacity:0.8; margin-top:2px;">표준 연습 펀드 (추천)</div>
           </div>
           <div class="capital-btn ${MockState.setupCapitalAmount === 100000000 ? 'selected' : ''}" onclick="selectSetupCapital(100000000, this)">
-            <div>₩1억원</div>
+            <div>KRW 1억원</div>
             <div style="font-size:11px; font-weight:500; opacity:0.8; margin-top:2px;">다각화 포트폴리오</div>
           </div>
           <div class="capital-btn ${MockState.setupCapitalAmount === 1000000000 ? 'selected' : ''}" onclick="selectSetupCapital(1000000000, this)">
-            <div>₩10억원</div>
+            <div>KRW 10억원</div>
             <div style="font-size:11px; font-weight:500; opacity:0.8; margin-top:2px;">초대형 퀀트 펀드</div>
           </div>
         </div>
@@ -647,7 +510,7 @@ function triggerSecondAccountSetup() {
   if (root) renderAccountCreationPage(root, remainingMode, true);
 }
 
-// ── Dropdown & Summary Headers ──
+// ── Dropdown & Header Renderers ──
 function renderAccountDropdown() {
   const acc = getActiveAccount();
   const titleEl = document.getElementById('activeAccountTitle');
@@ -670,7 +533,7 @@ function renderAccountDropdown() {
         <div class="dropdown-item ${isCurrent ? 'active' : ''}" onclick="switchActiveAccount('${k}')">
           <div>
             <div style="font-weight:800; font-size:13px;">${a.name}</div>
-            <div style="font-size:11px; color:var(--muted);">₩${Math.floor(a.krwCash).toLocaleString()}원 보유</div>
+            <div style="font-size:11px; color:var(--muted);">KRW ${Math.floor(a.krwCash).toLocaleString()}원</div>
           </div>
           <span class="account-mode-tag ${a.type === 'realtime' ? 'tag-realtime' : 'tag-virtual'}">
             ${a.type === 'realtime' ? '실전형' : '쾌속형'}
@@ -735,19 +598,19 @@ function renderHeroSummary() {
   const krwValEl = document.getElementById('krwCashVal');
   const usdValEl = document.getElementById('usdCashVal');
 
-  if (totalInvEl) totalInvEl.textContent = `₩${Math.floor(totalStockKRW).toLocaleString()}원 (총 자산: ₩${Math.floor(grandTotalKRW).toLocaleString()}원)`;
+  if (totalInvEl) totalInvEl.textContent = `KRW ${Math.floor(totalStockKRW).toLocaleString()}원 (총 자산: KRW ${Math.floor(grandTotalKRW).toLocaleString()}원)`;
   if (pnlEl) {
     const upClass = totalPnlKRW > 0 ? 'up' : (totalPnlKRW < 0 ? 'down' : 'flat');
     const sign = totalPnlKRW > 0 ? '+' : '';
     pnlEl.className = `hero-pnl-row ${upClass}`;
-    pnlEl.innerHTML = `평가손익: ${sign}₩${Math.round(totalPnlKRW).toLocaleString()}원 (${sign}${totalReturnPct.toFixed(2)}%)`;
+    pnlEl.innerHTML = `평가손익: ${sign}KRW ${Math.round(totalPnlKRW).toLocaleString()}원 (${sign}${totalReturnPct.toFixed(2)}%)`;
   }
 
-  if (krwValEl) krwValEl.textContent = `₩${Math.floor(krwCash).toLocaleString()}원`;
-  if (usdValEl) usdValEl.textContent = `$${(acc.usdCash || 0).toFixed(2)}`;
+  if (krwValEl) krwValEl.textContent = `KRW ${Math.floor(krwCash).toLocaleString()}원`;
+  if (usdValEl) usdValEl.textContent = `USD ${(acc.usdCash || 0).toFixed(2)}`;
 }
 
-// ── Base Dashboard View (`기본 화면 / 기초 화면`) ──
+// ── Base Dashboard View (`기본 화면 / 보유주식`) ──
 function renderBaseDashboard(container) {
   const acc = getActiveAccount();
   if (!acc) return;
@@ -758,7 +621,6 @@ function renderBaseDashboard(container) {
     return true;
   });
 
-  // Sorting
   holdingItems.sort((a, b) => {
     const qA = MockState.quotes[a.ticker] || { price: a.avgPrice, changePct: 0 };
     const qB = MockState.quotes[b.ticker] || { price: b.avgPrice, changePct: 0 };
@@ -790,8 +652,8 @@ function renderBaseDashboard(container) {
 
         <div style="display:flex; align-items:center; gap:8px;">
           <div class="filter-pills">
-            <button class="pill-btn ${MockState.currencyView === 'krw' ? 'active' : ''}" onclick="setCurrencyView('krw')">원화(₩)</button>
-            <button class="pill-btn ${MockState.currencyView === 'usd' ? 'active' : ''}" onclick="setCurrencyView('usd')">달러($)</button>
+            <button class="pill-btn ${MockState.currencyView === 'krw' ? 'active' : ''}" onclick="setCurrencyView('krw')">원화(KRW)</button>
+            <button class="pill-btn ${MockState.currencyView === 'usd' ? 'active' : ''}" onclick="setCurrencyView('usd')">달러(USD)</button>
           </div>
 
           <select class="select-control" onchange="setSortOrder(this.value)">
@@ -812,13 +674,13 @@ function renderBaseDashboard(container) {
     html += `
       <div class="card empty-state-box" style="margin-bottom:32px;">
         <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:4px;">보유 중인 주식이 없습니다</div>
-        <div style="font-size:13px; color:var(--muted);">[발견 / 종목 탐색] 탭에서 마음에 드는 종목을 선택해 첫 매수를 시작해보세요!</div>
+        <div style="font-size:13px; color:var(--muted);">[발견 / 종목 탐색] 탭에서 마음에 드는 종목을 선택해 첫 매수를 시작해보세요.</div>
       </div>
     `;
   } else {
     html += `
       <div class="base-dashboard-grid" style="display:grid; grid-template-columns: 1fr 1.6fr; gap: 24px; margin-bottom:32px; align-items: start;">
-        <!-- Left: Asset Chart Card -->
+        <!-- Left Column: Portfolio Asset Allocation Doughnut Chart -->
         <div class="card" style="padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 380px;">
           <div style="font-size: 14px; font-weight: 800; color: var(--text); align-self: flex-start; margin-bottom: 16px;">자산 포트폴리오 비중</div>
           <div style="width: 100%; height: 260px; position: relative;">
@@ -826,9 +688,10 @@ function renderBaseDashboard(container) {
           </div>
         </div>
 
-        <!-- Right: Holdings List -->
+        <!-- Right Column: Holdings Stock List -->
         <div style="display:flex; flex-direction:column; gap:12px;">
     `;
+
     holdingItems.forEach(h => {
       const q = MockState.quotes[h.ticker] || { price: h.avgPrice, changePct: 0 };
       const isUsdStock = h.market === 'us';
@@ -844,14 +707,14 @@ function renderBaseDashboard(container) {
           displayAvgStr = `$${h.avgPrice.toFixed(2)}`;
           displayValStr = `$${(curPrice * h.qty).toFixed(2)}`;
         } else {
-          displayPriceStr = `₩${Math.round(curPrice * MockState.liveRate).toLocaleString()}`;
-          displayAvgStr = `₩${Math.round(h.avgPrice * MockState.liveRate).toLocaleString()}`;
-          displayValStr = `₩${Math.round(curPrice * h.qty * MockState.liveRate).toLocaleString()}`;
+          displayPriceStr = `KRW ${Math.round(curPrice * MockState.liveRate).toLocaleString()}`;
+          displayAvgStr = `KRW ${Math.round(h.avgPrice * MockState.liveRate).toLocaleString()}`;
+          displayValStr = `KRW ${Math.round(curPrice * h.qty * MockState.liveRate).toLocaleString()}`;
         }
       } else {
-        displayPriceStr = `₩${Math.round(curPrice).toLocaleString()}`;
-        displayAvgStr = `₩${Math.round(h.avgPrice).toLocaleString()}`;
-        displayValStr = `₩${Math.round(curPrice * h.qty).toLocaleString()}`;
+        displayPriceStr = `KRW ${Math.round(curPrice).toLocaleString()}`;
+        displayAvgStr = `KRW ${Math.round(h.avgPrice).toLocaleString()}`;
+        displayValStr = `KRW ${Math.round(curPrice * h.qty).toLocaleString()}`;
       }
 
       const upClass = pnlPct > 0 ? 'up' : (pnlPct < 0 ? 'down' : 'flat');
@@ -873,17 +736,19 @@ function renderBaseDashboard(container) {
         </div>
       `;
     });
+
     html += `
         </div>
       </div>
     `;
   }
 
-  // Section 2: Orders History (주문 내역)
+  // Section 2: Orders History Ledger
   html += `
     <div class="card" style="margin-bottom:24px;">
-      <div style="font-size:16px; font-weight:900; margin-bottom:12px; color:var(--text);">주문 내역 (대기중 & 최근 체결)</div>
+      <div style="font-size:16px; font-weight:900; margin-bottom:14px; color:var(--text);">주문 내역 (대기 중 & 최근 체결)</div>
   `;
+
   if (acc.pendingOrders && acc.pendingOrders.length) {
     acc.pendingOrders.forEach(o => {
       html += `
@@ -891,66 +756,32 @@ function renderBaseDashboard(container) {
           <div>
             <span style="font-weight:800; font-size:14px;">${o.name}</span>
             <span class="badge-mock" style="margin-left:6px;">${o.type === 'buy' ? '매수대기' : '매도대기'}</span>
-            <div style="font-size:12px; color:var(--muted);">${o.qty}주 @ ${o.market === 'us' ? '$' + o.price.toFixed(2) : '₩' + o.price.toLocaleString() + '원'}</div>
+            <div style="font-size:12px; color:var(--muted);">${o.qty}주 @ ${o.market === 'us' ? '$' + o.price.toFixed(2) : 'KRW ' + o.price.toLocaleString() + '원'}</div>
           </div>
-          <button onclick="cancelPendingOrder('${o.id}')" style="padding:4px 10px; background:var(--surface3); border:none; border-radius:6px; font-size:12px; font-weight:700; color:var(--up-color); cursor:pointer;">취소</button>
+          <button onclick="cancelPendingOrder('${o.id}')" style="padding:5px 12px; background:var(--surface3); border:none; border-radius:6px; font-size:12px; font-weight:700; color:var(--up-color); cursor:pointer;">주문취소</button>
         </div>
       `;
     });
   } else {
-    html += `<div style="font-size:13px; color:var(--muted); padding:8px 0;">대기 중인 지정가 주문이 없습니다.</div>`;
+    html += `<div style="font-size:13px; color:var(--muted); padding:8px 0;">현재 미체결 대기 중인 지정가 주문이 없습니다.</div>`;
   }
   html += `</div>`;
 
-  // Section 3: Sales Profit (판매 수익 / 실현 손익)
-  let totalRealizedKRW = 0;
-  acc.realizedPnl.forEach(p => totalRealizedKRW += p.pnlKRW);
-  html += `
-    <div class="card" style="margin-bottom:24px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <div style="font-size:16px; font-weight:900; color:var(--text);">판매 수익 (누적 실현손익)</div>
-        <div style="font-size:16px; font-weight:900; color:${totalRealizedKRW >= 0 ? 'var(--up-color)' : 'var(--down-color)'};">
-          ${totalRealizedKRW >= 0 ? '+' : ''}₩${Math.round(totalRealizedKRW).toLocaleString()}원
-        </div>
-      </div>
-  `;
-  if (acc.realizedPnl.length) {
-    acc.realizedPnl.slice(0, 5).forEach(p => {
-      const upClass = p.pnlKRW >= 0 ? 'up' : 'down';
-      const sign = p.pnlKRW >= 0 ? '+' : '';
-      html += `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
-          <div>
-            <div style="font-weight:700; font-size:13px;">${p.name} (${p.qty}주 매도)</div>
-            <div style="font-size:11px; color:var(--muted);">${new Date(p.time).toLocaleString('ko-KR')}</div>
-          </div>
-          <div style="text-align:right;">
-            <div class="${upClass}" style="font-weight:800; font-size:14px;">${sign}₩${Math.round(p.pnlKRW).toLocaleString()}원</div>
-            <div class="${upClass}" style="font-size:11px; font-weight:700;">${sign}${p.returnPct.toFixed(2)}%</div>
-          </div>
-        </div>
-      `;
-    });
-  } else {
-    html += `<div style="font-size:13px; color:var(--muted); padding:8px 0;">아직 매도 확정된 판매 수익이 없습니다.</div>`;
-  }
-  html += `</div>`;
-
-  // Section 4: Dividend History (배당금 내역)
+  // Section 3: Dividend History Log
   html += `
     <div class="card">
-      <div style="font-size:16px; font-weight:900; margin-bottom:12px; color:var(--text);">입금된 배당금 내역</div>
+      <div style="font-size:16px; font-weight:900; margin-bottom:14px; color:var(--text);">배당금 수령 히스토리</div>
   `;
   if (acc.dividendHistory && acc.dividendHistory.length) {
     acc.dividendHistory.slice(0, 5).forEach(d => {
       html += `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
           <div>
-            <div style="font-weight:700; font-size:13px;">${d.name} <span class="badge-mock" style="background:var(--up-bg); color:var(--up-color);">배당입금</span></div>
-            <div style="font-size:11px; color:var(--muted);">${new Date(d.time).toLocaleString('ko-KR')}</div>
+            <span style="font-weight:800; font-size:14px;">${d.name}</span>
+            <div style="font-size:11px; color:var(--muted);">${new Date(d.timestamp).toLocaleTimeString('ko-KR')}</div>
           </div>
-          <div class="up" style="font-weight:900; font-size:14px;">
-            +${d.isUsd ? '$' + d.amount.toFixed(2) : '₩' + Math.floor(d.amount).toLocaleString() + '원'}
+          <div style="font-weight:800; color:var(--accent); font-size:14px;">
+            +${d.market === 'us' ? '$' + d.amount.toFixed(2) : 'KRW ' + Math.round(d.amount).toLocaleString() + '원'}
           </div>
         </div>
       `;
@@ -970,10 +801,10 @@ function setSortOrder(o) { MockState.sortOrder = o; renderApp(); }
 // ── Watchlist Page (`관심`) ──
 function renderWatchlistPage(container) {
   const favIds = Array.from(MockState.watchlist);
-  let html = `<div style="font-size:18px; font-weight:900; margin-bottom:16px;">★ 관심 종목 목록 (${favIds.length}개)</div>`;
+  let html = `<div style="font-size:18px; font-weight:900; margin-bottom:16px;">관심 종목 목록 (${favIds.length}개)</div>`;
 
   if (!favIds.length) {
-    html += `<div class="card empty-state-box">등록된 관심 종목이 없습니다. 종목 탐색에서 ♡ 버튼을 눌러 관심종목을 등록해보세요!</div>`;
+    html += `<div class="card empty-state-box">등록된 관심 종목이 없습니다. 종목 탐색에서 관심 버튼을 눌러 관심종목을 등록해보세요!</div>`;
   } else {
     favIds.forEach(id => {
       const q = MockState.quotes[id] || MOCK_STOCK_DEFS.find(s => s.id === id);
@@ -992,10 +823,12 @@ function renderWatchlistPage(container) {
           </div>
           <div class="stock-val-right" style="display:flex; align-items:center; gap:16px;">
             <div>
-              <div class="stock-price-main">${q.market === 'us' ? '$' + q.price.toFixed(2) : '₩' + Math.round(q.price).toLocaleString() + '원'}</div>
+              <div class="stock-price-main">${q.market === 'us' ? '$' + q.price.toFixed(2) : 'KRW ' + Math.round(q.price).toLocaleString() + '원'}</div>
               <div class="stock-change-sub ${upClass}">${sign}${q.changePct.toFixed(2)}%</div>
             </div>
-            <button onclick="event.stopPropagation(); toggleWatchlist('${q.id}')" style="background:none; border:none; font-size:20px; color:var(--up-color); cursor:pointer;">♥</button>
+            <button onclick="event.stopPropagation(); toggleWatchlist('${q.id}')" class="pill-btn active" style="font-size:12px; font-weight:700;">
+              관심 해제
+            </button>
           </div>
         </div>
       `;
@@ -1005,7 +838,7 @@ function renderWatchlistPage(container) {
   container.innerHTML = html;
 }
 
-// ── Discovery Feed Page (`발견 / 종목 탐색` - Reference Image Match) ──
+// ── Discovery Feed & Leaderboard Screener (`발견 / 종목 탐색`) ──
 function renderDiscoveryPage(container) {
   const categoryFilter = MockState.discoveryCategory;
   const filteredDefs = MOCK_STOCK_DEFS.filter(s => {
@@ -1016,7 +849,6 @@ function renderDiscoveryPage(container) {
     return true;
   });
 
-  // Rank sorting
   filteredDefs.sort((a, b) => {
     const qA = MockState.quotes[a.id] || a;
     const qB = MockState.quotes[b.id] || b;
@@ -1027,7 +859,7 @@ function renderDiscoveryPage(container) {
   });
 
   let html = `
-    <!-- Indices Banner -->
+    <!-- Live Market Indices Overview -->
     <div class="indices-banner-grid">
       <div class="index-card">
         <div class="index-name">S&P 500 선물</div>
@@ -1051,33 +883,32 @@ function renderDiscoveryPage(container) {
       </div>
     </div>
 
-    <!-- Category Badges -->
+    <!-- Category Filter Badges (No Emojis) -->
     <div class="category-badges-row">
+      <div class="cat-badge ${categoryFilter === 'all' ? 'active' : ''}" onclick="setDiscoveryCategory('all')">전체 종목</div>
       <div class="cat-badge ${categoryFilter === 'us' ? 'active' : ''}" onclick="setDiscoveryCategory('us')">해외주식</div>
       <div class="cat-badge ${categoryFilter === 'kr' ? 'active' : ''}" onclick="setDiscoveryCategory('kr')">국내주식</div>
       <div class="cat-badge ${categoryFilter === 'bond' ? 'active' : ''}" onclick="setDiscoveryCategory('bond')">채권</div>
       <div class="cat-badge ${categoryFilter === 'etf' ? 'active' : ''}" onclick="setDiscoveryCategory('etf')">ETF</div>
     </div>
 
-    <!-- News Ticker -->
+    <!-- News Ticker Banner -->
     <div class="news-ticker-card">
       <div class="news-ticker-text">
         <span class="tag-news">실시간 이슈</span>
-        <span>4 알파벳 실적 시험대 · 2분기 경제성장률(GDP) 발표(속보치) 임박</span>
+        <span>알파벳 실적 시험대 · 2분기 주요 기술주 경제성장률(GDP) 발표 속보치 임박</span>
       </div>
       <span style="font-size:12px; color:var(--accent); font-weight:700; cursor:pointer;">전체보기 ></span>
     </div>
 
-    <!-- Live Leaderboard Tabs -->
+    <!-- Leaderboard Sorting Tabs -->
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-      <div style="font-size:18px; font-weight:900; color:var(--text);">실시간 차트</div>
+      <div style="font-size:18px; font-weight:900; color:var(--text);">실시간 종목 랭킹</div>
 
       <div class="filter-pills">
         <button class="pill-btn ${MockState.discoveryRankType === 'val' ? 'active' : ''}" onclick="setDiscoveryRankType('val')">거래대금</button>
-        <button class="pill-btn ${MockState.discoveryRankType === 'volume' ? 'active' : ''}" onclick="setDiscoveryRankType('volume')">거래량</button>
         <button class="pill-btn ${MockState.discoveryRankType === 'up' ? 'active' : ''}" onclick="setDiscoveryRankType('up')">급상승</button>
         <button class="pill-btn ${MockState.discoveryRankType === 'down' ? 'active' : ''}" onclick="setDiscoveryRankType('down')">급하락</button>
-        <button class="pill-btn ${MockState.discoveryRankType === 'popular' ? 'active' : ''}" onclick="setDiscoveryRankType('popular')">인기</button>
       </div>
     </div>
   `;
@@ -1091,7 +922,7 @@ function renderDiscoveryPage(container) {
     html += `
       <div class="stock-row-card" onclick="openStockDetailModal('${s.id}')">
         <div class="stock-info-left">
-          <div style="font-size:16px; font-weight:900; color:var(--muted); width:24px;">${idx + 1}</div>
+          <div style="font-size:15px; font-weight:900; color:var(--muted); width:24px;">${idx + 1}</div>
           <div class="stock-icon-avatar">${s.name.substring(0, 1)}</div>
           <div>
             <div class="stock-name-title">${s.name}</div>
@@ -1100,11 +931,11 @@ function renderDiscoveryPage(container) {
         </div>
         <div class="stock-val-right" style="display:flex; align-items:center; gap:16px;">
           <div>
-            <div class="stock-price-main">${s.market === 'us' ? '$' + q.price.toFixed(2) : '₩' + Math.round(q.price).toLocaleString() + '원'}</div>
+            <div class="stock-price-main">${s.market === 'us' ? '$' + q.price.toFixed(2) : 'KRW ' + Math.round(q.price).toLocaleString() + '원'}</div>
             <div class="stock-change-sub ${upClass}">${sign}${q.changePct.toFixed(2)}%</div>
           </div>
-          <button onclick="event.stopPropagation(); toggleWatchlist('${s.id}')" style="background:none; border:none; font-size:20px; cursor:pointer; color:${isFav ? 'var(--up-color)' : 'var(--border2)'}">
-            ${isFav ? '♥' : '♡'}
+          <button onclick="event.stopPropagation(); toggleWatchlist('${s.id}')" class="pill-btn ${isFav ? 'active' : ''}" style="font-size:12px; font-weight:700;">
+            ${isFav ? '관심등록됨' : '관심추가'}
           </button>
         </div>
       </div>
@@ -1117,11 +948,11 @@ function renderDiscoveryPage(container) {
 function setDiscoveryCategory(cat) { MockState.discoveryCategory = MockState.discoveryCategory === cat ? 'all' : cat; renderApp(); }
 function setDiscoveryRankType(type) { MockState.discoveryRankType = type; renderApp(); }
 
-// ── Feed / Community Page (`피드` - Interactive Update) ──
+// ── Feed / Community Page (`피드` - Interactive Post & Discussion) ──
 function renderFeedPage(container) {
   if (!MockState.feedItems) {
     MockState.feedItems = [
-      { id: 1, name: '엔비디아 (NVDA) 피드', content: '블랙웰 차세대 칩 수요 폭발적인 증가 지속! 미국주식 핵심 롱 포지션입니다.', author: '해외투자 전문가', time: '1분 전', logo: 'NV' },
+      { id: 1, name: '엔비디아 (NVDA) 피드', content: '블랙웰 차세대 칩 수요 폭발적인 증가 지속. 미국주식 핵심 롱 포지션입니다.', author: '해외투자 전문가', time: '1분 전', logo: 'NV' },
       { id: 2, name: 'SK하이닉스 실시간 피드', content: 'HBM3E 공급 확대로 하반기 영업이익 최고치 달성이 기대됩니다. 금일 기관 매집세 유입.', author: '반도체 애널리스트', time: '5분 전', logo: 'SK' },
       { id: 3, name: '테슬라 (TSLA) 피드', content: '로보택시 공개 일정 카운트다운 진입. 자율주행 소프트웨어 성장세에 집중해야 할 때.', author: '테슬라 롱러너', time: '12분 전', logo: 'TS' }
     ];
@@ -1145,7 +976,7 @@ function renderFeedPage(container) {
 
   container.innerHTML = `
     <div style="max-width:640px; margin:0 auto;">
-      <!-- Post a new comment Card -->
+      <!-- Post Opinion Card -->
       <div class="card" style="margin-bottom:20px; padding:20px;">
         <div style="font-size:16px; font-weight:900; margin-bottom:12px;">주주 토론 의견 남기기</div>
         
@@ -1166,7 +997,7 @@ function renderFeedPage(container) {
         </div>
 
         <div style="text-align:right;">
-          <button class="primary-action-btn" onclick="submitFeedPost()" style="padding:10px 20px; font-size:13px; font-weight:700; width:auto; border-radius:12px;">등록하기</button>
+          <button class="primary-action-btn" onclick="submitFeedPost()" style="padding:10px 20px; font-size:13px; font-weight:700; width:auto; border-radius:12px;">의견 등록하기</button>
         </div>
       </div>
 
@@ -1202,11 +1033,11 @@ function submitFeedPost() {
   if (!MockState.feedItems) MockState.feedItems = [];
   MockState.feedItems.unshift(newPost);
   
-  showToast('의견이 등록되었습니다!');
+  showToast('의견이 등록되었습니다.');
   renderApp();
 }
 
-// ── Exchange Page (`환전소` - UI Upgrade) ──
+// ── Exchange Page (`환전소` - Live Interactive Converter) ──
 function renderExchangePage(container) {
   const acc = getActiveAccount();
   if (!acc) return;
@@ -1214,24 +1045,24 @@ function renderExchangePage(container) {
   const currentDir = MockState.exchangeDir || 'KRW';
   MockState.exchangeDir = currentDir;
 
-  const fromLabel = currentDir === 'KRW' ? '원화(₩)' : '달러($)';
-  const toLabel = currentDir === 'KRW' ? '달러($)' : '원화(₩)';
+  const fromLabel = currentDir === 'KRW' ? '원화(KRW)' : '달러(USD)';
+  const toLabel = currentDir === 'KRW' ? '달러(USD)' : '원화(KRW)';
   const fromBalance = currentDir === 'KRW' ? acc.krwCash : (acc.usdCash || 0);
-  const fromSymbol = currentDir === 'KRW' ? '₩' : '$';
+  const fromSymbol = currentDir === 'KRW' ? 'KRW ' : '$';
 
   container.innerHTML = `
     <div class="card" style="max-width:540px; margin:0 auto; padding:28px;">
       <div style="font-size:20px; font-weight:900; margin-bottom:16px;">실시간 환전 센터</div>
       <div style="font-size:13px; color:var(--muted); margin-bottom:20px; display:flex; align-items:center; justify-content:space-between;">
         <span>현재 미 달러 적용 환율</span>
-        <strong style="color:var(--text); font-size:14px;">1 USD = ₩${MockState.liveRate.toLocaleString(undefined, {minimumFractionDigits:2})}원</strong>
+        <strong style="color:var(--text); font-size:14px;">1 USD = KRW ${MockState.liveRate.toLocaleString(undefined, {minimumFractionDigits:2})}원</strong>
       </div>
 
       <div style="background:var(--surface2); border-radius:var(--radius-md); padding:16px; margin-bottom:24px; border:1px solid var(--border);">
         <div style="font-size:11px; color:var(--muted); margin-bottom:8px; font-weight:bold;">현재 계좌 예수금 보유 현황</div>
         <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; color:var(--text);">
-          <span>원화(KRW): ₩${Math.floor(acc.krwCash).toLocaleString()}원</span>
-          <span>달러(USD): $${(acc.usdCash || 0).toFixed(2)}</span>
+          <span>원화(KRW): KRW ${Math.floor(acc.krwCash).toLocaleString()}원</span>
+          <span>달러(USD): USD ${(acc.usdCash || 0).toFixed(2)}</span>
         </div>
       </div>
 
@@ -1249,9 +1080,9 @@ function renderExchangePage(container) {
           </div>
         </div>
 
-        <!-- Swap Button Overlay -->
+        <!-- Swap Direction Button Overlay -->
         <div style="position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); z-index:10;">
-          <button onclick="toggleExchangeDir()" style="width:36px; height:36px; border-radius:50%; border:1px solid var(--border2); background:var(--surface); color:var(--accent); font-weight:900; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-sm); transition:all 0.15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">⇅</button>
+          <button onclick="toggleExchangeDir()" style="width:36px; height:36px; border-radius:50%; border:1px solid var(--border2); background:var(--surface); color:var(--accent); font-weight:900; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-sm); transition:all 0.15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">⇆</button>
         </div>
 
         <!-- To Box -->
@@ -1264,7 +1095,7 @@ function renderExchangePage(container) {
         </div>
       </div>
 
-      <!-- Percentage helper buttons -->
+      <!-- Percentage Helper Buttons -->
       <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:24px;">
         <button onclick="fillExchangePercent(0.25)" class="pill-btn" style="padding:10px; font-size:12px; font-weight:700;">25%</button>
         <button onclick="fillExchangePercent(0.50)" class="pill-btn" style="padding:10px; font-size:12px; font-weight:700;">50%</button>
@@ -1309,7 +1140,7 @@ function updateLiveExchangeCalc() {
     result.style.color = calc > 0 ? 'var(--text)' : 'var(--muted)';
   } else {
     const calc = amt * rate;
-    result.textContent = calc > 0 ? `₩${Math.round(calc).toLocaleString()}원` : '0';
+    result.textContent = calc > 0 ? `KRW ${Math.round(calc).toLocaleString()}원` : '0';
     result.style.color = calc > 0 ? 'var(--text)' : 'var(--muted)';
   }
 }
@@ -1321,7 +1152,7 @@ function submitTabExchange() {
   executeManualExchange(dir, amt);
 }
 
-// ── Stock Detail Modal with Analysis & Order Book Depth ──
+// ── Stock Detail Modal & 10-Level Order Book Sheet ──
 function openStockDetailModal(ticker) {
   const q = MockState.quotes[ticker] || MOCK_STOCK_DEFS.find(s => s.id === ticker);
   if (!q) return;
@@ -1331,7 +1162,7 @@ function openStockDetailModal(ticker) {
   if (!modal) return;
 
   document.getElementById('modalStockTitle').textContent = `${q.name} (${q.id})`;
-  document.getElementById('modalStockPrice').textContent = q.market === 'us' ? `$${q.price.toFixed(2)}` : `₩${Math.round(q.price).toLocaleString()}원`;
+  document.getElementById('modalStockPrice').textContent = q.market === 'us' ? `$${q.price.toFixed(2)}` : `KRW ${Math.round(q.price).toLocaleString()}원`;
 
   const changeEl = document.getElementById('modalStockChange');
   const upClass = q.changePct > 0 ? 'up' : (q.changePct < 0 ? 'down' : 'flat');
@@ -1342,10 +1173,10 @@ function openStockDetailModal(ticker) {
   const favBtn = document.getElementById('modalFavBtn');
   if (favBtn) {
     const isFav = MockState.watchlist.has(q.id);
-    favBtn.textContent = isFav ? '♥ 관심 등록됨' : '♡ 관심종목 추가';
+    favBtn.textContent = isFav ? '관심 등록됨' : '관심종목 추가';
   }
 
-  // Stock Analysis Factors (Valuation, Growth, Whale accumulation)
+  // Stock Factor Scores
   const factorEl = document.getElementById('modalAnalysisFactors');
   if (factorEl) {
     factorEl.innerHTML = `
@@ -1379,10 +1210,11 @@ function toggleModalWatchlist() {
   const favBtn = document.getElementById('modalFavBtn');
   if (favBtn) {
     const isFav = MockState.watchlist.has(stock.id);
-    favBtn.textContent = isFav ? '♥ 관심 등록됨' : '♡ 관심종목 추가';
+    favBtn.textContent = isFav ? '관심 등록됨' : '관심종목 추가';
   }
 }
 
+// ── 10-Level Order Book Depth Renderer (Level-2 Bids/Asks Visualization) ──
 function renderOrderBookDepth(q) {
   const container = document.getElementById('modalOrderBookContainer');
   if (!container) return;
@@ -1393,33 +1225,36 @@ function renderOrderBookDepth(q) {
 
   let html = '<div class="order-book-container">';
 
+  // 5 Ask Rows (Sell Limit Orders - Blue)
   for (let i = 5; i >= 1; i--) {
     const p = currentPrice + (i * step);
     const vol = Math.floor(Math.random() * 3000) + 200;
     const depthPct = Math.min(100, (vol / 3500) * 100);
     html += `
       <div class="order-book-row ask" onclick="fillOrderPrice(${p})">
-        <span>${isUsd ? '$' + p.toFixed(2) : '₩' + Math.round(p).toLocaleString()}</span>
+        <span>${isUsd ? '$' + p.toFixed(2) : 'KRW ' + Math.round(p).toLocaleString()}</span>
         <span>${vol.toLocaleString()}주</span>
         <div class="order-book-depth-bar" style="width:${depthPct}%;"></div>
       </div>
     `;
   }
 
+  // Current Price Row
   html += `
     <div class="order-book-row current-price">
-      <span>${isUsd ? '$' + currentPrice.toFixed(2) : '₩' + Math.round(currentPrice).toLocaleString()} (현재가)</span>
+      <span>${isUsd ? '$' + currentPrice.toFixed(2) : 'KRW ' + Math.round(currentPrice).toLocaleString()} (현재가)</span>
       <span>체결중</span>
     </div>
   `;
 
+  // 5 Bid Rows (Buy Limit Orders - Red)
   for (let i = 1; i <= 5; i++) {
     const p = Math.max(1, currentPrice - (i * step));
     const vol = Math.floor(Math.random() * 3000) + 200;
     const depthPct = Math.min(100, (vol / 3500) * 100);
     html += `
       <div class="order-book-row bid" onclick="fillOrderPrice(${p})">
-        <span>${isUsd ? '$' + p.toFixed(2) : '₩' + Math.round(p).toLocaleString()}</span>
+        <span>${isUsd ? '$' + p.toFixed(2) : 'KRW ' + Math.round(p).toLocaleString()}</span>
         <span>${vol.toLocaleString()}주</span>
         <div class="order-book-depth-bar" style="width:${depthPct}%;"></div>
       </div>
@@ -1483,45 +1318,50 @@ function submitOrderFromModal() {
   const qty = parseInt(document.getElementById('orderQtyInput').value) || 0;
   if (qty <= 0) { showToast('매수/매도 수량을 입력하세요.'); return; }
 
-  const isMarket = MockState.orderPriceMode === 'market';
-  const priceInput = parseFloat(document.getElementById('orderPriceInput').value);
-  const targetPrice = isMarket ? stock.price : (priceInput || stock.price);
+  const acc = getActiveAccount();
+  if (!acc) return;
 
-  if (MockState.orderType === 'buy') {
-    executeBuyOrder(stock.id, qty, targetPrice, isMarket);
-  } else {
-    executeSellOrder(stock.id, qty, targetPrice, isMarket);
+  const mode = MockState.orderPriceMode;
+  const type = MockState.orderType;
+
+  if (mode === 'market') {
+    const success = executeTrade(acc, stock.id, type, qty, stock.price, stock.market);
+    if (success) {
+      showToast(`${stock.name} ${qty}주 ${type === 'buy' ? '매수' : '매도'} 체결 완료`);
+      closeModal('stockDetailModal');
+      renderApp();
+    }
+  } else if (mode === 'limit') {
+    const limitPrice = parseFloat(document.getElementById('orderPriceInput').value);
+    if (!limitPrice || limitPrice <= 0) { showToast('지정가를 입력하세요.'); return; }
+
+    acc.pendingOrders = acc.pendingOrders || [];
+    acc.pendingOrders.push({
+      id: 'limit_' + Date.now(),
+      ticker: stock.id,
+      name: stock.name,
+      type: type,
+      qty: qty,
+      price: limitPrice,
+      market: stock.market,
+      timestamp: Date.now()
+    });
+
+    saveState();
+    showToast(`${stock.name} ${qty}주 지정가 (${mode === 'buy' ? '매수' : '매도'}) 주문 접수 완료`);
+    closeModal('stockDetailModal');
+    renderApp();
   }
 }
 
-// ── Event Handlers ──
-function setupEventListeners() {
-  document.querySelectorAll('.bnav-tab-item').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('.bnav-tab-item').forEach(b => b.classList.remove('active'));
-      const target = e.currentTarget;
-      target.classList.add('active');
-      MockState.currentTab = target.getAttribute('data-tab');
-      renderApp();
-    });
-  });
-}
-
-function switchNavTab(tabName) {
-  MockState.currentTab = tabName;
-  document.querySelectorAll('.bnav-tab-item').forEach(b => {
-    b.classList.toggle('active', b.getAttribute('data-tab') === tabName);
-  });
-  renderApp();
-}
-
+// ── Watchlist Management ──
 function toggleWatchlist(ticker) {
   if (MockState.watchlist.has(ticker)) {
     MockState.watchlist.delete(ticker);
     showToast('관심종목에서 제거되었습니다.');
   } else {
     MockState.watchlist.add(ticker);
-    showToast('관심종목에 추가되었습니다! ♥');
+    showToast('관심종목에 추가되었습니다.');
   }
   saveState();
   renderApp();
@@ -1557,6 +1397,7 @@ function showToast(msg) {
   setTimeout(() => { toast.remove(); }, 3000);
 }
 
+// ── Portfolio Doughnut Chart Renderer (Chart.js) ──
 function initPortfolioChart() {
   const canvas = document.getElementById('portfolioChart');
   if (!canvas) return;
@@ -1616,7 +1457,6 @@ function initPortfolioChart() {
 
   const totalValue = data.reduce((a, b) => a + b, 0);
 
-  // Clear existing Chart instance on this canvas if any
   const existingChart = Chart.getChart(canvas);
   if (existingChart) existingChart.destroy();
 
@@ -1654,7 +1494,7 @@ function initPortfolioChart() {
             label: function(context) {
               const val = context.raw;
               const pct = ((val / totalValue) * 100).toFixed(1);
-              return ` ${context.label}: ₩${Math.round(val).toLocaleString()}원 (${pct}%)`;
+              return ` ${context.label}: KRW ${Math.round(val).toLocaleString()}원 (${pct}%)`;
             }
           }
         }
