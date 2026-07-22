@@ -567,7 +567,7 @@ function renderAccountCreationPage(container, defaultMode, isSecond) {
   if (!isSecond || !MockState.accounts['realtime']) {
     html += `
       <div id="setup_opt_realtime" class="setup-mode-card ${MockState.setupModeType === 'realtime' ? 'selected' : ''}" onclick="selectSetupMode('realtime')">
-        <div class="setup-mode-title">📈 실시간 실전형 계좌 (Real-Time Mode)</div>
+        <div class="setup-mode-title">실시간 실전형 계좌 (Real-Time Mode)</div>
         <div class="setup-mode-desc">
           실제 KOSPI/NASDAQ 개장 시간에 맞춰 실시간 주가, 호가, 거래량 데이터로 거래합니다. 실제 시장 수익률과 똑같은 환경의 장기 투자 시뮬레이션입니다.
         </div>
@@ -578,7 +578,7 @@ function renderAccountCreationPage(container, defaultMode, isSecond) {
   if (!isSecond || !MockState.accounts['virtual']) {
     html += `
       <div id="setup_opt_virtual" class="setup-mode-card ${MockState.setupModeType === 'virtual' ? 'selected' : ''}" onclick="selectSetupMode('virtual')">
-        <div class="setup-mode-title">⚡ 가상상황 쾌속형 계좌 (Virtual Scenario Mode)</div>
+        <div class="setup-mode-title">가상상황 쾌속형 계좌 (Virtual Scenario Mode)</div>
         <div class="setup-mode-desc">
           30분 동안 신속하고 다이나믹하게 모의투자를 즐길 수 있습니다! 주가 변동성이 높고, 초고속 배당금 입금과 가상 호가가 적용되는 게임형 쾌속 모드입니다.
         </div>
@@ -615,7 +615,7 @@ function renderAccountCreationPage(container, defaultMode, isSecond) {
         </div>
       </div>
 
-      <button class="primary-action-btn" onclick="finishFullPageAccountCreation()">🎉 계좌 개설 완료 및 모의투자 시작하기</button>
+      <button class="primary-action-btn" onclick="finishFullPageAccountCreation()">계좌 개설 완료 및 모의투자 시작하기</button>
     </div>
   `;
 
@@ -811,7 +811,6 @@ function renderBaseDashboard(container) {
   if (!holdingItems.length) {
     html += `
       <div class="card empty-state-box" style="margin-bottom:32px;">
-        <div style="font-size:32px; margin-bottom:8px;">📈</div>
         <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:4px;">보유 중인 주식이 없습니다</div>
         <div style="font-size:13px; color:var(--muted);">[발견 / 종목 탐색] 탭에서 마음에 드는 종목을 선택해 첫 매수를 시작해보세요!</div>
       </div>
@@ -1054,10 +1053,10 @@ function renderDiscoveryPage(container) {
 
     <!-- Category Badges -->
     <div class="category-badges-row">
-      <div class="cat-badge ${categoryFilter === 'us' ? 'active' : ''}" onclick="setDiscoveryCategory('us')">🇺🇸 해외주식</div>
-      <div class="cat-badge ${categoryFilter === 'kr' ? 'active' : ''}" onclick="setDiscoveryCategory('kr')">🇰🇷 국내주식</div>
-      <div class="cat-badge ${categoryFilter === 'bond' ? 'active' : ''}" onclick="setDiscoveryCategory('bond')">📜 채권</div>
-      <div class="cat-badge ${categoryFilter === 'etf' ? 'active' : ''}" onclick="setDiscoveryCategory('etf')">📊 ETF</div>
+      <div class="cat-badge ${categoryFilter === 'us' ? 'active' : ''}" onclick="setDiscoveryCategory('us')">해외주식</div>
+      <div class="cat-badge ${categoryFilter === 'kr' ? 'active' : ''}" onclick="setDiscoveryCategory('kr')">국내주식</div>
+      <div class="cat-badge ${categoryFilter === 'bond' ? 'active' : ''}" onclick="setDiscoveryCategory('bond')">채권</div>
+      <div class="cat-badge ${categoryFilter === 'etf' ? 'active' : ''}" onclick="setDiscoveryCategory('etf')">ETF</div>
     </div>
 
     <!-- News Ticker -->
