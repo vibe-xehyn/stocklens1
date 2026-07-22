@@ -19,18 +19,35 @@
 </head>
 <body>
 
-  <!-- App Header -->
-  <header class="app-header">
-    <div class="header-left">
-      <a href="/" class="logo-group">
-        <span class="logo-text">Stock<span>Lens</span></span>
-        <span class="badge-mock">모의투자</span>
-      </a>
+  <!-- App Header (Identical Unified Header with Main Analysis Service) -->
+  <header>
+    <a href="/" class="logo">Stock<span>Lens</span></a>
+
+    <div class="header-ticker-wrapper">
+      <div class="ticker-track" id="tickerTrack">
+        <div class="market-bar" id="marketBar">
+          <div class="market-item"><span class="market-name">KOSPI</span><span class="market-val up">2,740.15 <small>+0.85%</small></span></div>
+          <div class="market-item"><span class="market-name">KOSDAQ</span><span class="market-val up">892.40 <small>+1.12%</small></span></div>
+          <div class="market-item"><span class="market-name">S&P 500</span><span class="market-val up">5,470.20 <small>+0.42%</small></span></div>
+          <div class="market-item"><span class="market-name">NASDAQ</span><span class="market-val up">17,730.50 <small>+0.68%</small></span></div>
+        </div>
+        <div class="market-bar" id="ratesBar">
+          <div class="rate-item"><span class="rate-name">USD/KRW</span><span class="market-val" id="headerLiveRate">₩1,380.50</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <!-- Global Stock Search Input -->
+      <div style="position:relative; width:180px;">
+        <input type="text" id="globalStockSearchInput" class="select-control" style="width:100%; padding:6px 12px; font-size:12px; border-radius:99px;" placeholder="종목/티커 검색..." oninput="handleGlobalStockSearch(this.value)" onfocus="handleGlobalStockSearch(this.value)">
+        <div id="globalSearchDropdownMenu" class="dropdown-menu" style="width:260px; max-height:280px; overflow-y:auto; top:115%;"></div>
+      </div>
 
       <!-- Account Switcher Dropdown Toggle -->
       <div class="account-selector-wrapper">
         <button class="account-selector-btn" onclick="toggleAccountDropdown()">
-          <span id="activeAccountTitle">계좌 정보 불러오는 중...</span>
+          <span id="activeAccountTitle">계좌 로딩중...</span>
           <span id="activeAccountBadge" class="account-mode-tag tag-realtime">실전형</span>
           <span style="font-size:10px; color:var(--muted);">▼</span>
         </button>
@@ -41,21 +58,13 @@
         </div>
       </div>
 
-      <!-- Global Stock Search Input (Toss WTS Style) -->
-      <div style="position:relative; width:220px; margin-left:12px;">
-        <input type="text" id="globalStockSearchInput" class="select-control" style="width:100%; padding:6px 12px; font-size:12.5px; border-radius:99px;" placeholder="종목명 또는 티커 검색 (예: 삼성전자, NVDA)" oninput="handleGlobalStockSearch(this.value)" onfocus="handleGlobalStockSearch(this.value)">
-        <div id="globalSearchDropdownMenu" class="dropdown-menu" style="width:280px; max-height:300px; overflow-y:auto; top:110%;"></div>
-      </div>
-    </div>
+      <a href="/" class="refresh-btn">메인분석</a>
+      <span class="nav-active-pill">모의투자</span>
 
-    <div style="display:flex; align-items:center; gap:16px;">
-      <div style="font-size:12px; font-weight:700; color:var(--text2); background:var(--surface2); padding:6px 12px; border-radius:99px; border:1px solid var(--border);">
-        <span id="headerLiveRate">1$ = ₩1,380.5</span>
+      <div class="market-status" title="장 상태">
+        <span class="market-status-item"><span class="market-status-label">KR</span><span class="live-dot" id="dotKr"></span></span>
+        <span class="market-status-item"><span class="market-status-label">US</span><span class="live-dot" id="dotUs"></span></span>
       </div>
-
-      <a href="/" style="font-size:13px; font-weight:700; color:var(--muted); text-decoration:none; display:flex; align-items:center; gap:4px;">
-        메인 분석 서비스로 돌아가기 →
-      </a>
     </div>
   </header>
 
