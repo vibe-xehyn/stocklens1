@@ -840,3 +840,93 @@ body {
   color: var(--muted);
   font-size: 14px;
 }
+
+/* ── Responsive & Mobile Layout Optimization ── */
+@media (max-width: 1024px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .base-dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .header-left {
+    width: 100%;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .account-selector-btn {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  .indices-banner-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .nav-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    justify-content: flex-start;
+    border-radius: 12px;
+    padding: 3px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .bnav-tab-item {
+    flex: none;
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+  .controls-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-pills {
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal-card {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    max-height: 88vh;
+    padding: 18px;
+  }
+  .setup-mode-grid, .capital-btn-grid {
+    grid-template-columns: 1fr;
+  }
+  .full-page-setup {
+    padding: 20px 16px;
+    margin: 16px auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-total-amount {
+    font-size: 22px;
+  }
+  .stock-row-card {
+    padding: 12px 14px;
+  }
+  .stock-name-title {
+    font-size: 14px;
+  }
+  .stock-price-main {
+    font-size: 14px;
+  }
+  .stock-icon-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+  }
+}
