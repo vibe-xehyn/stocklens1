@@ -187,12 +187,18 @@
           <button id="btnOrderTabSell" class="pill-btn" style="flex:1; padding:8px; font-weight:800;" onclick="setOrderType('sell')">매도 (Sell)</button>
         </div>
 
-        <div style="display:flex; gap:10px; margin-bottom:12px;">
-          <select id="orderPriceModeSelect" class="select-control" style="flex:1;" onchange="togglePriceMode(this.value)">
-            <option value="market">시장가 주문</option>
-            <option value="limit">지정가 주문</option>
-          </select>
-          <input type="number" id="orderPriceInput" class="select-control" style="flex:1; display:none;" placeholder="지정 호가 입력">
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+          <div style="display:flex; gap:10px;">
+            <select id="orderPriceModeSelect" class="select-control" style="flex:1;" onchange="togglePriceMode(this.value)">
+              <option value="market">시장가 주문 (즉시 체결)</option>
+              <option value="limit">일반 지정가 주문</option>
+              <option value="stop_loss">손절 감시 주문 (Stop-Loss)</option>
+              <option value="take_profit">익절 감시 주문 (Take-Profit)</option>
+              <option value="loc">종가 지정가 (LOC)</option>
+            </select>
+            <input type="number" id="orderPriceInput" class="select-control" style="flex:1; display:none;" placeholder="지정 호가 입력">
+          </div>
+          <input type="number" id="orderTriggerPriceInput" class="select-control" style="width:100%; display:none;" placeholder="감시 목표 가격 입력 (Stop/Profit Trigger)">
         </div>
 
         <!-- Quantity Input with Preset Buttons -->
@@ -212,9 +218,24 @@
           <input type="number" id="orderQtyInput" class="select-control" style="width:100%; padding:10px; font-size:16px;" placeholder="수량 입력" value="1" oninput="updateOrderEstTotal()">
         </div>
 
-        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:800; margin-bottom:14px; color:var(--text);">
-          <span>예상 총 주문 금액</span>
-          <span id="orderEstTotalVal">KRW 0원</span>
+        <!-- Tax & Fee Breakdown Table -->
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:12px; display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; justify-content:space-between; color:var(--muted);">
+            <span>주문 금액</span>
+            <span id="orderBaseAmountVal">KRW 0원</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; color:var(--muted);">
+            <span>증권사 수수료 (KR 0.015% / US 0.07%)</span>
+            <span id="orderFeeVal">KRW 0원</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; color:var(--muted);">
+            <span>증권거래세 (매도 시 0.18%)</span>
+            <span id="orderTaxVal">KRW 0원</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-weight:900; color:var(--text); border-top:1px solid var(--border); padding-top:4px; margin-top:2px;">
+            <span>최종 예상 정산금액</span>
+            <span id="orderEstTotalVal">KRW 0원</span>
+          </div>
         </div>
 
         <button class="primary-action-btn" onclick="submitOrderFromModal()" style="margin-top:0;">주문 전송하기</button>
