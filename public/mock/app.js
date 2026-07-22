@@ -533,7 +533,10 @@ function renderApp() {
   const mainTabContent = document.getElementById('mainTabContent');
   if (!mainTabContent) return;
 
-  if (MockState.currentTab === 'base') renderBaseDashboard(mainTabContent);
+  if (MockState.currentTab === 'base') {
+    renderBaseDashboard(mainTabContent);
+    setTimeout(initPortfolioChart, 50);
+  }
   else if (MockState.currentTab === 'watchlist') renderWatchlistPage(mainTabContent);
   else if (MockState.currentTab === 'discovery') renderDiscoveryPage(mainTabContent);
   else if (MockState.currentTab === 'feed') renderFeedPage(mainTabContent);
@@ -814,7 +817,19 @@ function renderBaseDashboard(container) {
       </div>
     `;
   } else {
-    html += `<div style="margin-bottom:32px;">`;
+    html += `
+      <div class="base-dashboard-grid" style="display:grid; grid-template-columns: 1fr 1.6fr; gap: 24px; margin-bottom:32px; align-items: start;">
+        <!-- Left: Asset Chart Card -->
+        <div class="card" style="padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 380px;">
+          <div style="font-size: 14px; font-weight: 800; color: var(--text); align-self: flex-start; margin-bottom: 16px;">자산 포트폴리오 비중</div>
+          <div style="width: 100%; height: 260px; position: relative;">
+            <canvas id="portfolioChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Right: Holdings List -->
+        <div style="display:flex; flex-direction:column; gap:12px;">
+    `;
     holdingItems.forEach(h => {
       const q = MockState.quotes[h.ticker] || { price: h.avgPrice, changePct: 0 };
       const isUsdStock = h.market === 'us';
@@ -844,7 +859,7 @@ function renderBaseDashboard(container) {
       const sign = pnlPct > 0 ? '+' : '';
 
       html += `
-        <div class="stock-row-card" onclick="openStockDetailModal('${h.ticker}')">
+        <div class="stock-row-card" onclick="openStockDetailModal('${h.ticker}')" style="margin-bottom:0;">
           <div class="stock-info-left">
             <div class="stock-icon-avatar">${h.name.substring(0, 1)}</div>
             <div>
@@ -859,7 +874,10 @@ function renderBaseDashboard(container) {
         </div>
       `;
     });
-    html += `</div>`;
+    html += `
+        </div>
+      </div>
+    `;
   }
 
   // Section 2: Orders History (주문 내역)
@@ -1100,88 +1118,205 @@ function renderDiscoveryPage(container) {
 function setDiscoveryCategory(cat) { MockState.discoveryCategory = MockState.discoveryCategory === cat ? 'all' : cat; renderApp(); }
 function setDiscoveryRankType(type) { MockState.discoveryRankType = type; renderApp(); }
 
-// ── Feed / Community Page (`피드`) ──
+// ── Feed / Community Page (`피드` - Interactive Update) ──
 function renderFeedPage(container) {
+  if (!MockState.feedItems) {
+    MockState.feedItems = [
+      { id: 1, name: '엔비디아 (NVDA) 피드', content: '블랙웰 차세대 칩 수요 폭발적인 증가 지속! 미국주식 핵심 롱 포지션입니다.', author: '해외투자 전문가', time: '1분 전', logo: 'NV' },
+      { id: 2, name: 'SK하이닉스 실시간 피드', content: 'HBM3E 공급 확대로 하반기 영업이익 최고치 달성이 기대됩니다. 금일 기관 매집세 유입.', author: '반도체 애널리스트', time: '5분 전', logo: 'SK' },
+      { id: 3, name: '테슬라 (TSLA) 피드', content: '로보택시 공개 일정 카운트다운 진입. 자율주행 소프트웨어 성장세에 집중해야 할 때.', author: '테슬라 롱러너', time: '12분 전', logo: 'TS' }
+    ];
+  }
+
+  let feedHtml = '';
+  MockState.feedItems.forEach(item => {
+    feedHtml += `
+      <div class="stock-row-card" style="cursor:default; margin-bottom:12px; border:1px solid var(--border); background:var(--surface);">
+        <div class="stock-info-left" style="align-items:flex-start;">
+          <div class="stock-icon-avatar" style="background:var(--accent-light); color:var(--accent); font-weight:900;">${item.logo || 'ST'}</div>
+          <div>
+            <div style="font-size:14px; font-weight:800; color:var(--text);">${item.name}</div>
+            <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">작성자: ${item.author} · ${item.time}</div>
+            <div style="font-size:13.5px; color:var(--text2); line-height:1.5;">${item.content}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
   container.innerHTML = `
-    <div class="card" style="max-width:640px; margin:0 auto;">
-      <div style="font-size:20px; font-weight:900; margin-bottom:16px;">실시간 주식 토론 피드</div>
-      
-      <div class="stock-row-card" style="cursor:default; margin-bottom:12px;">
-        <div class="stock-info-left">
-          <div class="stock-icon-avatar" style="background:var(--accent-light); color:var(--accent);">SK</div>
-          <div>
-            <div class="stock-name-title">SK하이닉스 실시간 피드</div>
-            <div class="stock-sub-desc">"HBM3E 공급 확대로 하반기 영업이익 최고치 예상"</div>
-          </div>
+    <div style="max-width:640px; margin:0 auto;">
+      <!-- Post a new comment Card -->
+      <div class="card" style="margin-bottom:20px; padding:20px;">
+        <div style="font-size:16px; font-weight:900; margin-bottom:12px;">주주 토론 의견 남기기</div>
+        
+        <div style="display:flex; gap:10px; margin-bottom:12px;">
+          <select id="feedStockSelect" class="select-control" style="flex:1; padding:8px;">
+            <option value="삼성전자|005930|SS">삼성전자</option>
+            <option value="SK하이닉스|000660|SK">SK하이닉스</option>
+            <option value="엔비디아 (NVDA)|NVDA|NV">엔비디아 (NVIDIA)</option>
+            <option value="애플 (AAPL)|AAPL|AP">애플 (Apple)</option>
+            <option value="테슬라 (TSLA)|TSLA|TS">테슬라 (Tesla)</option>
+            <option value="S&P 500 ETF (SPY)|SPY|SP">S&P 500 ETF (SPY)</option>
+          </select>
+          <input type="text" id="feedNicknameInput" class="select-control" style="flex:1; padding:8px;" placeholder="닉네임 (기본: 익명주주)" value="익명주주">
         </div>
-        <div style="font-size:12px; color:var(--muted);">방금 전</div>
+
+        <div style="margin-bottom:12px;">
+          <textarea id="feedContentInput" class="select-control" style="width:100%; height:80px; padding:12px; font-size:13.5px; resize:none; font-family:inherit; outline:none;" placeholder="종목에 대한 견해를 공유해보세요. 주주들과 나눈 대화는 시뮬레이션에 유익합니다."></textarea>
+        </div>
+
+        <div style="text-align:right;">
+          <button class="primary-action-btn" onclick="submitFeedPost()" style="padding:10px 20px; font-size:13px; font-weight:700; width:auto; border-radius:12px;">등록하기</button>
+        </div>
       </div>
 
-      <div class="stock-row-card" style="cursor:default; margin-bottom:12px;">
-        <div class="stock-info-left">
-          <div class="stock-icon-avatar" style="background:var(--up-bg); color:var(--up-color);">NV</div>
-          <div>
-            <div class="stock-name-title">엔비디아 (NVDA) 피드</div>
-            <div class="stock-sub-desc">"블랙웰 차세대 칩 수요 폭발적인 증가 지속!"</div>
-          </div>
-        </div>
-        <div style="font-size:12px; color:var(--muted);">2분 전</div>
-      </div>
-
-      <div class="stock-row-card" style="cursor:default;">
-        <div class="stock-info-left">
-          <div class="stock-icon-avatar" style="background:var(--yellow-bg); color:var(--yellow);">TS</div>
-          <div>
-            <div class="stock-name-title">테슬라 (TSLA) 피드</div>
-            <div class="stock-sub-desc">"로보택시 공개 일정 카운트다운 시작"</div>
-          </div>
-        </div>
-        <div style="font-size:12px; color:var(--muted);">5분 전</div>
+      <!-- Feed List -->
+      <div style="font-size:16px; font-weight:900; margin-bottom:12px; padding-left:4px;">최신 실시간 토론</div>
+      <div id="feedListContainer">
+        ${feedHtml}
       </div>
     </div>
   `;
 }
 
-// ── Exchange Page (`환전소`) ──
+function submitFeedPost() {
+  const stockInfo = document.getElementById('feedStockSelect').value.split('|');
+  const nickname = document.getElementById('feedNicknameInput').value.trim() || '익명주주';
+  const content = document.getElementById('feedContentInput').value.trim();
+
+  if (!content) {
+    showToast('토론 의견을 작성해 주세요.');
+    return;
+  }
+
+  const [stockName, ticker, logo] = stockInfo;
+  const newPost = {
+    id: Date.now(),
+    name: `${stockName} 피드`,
+    content: content,
+    author: `${nickname} (${ticker})`,
+    time: '방금 전',
+    logo: logo
+  };
+
+  if (!MockState.feedItems) MockState.feedItems = [];
+  MockState.feedItems.unshift(newPost);
+  
+  showToast('의견이 등록되었습니다!');
+  renderApp();
+}
+
+// ── Exchange Page (`환전소` - UI Upgrade) ──
 function renderExchangePage(container) {
   const acc = getActiveAccount();
   if (!acc) return;
 
+  const currentDir = MockState.exchangeDir || 'KRW';
+  MockState.exchangeDir = currentDir;
+
+  const fromLabel = currentDir === 'KRW' ? '원화(₩)' : '달러($)';
+  const toLabel = currentDir === 'KRW' ? '달러($)' : '원화(₩)';
+  const fromBalance = currentDir === 'KRW' ? acc.krwCash : (acc.usdCash || 0);
+  const fromSymbol = currentDir === 'KRW' ? '₩' : '$';
+
   container.innerHTML = `
-    <div class="card" style="max-width:540px; margin:0 auto;">
+    <div class="card" style="max-width:540px; margin:0 auto; padding:28px;">
       <div style="font-size:20px; font-weight:900; margin-bottom:16px;">실시간 환전 센터</div>
-      <div style="font-size:13px; color:var(--muted); margin-bottom:20px;">
-        현재 미 달러 적용 환율: <strong style="color:var(--text);">1 USD = ₩${MockState.liveRate.toLocaleString()}원</strong>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:20px; display:flex; align-items:center; justify-content:space-between;">
+        <span>현재 미 달러 적용 환율</span>
+        <strong style="color:var(--text); font-size:14px;">1 USD = ₩${MockState.liveRate.toLocaleString(undefined, {minimumFractionDigits:2})}원</strong>
       </div>
 
-      <div style="background:var(--surface2); border-radius:var(--radius-md); padding:16px; margin-bottom:20px;">
-        <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">현재 계좌 예수금 보유 현황</div>
-        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:16px;">
+      <div style="background:var(--surface2); border-radius:var(--radius-md); padding:16px; margin-bottom:24px; border:1px solid var(--border);">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:8px; font-weight:bold;">현재 계좌 예수금 보유 현황</div>
+        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; color:var(--text);">
           <span>원화(KRW): ₩${Math.floor(acc.krwCash).toLocaleString()}원</span>
           <span>달러(USD): $${(acc.usdCash || 0).toFixed(2)}</span>
         </div>
       </div>
 
-      <div style="margin-bottom:16px;">
-        <label style="font-size:13px; font-weight:700; color:var(--text2); display:block; margin-bottom:6px;">환전 방향 선택</label>
-        <select id="tabExDir" class="select-control" style="width:100%; padding:10px;">
-          <option value="KRW">원화(₩) → 달러($) 구매</option>
-          <option value="USD">달러($) → 원화(₩) 환전</option>
-        </select>
+      <!-- Currency Converter Layout -->
+      <div style="position:relative; display:flex; flex-direction:column; gap:8px; margin-bottom:20px;">
+        <!-- From Box -->
+        <div style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 16px;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:4px; font-weight:bold; display:flex; justify-content:space-between;">
+            <span>보내는 통화 (${fromLabel})</span>
+            <span>잔고: ${fromSymbol}${fromBalance.toLocaleString(undefined, {maximumFractionDigits:2})}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="number" id="tabExAmt" class="select-control" style="border:none; background:transparent; padding:4px 0; font-size:22px; font-weight:900; width:100%; outline:none;" placeholder="0" oninput="updateLiveExchangeCalc()">
+            <span style="font-size:16px; font-weight:800; color:var(--text2);">${currentDir}</span>
+          </div>
+        </div>
+
+        <!-- Swap Button Overlay -->
+        <div style="position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); z-index:10;">
+          <button onclick="toggleExchangeDir()" style="width:36px; height:36px; border-radius:50%; border:1px solid var(--border2); background:var(--surface); color:var(--accent); font-weight:900; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-sm); transition:all 0.15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">⇅</button>
+        </div>
+
+        <!-- To Box -->
+        <div style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 16px; margin-top:4px;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:4px; font-weight:bold;">받는 통화 (${toLabel})</div>
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <span id="tabExResultVal" style="font-size:22px; font-weight:900; color:var(--muted);">0</span>
+            <span style="font-size:16px; font-weight:800; color:var(--text2);">${currentDir === 'KRW' ? 'USD' : 'KRW'}</span>
+          </div>
+        </div>
       </div>
 
-      <div style="margin-bottom:20px;">
-        <label style="font-size:13px; font-weight:700; color:var(--text2); display:block; margin-bottom:6px;">환전 신청 금액</label>
-        <input type="number" id="tabExAmt" class="select-control" style="width:100%; padding:10px; font-size:16px;" placeholder="금액 입력">
+      <!-- Percentage helper buttons -->
+      <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:24px;">
+        <button onclick="fillExchangePercent(0.25)" class="pill-btn" style="padding:10px; font-size:12px; font-weight:700;">25%</button>
+        <button onclick="fillExchangePercent(0.50)" class="pill-btn" style="padding:10px; font-size:12px; font-weight:700;">50%</button>
+        <button onclick="fillExchangePercent(0.75)" class="pill-btn" style="padding:10px; font-size:12px; font-weight:700;">75%</button>
+        <button onclick="fillExchangePercent(1.00)" class="pill-btn" style="padding:10px; font-size:12px; font-weight:700;">100%</button>
       </div>
 
-      <button class="primary-action-btn" onclick="submitTabExchange()">즉시 환전 실행</button>
+      <button class="primary-action-btn" onclick="submitTabExchange()" style="padding:16px; font-size:15px;">즉시 환전 실행</button>
     </div>
   `;
 }
 
+function toggleExchangeDir() {
+  MockState.exchangeDir = MockState.exchangeDir === 'KRW' ? 'USD' : 'KRW';
+  renderApp();
+}
+
+function fillExchangePercent(pct) {
+  const acc = getActiveAccount();
+  if (!acc) return;
+  const currentDir = MockState.exchangeDir || 'KRW';
+  const balance = currentDir === 'KRW' ? acc.krwCash : (acc.usdCash || 0);
+  const input = document.getElementById('tabExAmt');
+  if (input) {
+    input.value = (balance * pct).toFixed(currentDir === 'KRW' ? 0 : 2);
+    updateLiveExchangeCalc();
+  }
+}
+
+function updateLiveExchangeCalc() {
+  const input = document.getElementById('tabExAmt');
+  const result = document.getElementById('tabExResultVal');
+  if (!input || !result) return;
+
+  const amt = parseFloat(input.value) || 0;
+  const currentDir = MockState.exchangeDir || 'KRW';
+  const rate = MockState.liveRate;
+
+  if (currentDir === 'KRW') {
+    const calc = amt / rate;
+    result.textContent = calc > 0 ? `$${calc.toFixed(2)}` : '0';
+    result.style.color = calc > 0 ? 'var(--text)' : 'var(--muted)';
+  } else {
+    const calc = amt * rate;
+    result.textContent = calc > 0 ? `₩${Math.round(calc).toLocaleString()}원` : '0';
+    result.style.color = calc > 0 ? 'var(--text)' : 'var(--muted)';
+  }
+}
+
 function submitTabExchange() {
-  const dir = document.getElementById('tabExDir').value;
+  const dir = MockState.exchangeDir || 'KRW';
   const amt = parseFloat(document.getElementById('tabExAmt').value);
   if (!amt || amt <= 0) { showToast('올바른 금액을 입력하세요.'); return; }
   executeManualExchange(dir, amt);
@@ -1421,4 +1556,111 @@ function showToast(msg) {
   container.appendChild(toast);
 
   setTimeout(() => { toast.remove(); }, 3000);
+}
+
+function initPortfolioChart() {
+  const canvas = document.getElementById('portfolioChart');
+  if (!canvas) return;
+
+  if (typeof Chart === 'undefined') {
+    setTimeout(initPortfolioChart, 100);
+    return;
+  }
+
+  const acc = getActiveAccount();
+  if (!acc) return;
+
+  const labels = [];
+  const data = [];
+  const colors = [];
+
+  const presetColors = [
+    '#3182F6', // Toss Blue
+    '#FF9500', // Yellow
+    '#F04452', // Red
+    '#20C997', // Green
+    '#9B5DE5', // Purple
+    '#F15BB5', // Pink
+    '#00F5D4', // Cyan
+    '#EE9B00', // Amber
+    '#CA6702', // Orange
+    '#00B4D8'  // Sky Blue
+  ];
+
+  // 1. Cash Assets
+  const krwCash = acc.krwCash || 0;
+  if (krwCash > 0) {
+    labels.push('원화 예수금');
+    data.push(krwCash);
+    colors.push('#8B95A1');
+  }
+
+  const usdCashKrw = (acc.usdCash || 0) * MockState.liveRate;
+  if (usdCashKrw > 0) {
+    labels.push('달러 예수금');
+    data.push(usdCashKrw);
+    colors.push('#FFCC00');
+  }
+
+  // 2. Stock Holdings Assets
+  Object.values(acc.holdings).forEach((h, index) => {
+    const q = MockState.quotes[h.ticker] || { price: h.avgPrice };
+    const val = q.price * h.qty * (h.market === 'us' ? MockState.liveRate : 1);
+    if (val > 0) {
+      labels.push(h.name);
+      data.push(val);
+      colors.push(presetColors[index % presetColors.length]);
+    }
+  });
+
+  if (data.length === 0) return;
+
+  const totalValue = data.reduce((a, b) => a + b, 0);
+
+  // Clear existing Chart instance on this canvas if any
+  const existingChart = Chart.getChart(canvas);
+  if (existingChart) existingChart.destroy();
+
+  new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: colors,
+        borderWidth: 0,
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'right',
+          labels: {
+            boxWidth: 10,
+            padding: 12,
+            font: {
+              family: 'Pretendard, sans-serif',
+              size: 11,
+              weight: 'bold'
+            },
+            color: '#4E5968'
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const val = context.raw;
+              const pct = ((val / totalValue) * 100).toFixed(1);
+              return ` ${context.label}: ₩${Math.round(val).toLocaleString()}원 (${pct}%)`;
+            }
+          }
+        }
+      },
+      cutout: '72%'
+    }
+  });
 }

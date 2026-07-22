@@ -398,6 +398,9 @@ body {
 
 .stock-row-card:hover {
   border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
 
 /* ── Full Page Account Setup Screen ── */
 .full-page-setup {
@@ -444,9 +447,6 @@ body {
   font-size: 13px;
   color: var(--text2);
   line-height: 1.6;
-}
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
 }
 
 .stock-info-left {
@@ -704,8 +704,8 @@ body {
 
 .capital-btn:hover, .capital-btn.selected {
   border-color: var(--accent);
-  background: var(--accent);
-  color: #FFFFFF;
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
 .primary-action-btn {
@@ -773,6 +773,11 @@ body {
 
 .ask .order-book-depth-bar { background: var(--down-color); }
 .bid .order-book-depth-bar { background: var(--up-color); }
+
+.order-book-row span {
+  position: relative;
+  z-index: 1;
+}
 
 /* ── Toast Notifications ── */
 #toast-container {
