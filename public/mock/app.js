@@ -561,6 +561,9 @@ function renderApp() {
   }
   else if (MockState.currentTab === 'watchlist') renderWatchlistPage(mainTabContent);
   else if (MockState.currentTab === 'discovery') renderDiscoveryPage(mainTabContent);
+  else if (MockState.currentTab === 'bonds') renderBondsPage(mainTabContent);
+  else if (MockState.currentTab === 'analytics') renderAnalyticsPage(mainTabContent);
+  else if (MockState.currentTab === 'orders') renderOrdersPage(mainTabContent);
   else if (MockState.currentTab === 'feed') renderFeedPage(mainTabContent);
   else if (MockState.currentTab === 'exchange') renderExchangePage(mainTabContent);
 }
@@ -1737,25 +1740,286 @@ function initPortfolioChart() {
           labels: {
             boxWidth: 10,
             padding: 12,
-            font: {
-              family: 'Pretendard, sans-serif',
-              size: 11,
-              weight: 'bold'
-            },
+            font: { family: 'Pretendard, sans-serif', size: 11, weight: 'bold' },
             color: '#4E5968'
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const val = context.raw;
-              const pct = ((val / totalValue) * 100).toFixed(1);
-              return ` ${context.label}: KRW ${Math.round(val).toLocaleString()}원 (${pct}%)`;
-            }
           }
         }
       },
       cutout: '72%'
     }
   });
+}
+
+// ── Toss WTS Overseas Bonds Masterclass Page (Screenshot Page 4 Alignment) ──
+let bondFilterType = 'yield';
+let bondCountryTab = 'us';
+
+function renderBondsPage(container) {
+  const BONDS_DATA = [
+    { id: 'us_23y10m', country: 'us', name: '미국 국채·23년 10개월', rate: 8.32, priceUsd: 998.07, minBuy: 0.1, category: '국채' },
+    { id: 'us_14y1m', country: 'us', name: '미국 국채·14년 1개월', rate: 6.94, priceUsd: 1015.40, minBuy: 0.1, category: '국채' },
+    { id: 'us_4y1m', country: 'us', name: '미국 국채·4년 1개월', rate: 5.19, priceUsd: 980.25, minBuy: 0.1, category: '국채' },
+    { id: 'us_2y', country: 'us', name: '미국 국채·2년', rate: 4.83, priceUsd: 992.10, minBuy: 0.1, category: '국채' },
+    { id: 'us_1y2m', country: 'us', name: '미국 국채·1년 2개월', rate: 4.82, priceUsd: 995.50, minBuy: 0.1, category: '국채' },
+    { id: 'br_10y', country: 'br', name: '브라질 국채·10년', rate: 11.85, priceUsd: 850.00, minBuy: 1.0, category: '국채' },
+  ];
+
+  const filtered = BONDS_DATA.filter(b => b.country === bondCountryTab);
+  if (bondFilterType === 'yield') filtered.sort((a, b) => b.rate - a.rate);
+
+  let html = `
+    <div style="padding: 24px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+        <div>
+          <span style="display:inline-block; font-size:11px; font-weight:800; background:rgba(0,102,204,0.1); color:var(--accent); padding:3px 8px; border-radius:99px; margin-bottom:6px;">실시간 주문 가능</span>
+          <div style="font-size: 26px; font-weight: 900; color: var(--text);">해외채권</div>
+        </div>
+        <button class="exchange-link-btn" onclick="switchNavTab('exchange')">채권 매수 가능 예수금 확인 →</button>
+      </div>
+
+      <!-- Country Tab Switcher -->
+      <div style="display:flex; gap:12px; border-bottom:2px solid var(--border); margin-bottom: 20px;">
+        <button onclick="setBondCountry('us')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${bondCountryTab === 'us' ? 'var(--accent)' : 'transparent'}; color:${bondCountryTab === 'us' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">미국 채권</button>
+        <button onclick="setBondCountry('br')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${bondCountryTab === 'br' ? 'var(--accent)' : 'transparent'}; color:${bondCountryTab === 'br' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">브라질 채권</button>
+      </div>
+
+      <!-- Filter Chips -->
+      <div style="display:flex; gap:8px; margin-bottom:20px;">
+        <button onclick="setBondFilter('yield')" style="padding:6px 14px; border-radius:99px; font-size:12.5px; font-weight:700; border:none; cursor:pointer; background:${bondFilterType === 'yield' ? '#1D1D1F' : 'var(--surface)'}; color:${bondFilterType === 'yield' ? '#FFFFFF' : 'var(--text2)'}">수익률 순</button>
+        <button onclick="setBondFilter('term')" style="padding:6px 14px; border-radius:99px; font-size:12.5px; font-weight:700; border:none; cursor:pointer; background:${bondFilterType === 'term' ? '#1D1D1F' : 'var(--surface)'}; color:${bondFilterType === 'term' ? '#FFFFFF' : 'var(--text2)'}">투자 기간</button>
+        <button onclick="setBondFilter('volume')" style="padding:6px 14px; border-radius:99px; font-size:12.5px; font-weight:700; border:none; cursor:pointer; background:${bondFilterType === 'volume' ? '#1D1D1F' : 'var(--surface)'}; color:${bondFilterType === 'volume' ? '#FFFFFF' : 'var(--text2)'}">거래량</button>
+      </div>
+
+      <!-- Bond Card Grid -->
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:16px;">
+  `;
+
+  filtered.forEach((bond, idx) => {
+    html += `
+      <div class="card" style="display:flex; justify-content:space-between; align-items:center; padding:18px 20px; transition:transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="font-size:16px; font-weight:900; color:var(--accent); width:20px;">${idx + 1}</div>
+          <div>
+            <div style="font-size:15px; font-weight:800; color:var(--text);">${bond.name}</div>
+            <div style="font-size:12px; color:var(--muted); margin-top:3px;">개당 $${bond.priceUsd.toFixed(2)} (KRW ${(bond.priceUsd * MockState.liveRate).toLocaleString(undefined, {maximumFractionDigits:0})}원)</div>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:18px; font-weight:900; color:var(--up-color);">연 ${bond.rate}%</div>
+          <button onclick="openBondModal('${bond.id}', '${bond.name}', ${bond.priceUsd}, ${bond.rate})" style="margin-top:6px; padding:6px 14px; border-radius:10px; font-size:12px; font-weight:800; background:var(--accent); color:#fff; border:none; cursor:pointer;">구매하기</button>
+        </div>
+      </div>
+    `;
+  });
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+function setBondCountry(c) { bondCountryTab = c; renderApp(); }
+function setBondFilter(f) { bondFilterType = f; renderApp(); }
+
+// ── Toss WTS Realized Profit & Dividend Tracker (Screenshot Page 7 & 13 Alignment) ──
+let analyticsSubTab = 'dividend';
+let analyticsCurrency = 'krw';
+
+function renderAnalyticsPage(container) {
+  const acc = getActiveAccount();
+  const divList = (acc && acc.dividendHistory) || [
+    { ticker: 'JEPQ', name: 'JEPQ', amount: 5.16, market: 'us', timestamp: Date.now() - 86400000 * 16 },
+    { ticker: 'AAPL', name: '애플', amount: 1.25, market: 'us', timestamp: Date.now() - 86400000 * 30 },
+  ];
+
+  let totalDivKRW = 0;
+  divList.forEach(d => {
+    totalDivKRW += d.market === 'us' ? d.amount * MockState.liveRate : d.amount;
+  });
+
+  let html = `
+    <div style="padding: 24px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+        <div>
+          <span style="display:inline-block; font-size:11px; font-weight:800; background:rgba(49,130,246,0.1); color:var(--down-color); padding:3px 8px; border-radius:99px; margin-bottom:6px;">실시간 자동 집계</span>
+          <div style="font-size: 26px; font-weight: 900; color: var(--text);">수익분석 · 배당금</div>
+        </div>
+        <div style="display:flex; background:rgba(0,0,0,0.04); padding:3px; border-radius:99px;">
+          <button onclick="setAnalyticsCurrency('krw')" style="padding:4px 12px; border-radius:99px; font-size:12px; font-weight:800; border:none; cursor:pointer; background:${analyticsCurrency === 'krw' ? '#FFFFFF' : 'transparent'}; color:${analyticsCurrency === 'krw' ? 'var(--text)' : 'var(--text2)'}">원</button>
+          <button onclick="setAnalyticsCurrency('usd')" style="padding:4px 12px; border-radius:99px; font-size:12px; font-weight:800; border:none; cursor:pointer; background:${analyticsCurrency === 'usd' ? '#FFFFFF' : 'transparent'}; color:${analyticsCurrency === 'usd' ? 'var(--text)' : 'var(--text2)'}">$</button>
+        </div>
+      </div>
+
+      <!-- Realized Profit Summary Banner (Screenshot Page 7 Alignment) -->
+      <div class="card" style="background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(244,245,249,0.9) 100%); padding: 24px; border-radius:20px; margin-bottom:24px; box-shadow:0 8px 25px rgba(0,0,0,0.04);">
+        <div style="font-size:13px; font-weight:800; color:var(--muted); margin-bottom:6px;">7월 누적 실현수익</div>
+        <div style="font-size:32px; font-weight:900; color:var(--up-color);">
+          +${analyticsCurrency === 'krw' ? '₩' + Math.round(totalDivKRW).toLocaleString() + '원' : '$' + (totalDivKRW / MockState.liveRate).toFixed(2)}
+        </div>
+        <div style="display:flex; gap:16px; margin-top:16px; font-size:13px; color:var(--text2);">
+          <div>판매수익: <strong>₩0원</strong></div>
+          <div>배당금: <strong style="color:var(--up-color);">+₩${Math.round(totalDivKRW).toLocaleString()}원</strong></div>
+          <div>대여료: <strong>₩0원</strong></div>
+        </div>
+      </div>
+
+      <!-- Analytics Subtabs -->
+      <div style="display:flex; gap:10px; border-bottom:2px solid var(--border); margin-bottom:20px;">
+        <button onclick="setAnalyticsSubTab('dividend')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${analyticsSubTab === 'dividend' ? 'var(--accent)' : 'transparent'}; color:${analyticsSubTab === 'dividend' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">배당금 내역</button>
+        <button onclick="setAnalyticsSubTab('sales')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${analyticsSubTab === 'sales' ? 'var(--accent)' : 'transparent'}; color:${analyticsSubTab === 'sales' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">판매수익</button>
+        <button onclick="setAnalyticsSubTab('interest')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${analyticsSubTab === 'interest' ? 'var(--accent)' : 'transparent'}; color:${analyticsSubTab === 'interest' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">계좌이자</button>
+      </div>
+
+      <!-- Dividend Items List -->
+      <div class="card" style="padding: 12px 20px;">
+        <div style="font-size:13px; font-weight:800; color:var(--muted); padding:10px 0; border-bottom:1px solid var(--border);">입금 완료 배당금 목록</div>
+  `;
+
+  if (!divList.length) {
+    html += `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13px;">입금된 배당금 내역이 없습니다.</div>`;
+  } else {
+    divList.forEach(item => {
+      const valStr = item.market === 'us'
+        ? (analyticsCurrency === 'krw' ? '₩' + Math.round(item.amount * MockState.liveRate).toLocaleString() + '원' : '$' + item.amount.toFixed(2))
+        : '₩' + Math.round(item.amount).toLocaleString() + '원';
+      const dateStr = new Date(item.timestamp).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+
+      html += `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid rgba(0,0,0,0.04);">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg, #1D1D1F 0%, #434344 100%); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:12px;">
+              ${item.ticker.substring(0, 3)}
+            </div>
+            <div>
+              <div style="font-size:14.5px; font-weight:800; color:var(--text);">${item.name}</div>
+              <div style="font-size:11.5px; color:var(--muted);">${dateStr} · ${item.market === 'us' ? '해외주식' : '국내주식'}</div>
+            </div>
+          </div>
+          <div style="font-size:16px; font-weight:900; color:var(--up-color);">+${valStr}</div>
+        </div>
+      `;
+    });
+  }
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+function setAnalyticsSubTab(t) { analyticsSubTab = t; renderApp(); }
+function setAnalyticsCurrency(c) { analyticsCurrency = c; renderApp(); }
+
+// ── Toss WTS Executed Orders History & Monthly Sheet Filter (Screenshot Page 8, 9, 10, 11 Alignment) ──
+let orderMarketTab = 'all';
+let orderSelectedMonth = '2026-07';
+
+function renderOrdersPage(container) {
+  const acc = getActiveAccount();
+  const orders = (acc && acc.executedOrders) || [
+    { ticker: 'AAPL', name: '애플', type: 'buy', qty: 0.026, price: 224.30, market: 'us', timestamp: Date.now() - 86400000 * 2 },
+    { ticker: 'AMZN', name: '아마존', type: 'buy', qty: 0.026, price: 186.40, market: 'us', timestamp: Date.now() - 86400000 * 5 },
+    { ticker: '005930', name: '삼성전자', type: 'buy', qty: 10, price: 78500, market: 'kr', timestamp: Date.now() - 86400000 * 10 },
+  ];
+
+  let html = `
+    <div style="padding: 24px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+        <div style="font-size: 26px; font-weight: 900; color: var(--text);">주문내역</div>
+        <!-- Toss Style Month Sheet Trigger -->
+        <button onclick="toggleMonthPickerModal()" style="display:flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border); padding:8px 16px; border-radius:99px; font-size:13px; font-weight:800; cursor:pointer;">
+          <span>${orderSelectedMonth.replace('-', '년 ')}월 내역</span>
+          <span style="font-size:10px;">▼</span>
+        </button>
+      </div>
+
+      <!-- Market Subtabs -->
+      <div style="display:flex; gap:12px; border-bottom:2px solid var(--border); margin-bottom:20px;">
+        <button onclick="setOrderMarketTab('all')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${orderMarketTab === 'all' ? 'var(--accent)' : 'transparent'}; color:${orderMarketTab === 'all' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">전체</button>
+        <button onclick="setOrderMarketTab('kr')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${orderMarketTab === 'kr' ? 'var(--accent)' : 'transparent'}; color:${orderMarketTab === 'kr' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">국내</button>
+        <button onclick="setOrderMarketTab('us')" style="padding:10px 16px; font-weight:800; font-size:15px; border:none; background:transparent; border-bottom:3px solid ${orderMarketTab === 'us' ? 'var(--accent)' : 'transparent'}; color:${orderMarketTab === 'us' ? 'var(--accent)' : 'var(--muted)'}; cursor:pointer;">해외</button>
+      </div>
+
+      <div class="card" style="padding:16px 24px;">
+        <div style="font-size:13px; font-weight:800; color:var(--muted); margin-bottom:12px;">완료된 주문</div>
+  `;
+
+  const filteredOrders = orders.filter(o => orderMarketTab === 'all' || o.market === orderMarketTab);
+
+  if (!filteredOrders.length) {
+    html += `
+      <div style="padding:50px 20px; text-align:center;">
+        <div style="font-size:15px; font-weight:800; color:var(--muted); margin-bottom:12px;">선택한 월엔 주문내역이 없습니다.</div>
+        <button onclick="setOrderMonth('2026-06')" style="padding:8px 18px; border-radius:99px; background:rgba(0,102,204,0.1); color:var(--accent); border:none; font-weight:800; font-size:13px; cursor:pointer;">이전 월 내역 보기</button>
+      </div>
+    `;
+  } else {
+    filteredOrders.forEach(o => {
+      const d = new Date(o.timestamp);
+      const dateTag = `${d.getMonth() + 1}.${d.getDate()}`;
+      const totalStr = o.market === 'us' ? `$${(o.price * o.qty).toFixed(2)}` : `₩${Math.round(o.price * o.qty).toLocaleString()}원`;
+
+      html += `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid rgba(0,0,0,0.04);">
+          <div style="display:flex; align-items:center; gap:16px;">
+            <div style="font-size:13px; font-weight:800; color:var(--muted); width:36px;">${dateTag}</div>
+            <div>
+              <div style="font-size:15px; font-weight:800; color:var(--text);">${o.name}</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:2px;">${totalStr} ${o.type === 'buy' ? '구매 완료' : '판매 완료'} (${o.qty}주 @ ${o.market === 'us' ? '$' + o.price.toFixed(2) : '₩' + o.price.toLocaleString()})</div>
+            </div>
+          </div>
+          <span style="font-size:12px; font-weight:800; padding:4px 10px; border-radius:8px; background:${o.type === 'buy' ? 'var(--up-bg)' : 'var(--down-bg)'}; color:${o.type === 'buy' ? 'var(--up-color)' : 'var(--down-color)'};">
+            ${o.type === 'buy' ? '매수완료' : '매도완료'}
+          </span>
+        </div>
+      `;
+    });
+  }
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+function setOrderMarketTab(t) { orderMarketTab = t; renderApp(); }
+function setOrderMonth(m) { orderSelectedMonth = m; renderApp(); }
+
+function toggleMonthPickerModal() {
+  alert("월 선택: 2026년 7월 (현재 선택됨)");
+}
+
+function openBondModal(bondId, bondName, priceUsd, rate) {
+  const acc = getActiveAccount();
+  if (!acc) return;
+  const qty = prompt(`[${bondName}] 구매 수량을 입력하세요 (개당 $${priceUsd.toFixed(2)}, 연 ${rate}%):`, "0.1");
+  if (!qty || isNaN(qty) || parseFloat(qty) <= 0) return;
+  const numQty = parseFloat(qty);
+  const totalUsd = numQty * priceUsd;
+
+  if ((acc.usdCash || 0) < totalUsd) {
+    alert(`달러 예수금이 부족합니다. 필요 금액: $${totalUsd.toFixed(2)}, 보유: $${(acc.usdCash||0).toFixed(2)}\n[환전] 메뉴를 통해 달러를 충전하세요.`);
+    return;
+  }
+
+  acc.usdCash -= totalUsd;
+  acc.executedOrders = acc.executedOrders || [];
+  acc.executedOrders.unshift({
+    ticker: bondId,
+    name: bondName,
+    type: 'buy',
+    qty: numQty,
+    price: priceUsd,
+    market: 'us',
+    timestamp: Date.now()
+  });
+  saveState();
+  showToast(`[채권 구매 완료] ${bondName} ${numQty}개 ($${totalUsd.toFixed(2)}) 매수가 체결되었습니다.`);
+  renderApp();
 }
