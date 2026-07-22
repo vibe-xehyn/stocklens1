@@ -151,21 +151,40 @@
         </div>
       </div>
 
-      <!-- Stock Analysis Factor Indicators -->
-      <div id="modalAnalysisFactors"></div>
+      <!-- Modal Sub-Tabs -->
+      <div class="modal-sub-tabs">
+        <button class="sub-tab-item active" id="mSubTabChart" onclick="switchModalSubTab('chart')">차트</button>
+        <button class="sub-tab-item" id="mSubTabOrderBook" onclick="switchModalSubTab('orderbook')">10단계 호가창</button>
+        <button class="sub-tab-item" id="mSubTabFactors" onclick="switchModalSubTab('factors')">AI 팩터 분석</button>
+        <button class="sub-tab-item" id="mSubTabWhale" onclick="switchModalSubTab('whale')">수급 및 고래</button>
+      </div>
 
-      <!-- Lightweight Chart Component -->
-      <div id="tvChartContainer" style="width:100%; height:260px; margin-bottom:20px; border-radius:var(--radius-sm); overflow:hidden;"></div>
+      <!-- Tab 1: Lightweight Chart Component -->
+      <div id="mSecChart">
+        <div id="tvChartContainer" style="width:100%; height:260px; margin-bottom:16px; border-radius:var(--radius-sm); overflow:hidden;"></div>
+      </div>
 
-      <!-- 5-Level Order Book Depth -->
-      <div style="font-size:14px; font-weight:800; margin-bottom:8px; color:var(--text);">실시간 5단계 호가창</div>
-      <div id="modalOrderBookContainer"></div>
+      <!-- Tab 2: 10-Level Order Book Depth -->
+      <div id="mSecOrderBook">
+        <div style="font-size:13px; font-weight:800; margin-bottom:8px; color:var(--text);">실시간 10단계 호가 잔량 (클릭 시 주문 가격 자동 적용)</div>
+        <div id="modalOrderBookContainer"></div>
+      </div>
+
+      <!-- Tab 3: Stock Analysis Factor Indicators -->
+      <div id="mSecFactors" style="display:none;">
+        <div id="modalAnalysisFactors"></div>
+      </div>
+
+      <!-- Tab 4: Whale & Net Buying -->
+      <div id="mSecWhale" style="display:none; margin-bottom:16px;">
+        <div id="modalWhaleAnalysis"></div>
+      </div>
 
       <!-- Order Sheet -->
-      <div style="background:var(--surface2); border-radius:var(--radius-md); padding:16px; margin-top:16px;">
+      <div style="background:var(--surface2); border-radius:var(--radius-md); padding:16px; margin-top:16px; border:1px solid var(--border);">
         <div style="display:flex; gap:10px; margin-bottom:14px;">
-          <button id="btnOrderTabBuy" class="pill-btn active" style="flex:1; padding:8px;" onclick="setOrderType('buy')">매수 (Buy)</button>
-          <button id="btnOrderTabSell" class="pill-btn" style="flex:1; padding:8px;" onclick="setOrderType('sell')">매도 (Sell)</button>
+          <button id="btnOrderTabBuy" class="pill-btn active" style="flex:1; padding:8px; font-weight:800;" onclick="setOrderType('buy')">매수 (Buy)</button>
+          <button id="btnOrderTabSell" class="pill-btn" style="flex:1; padding:8px; font-weight:800;" onclick="setOrderType('sell')">매도 (Sell)</button>
         </div>
 
         <div style="display:flex; gap:10px; margin-bottom:12px;">
@@ -176,12 +195,29 @@
           <input type="number" id="orderPriceInput" class="select-control" style="flex:1; display:none;" placeholder="지정 호가 입력">
         </div>
 
+        <!-- Quantity Input with Preset Buttons -->
         <div style="margin-bottom:14px;">
-          <label style="font-size:12px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">주문 수량 (주)</label>
-          <input type="number" id="orderQtyInput" class="select-control" style="width:100%; padding:10px; font-size:16px;" placeholder="수량 입력" value="1">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label style="font-size:12px; font-weight:700; color:var(--text2);">주문 수량 (주)</label>
+            <span id="orderAvailLabel" style="font-size:11px; color:var(--muted); font-weight:600;">가능: 계산중</span>
+          </div>
+
+          <div class="qty-preset-grid">
+            <button type="button" class="qty-preset-btn" onclick="fillOrderQtyPercent(0.25)">25%</button>
+            <button type="button" class="qty-preset-btn" onclick="fillOrderQtyPercent(0.50)">50%</button>
+            <button type="button" class="qty-preset-btn" onclick="fillOrderQtyPercent(0.75)">75%</button>
+            <button type="button" class="qty-preset-btn" onclick="fillOrderQtyPercent(1.00)">100% (최대)</button>
+          </div>
+
+          <input type="number" id="orderQtyInput" class="select-control" style="width:100%; padding:10px; font-size:16px;" placeholder="수량 입력" value="1" oninput="updateOrderEstTotal()">
         </div>
 
-        <button class="primary-action-btn" onclick="submitOrderFromModal()">주문 전송하기</button>
+        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:800; margin-bottom:14px; color:var(--text);">
+          <span>예상 총 주문 금액</span>
+          <span id="orderEstTotalVal">KRW 0원</span>
+        </div>
+
+        <button class="primary-action-btn" onclick="submitOrderFromModal()" style="margin-top:0;">주문 전송하기</button>
       </div>
     </div>
   </div>

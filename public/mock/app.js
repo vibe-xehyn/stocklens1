@@ -1104,8 +1104,46 @@ function renderExchangePage(container) {
       </div>
 
       <button class="primary-action-btn" onclick="submitTabExchange()" style="padding:16px; font-size:15px;">즉시 환전 실행</button>
+
+      <!-- Account Capital Management Box -->
+      <div style="background:var(--surface2); border-radius:var(--radius-md); padding:16px; margin-top:24px; border:1px solid var(--border);">
+        <div style="font-size:13px; font-weight:800; color:var(--text); margin-bottom:6px;">모의 예수금 관리</div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:12px;">테스트용 모의 예수금을 추가 충전하거나 계좌를 초기화할 수 있습니다.</div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="topUpAccountCapital(10000000)" class="pill-btn" style="flex:1; padding:8px; font-weight:700;">+ 1,000만원 충전</button>
+          <button onclick="topUpAccountCapital(100000000)" class="pill-btn" style="flex:1; padding:8px; font-weight:700;">+ 1억원 충전</button>
+          <button onclick="resetActiveAccount()" class="pill-btn" style="padding:8px 12px; font-weight:700; color:var(--up-color);">초기화</button>
+        </div>
+      </div>
     </div>
   `;
+}
+
+function topUpAccountCapital(amt) {
+  const acc = getActiveAccount();
+  if (!acc) return;
+  acc.krwCash += amt;
+  saveState();
+  showToast(`모의 예수금 KRW ${Math.floor(amt / 10000).toLocaleString()}만원이 충전되었습니다.`);
+  renderApp();
+}
+
+function resetActiveAccount() {
+  const acc = getActiveAccount();
+  if (!acc) return;
+  if (!confirm(`[${acc.name}] 계좌의 모든 보유 주식과 잔고를 초기화하시겠습니까?`)) return;
+
+  acc.krwCash = 10000000;
+  acc.usdCash = 0;
+  acc.holdings = {};
+  acc.pendingOrders = [];
+  acc.executedOrders = [];
+  acc.realizedPnl = [];
+  acc.dividendHistory = [];
+
+  saveState();
+  showToast('계좌가 초기 상태(KRW 1,000만원)로 초기화되었습니다.');
+  renderApp();
 }
 
 function toggleExchangeDir() {
@@ -1177,19 +1215,20 @@ function openStockDetailModal(ticker) {
   }
 
   // Stock Factor Scores
+  // Stock Factor Scores
   const factorEl = document.getElementById('modalAnalysisFactors');
   if (factorEl) {
     factorEl.innerHTML = `
       <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px;">
-        <div style="background:var(--surface2); padding:10px; border-radius:var(--radius-sm); text-align:center;">
+        <div style="background:var(--surface2); padding:10px; border-radius:var(--radius-sm); text-align:center; border:1px solid var(--border);">
           <div style="font-size:11px; color:var(--muted);">밸류에이션 점수</div>
           <div style="font-size:16px; font-weight:900; color:var(--accent);">${q.valScore || 85}점</div>
         </div>
-        <div style="background:var(--surface2); padding:10px; border-radius:var(--radius-sm); text-align:center;">
+        <div style="background:var(--surface2); padding:10px; border-radius:var(--radius-sm); text-align:center; border:1px solid var(--border);">
           <div style="font-size:11px; color:var(--muted);">성장성 평가</div>
           <div style="font-size:16px; font-weight:900; color:var(--up-color);">${q.growthScore || 90}점</div>
         </div>
-        <div style="background:var(--surface2); padding:10px; border-radius:var(--radius-sm); text-align:center;">
+        <div style="background:var(--surface2); padding:10px; border-radius:var(--radius-sm); text-align:center; border:1px solid var(--border);">
           <div style="font-size:11px; color:var(--muted);">배당 수익률</div>
           <div style="font-size:16px; font-weight:900; color:var(--green);">${q.divYield || 0.0}%</div>
         </div>
@@ -1197,10 +1236,113 @@ function openStockDetailModal(ticker) {
     `;
   }
 
+  // Whale Analysis Section
+  const whaleEl = document.getElementById('modalWhaleAnalysis');
+  if (whaleEl) {
+    whaleEl.innerHTML = `
+      <div style="background:var(--surface2); padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:12px; font-weight:800; color:var(--text);">오늘의 고래 매집지수</span>
+          <span style="font-size:13px; font-weight:900; color:var(--accent);">${q.whaleScore || 88}점 (강한 매집)</span>
+        </div>
+        <div style="width:100%; background:var(--border2); height:8px; border-radius:99px; overflow:hidden;">
+          <div style="width:${q.whaleScore || 88}%; background:var(--accent); height:100%; border-radius:99px;"></div>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-top:8px;">외국인 및 기관 실시간 순매수 세력 체결 강도 지표입니다.</div>
+      </div>
+    `;
+  }
+
+  switchModalSubTab('chart');
   renderOrderBookDepth(q);
   initTradingViewChart(q);
+  updateOrderEstTotal();
 
   modal.classList.add('active');
+}
+
+function switchModalSubTab(tabName) {
+  const chartSec = document.getElementById('mSecChart');
+  const bookSec = document.getElementById('mSecOrderBook');
+  const factorSec = document.getElementById('mSecFactors');
+  const whaleSec = document.getElementById('mSecWhale');
+
+  document.querySelectorAll('.sub-tab-item').forEach(b => b.classList.remove('active'));
+
+  if (chartSec) chartSec.style.display = tabName === 'chart' ? 'block' : 'none';
+  if (bookSec) bookSec.style.display = tabName === 'orderbook' ? 'block' : 'none';
+  if (factorSec) factorSec.style.display = tabName === 'factors' ? 'block' : 'none';
+  if (whaleSec) whaleSec.style.display = tabName === 'whale' ? 'block' : 'none';
+
+  if (tabName === 'chart') {
+    const btn = document.getElementById('mSubTabChart');
+    if (btn) btn.classList.add('active');
+  } else if (tabName === 'orderbook') {
+    const btn = document.getElementById('mSubTabOrderBook');
+    if (btn) btn.classList.add('active');
+  } else if (tabName === 'factors') {
+    const btn = document.getElementById('mSubTabFactors');
+    if (btn) btn.classList.add('active');
+  } else if (tabName === 'whale') {
+    const btn = document.getElementById('mSubTabWhale');
+    if (btn) btn.classList.add('active');
+  }
+}
+
+function fillOrderQtyPercent(pct) {
+  const stock = MockState.activeDetailStock;
+  const acc = getActiveAccount();
+  if (!stock || !acc) return;
+
+  const type = MockState.orderType || 'buy';
+  const price = stock.price;
+  const isUsd = stock.market === 'us';
+
+  let qty = 1;
+  if (type === 'buy') {
+    const availCash = isUsd ? (acc.usdCash || 0) : acc.krwCash;
+    const maxAffordable = Math.floor((availCash * pct) / price);
+    qty = Math.max(1, maxAffordable);
+  } else {
+    const h = acc.holdings[stock.id];
+    if (h && h.qty > 0) {
+      qty = Math.max(1, Math.floor(h.qty * pct));
+    }
+  }
+
+  const input = document.getElementById('orderQtyInput');
+  if (input) input.value = qty;
+  updateOrderEstTotal();
+}
+
+function updateOrderEstTotal() {
+  const stock = MockState.activeDetailStock;
+  const input = document.getElementById('orderQtyInput');
+  const label = document.getElementById('orderEstTotalVal');
+  const availLabel = document.getElementById('orderAvailLabel');
+  const acc = getActiveAccount();
+
+  if (!stock || !input || !label || !acc) return;
+
+  const qty = parseInt(input.value) || 0;
+  const price = stock.price;
+  const isUsd = stock.market === 'us';
+  const total = qty * price;
+
+  label.textContent = isUsd ? `$${total.toFixed(2)}` : `KRW ${Math.round(total).toLocaleString()}원`;
+
+  if (availLabel) {
+    const type = MockState.orderType || 'buy';
+    if (type === 'buy') {
+      const availCash = isUsd ? (acc.usdCash || 0) : acc.krwCash;
+      const maxQty = Math.floor(availCash / price);
+      availLabel.textContent = isUsd ? `주문가능: $${availCash.toFixed(2)} (최대 ${maxQty}주)` : `주문가능: KRW ${Math.floor(availCash).toLocaleString()}원 (최대 ${maxQty}주)`;
+    } else {
+      const h = acc.holdings[stock.id];
+      const hQty = h ? h.qty : 0;
+      availLabel.textContent = `보유수량: ${hQty}주`;
+    }
+  }
 }
 
 function toggleModalWatchlist() {
