@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>StockLens 모의투자 (Mock Trading Platform)</title>
   
-  <!-- Pretendard & Noto Sans KR Fonts -->
+  <!-- Fonts -->
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -15,11 +15,11 @@
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=20260722_v4">
+  <link rel="stylesheet" href="style.css?v=20260722_v5">
 </head>
 <body>
 
-  <!-- App Header (Identical Unified Header with Main Analysis Service) -->
+  <!-- App Header (100% Identical Unified Header with Main Analysis Service) -->
   <header>
     <a href="/" class="logo">Stock<span>Lens</span></a>
 
@@ -68,56 +68,76 @@
     </div>
   </header>
 
-  <!-- App Main Root (Toggles between Onboarding Setup and Primary Dashboard) -->
-  <div id="appMainRoot" class="app-container">
-
-    <!-- Hero Asset & Investment Summary Grid -->
-    <div class="hero-grid">
-      <!-- Total Combined Investment Amount & PnL Card -->
-      <div class="card">
-        <div class="hero-total-label">
-          <span>주식 총 투자 금액 (미국 + 국내 합산)</span>
-          <span style="font-size:11px; color:var(--accent); font-weight:700;">실시간 자동 정산</span>
-        </div>
-        <div class="hero-total-amount" id="totalInvestmentAmount">₩0원</div>
-        <div class="hero-pnl-row flat" id="totalPnlRow">
-          평가손익: ₩0원 (0.00%)
-        </div>
+  <!-- Container Grid (Identical Layout to Main Analysis Service) -->
+  <div class="container">
+    
+    <!-- Left Sidebar (Identical Stock Navigation Panel) -->
+    <aside>
+      <div class="sidebar-search">
+        <input type="text" id="sidebarStockSearch" placeholder="종목명 / 티커 검색..." oninput="handleSidebarMockSearch(this.value)" autocomplete="off">
       </div>
-
-      <!-- KRW Cash Card -->
-      <div class="card" onclick="switchNavTab('exchange')" style="cursor:pointer;">
-        <div class="cash-card-header">
-          <span class="cash-card-title">원화 예수금 (KRW)</span>
-          <button class="exchange-link-btn">환전하기 →</button>
-        </div>
-        <div class="cash-card-val" id="krwCashVal">₩0원</div>
-        <div style="font-size:11px; color:var(--muted); margin-top:6px;">국내주식 및 미주 자동 환전 예수금</div>
+      <div class="market-tabs">
+        <button class="market-tab active" onclick="switchMockSidebarMarket('kr', this)">한국</button>
+        <button class="market-tab" onclick="switchMockSidebarMarket('us', this)">미국</button>
+        <button class="market-tab" onclick="switchMockSidebarMarket('all', this)">전체</button>
+        <button class="market-tab" onclick="switchMockSidebarMarket('favorites', this)" style="display:flex;align-items:center;justify-content:center;gap:3px;color:var(--yellow)">★ 관심</button>
       </div>
+      <div id="mockSidebarStockList"></div>
+    </aside>
 
-      <!-- USD Cash Card -->
-      <div class="card" onclick="switchNavTab('exchange')" style="cursor:pointer;">
-        <div class="cash-card-header">
-          <span class="cash-card-title">달러 예수금 (USD)</span>
-          <button class="exchange-link-btn">환전하기 →</button>
+    <!-- Main Content Panel -->
+    <main id="mainContent">
+      <div id="appMainRoot">
+
+        <!-- Hero Asset & Investment Summary Grid -->
+        <div class="hero-grid">
+          <!-- Total Combined Investment Amount & PnL Card -->
+          <div class="card">
+            <div class="hero-total-label">
+              <span>주식 총 투자 금액 (미국 + 국내 합산)</span>
+              <span style="font-size:11px; color:var(--accent); font-weight:700;">실시간 자동 정산</span>
+            </div>
+            <div class="hero-total-amount" id="totalInvestmentAmount">₩0원</div>
+            <div class="hero-pnl-row flat" id="totalPnlRow">
+              평가손익: ₩0원 (0.00%)
+            </div>
+          </div>
+
+          <!-- KRW Cash Card -->
+          <div class="card" onclick="switchNavTab('exchange')" style="cursor:pointer;">
+            <div class="cash-card-header">
+              <span class="cash-card-title">원화 예수금 (KRW)</span>
+              <button class="exchange-link-btn">환전하기 →</button>
+            </div>
+            <div class="cash-card-val" id="krwCashVal">₩0원</div>
+            <div style="font-size:11px; color:var(--muted); margin-top:6px;">국내주식 및 미주 자동 환전 예수금</div>
+          </div>
+
+          <!-- USD Cash Card -->
+          <div class="card" onclick="switchNavTab('exchange')" style="cursor:pointer;">
+            <div class="cash-card-header">
+              <span class="cash-card-title">달러 예수금 (USD)</span>
+              <button class="exchange-link-btn">환전하기 →</button>
+            </div>
+            <div class="cash-card-val" id="usdCashVal">$0.00</div>
+            <div style="font-size:11px; color:var(--muted); margin-top:6px;">해외주식 직접 거래 전용 예수금</div>
+          </div>
         </div>
-        <div class="cash-card-val" id="usdCashVal">$0.00</div>
-        <div style="font-size:11px; color:var(--muted); margin-top:6px;">해외주식 직접 거래 전용 예수금</div>
+
+        <!-- Navigation Bar (Main Tab Switching) -->
+        <div class="nav-tabs">
+          <button class="bnav-tab-item active" data-tab="base">기본 화면 (내 계좌 / 보유주식)</button>
+          <button class="bnav-tab-item" data-tab="watchlist">관심 종목</button>
+          <button class="bnav-tab-item" data-tab="discovery">발견 / 종목 탐색</button>
+          <button class="bnav-tab-item" data-tab="feed">피드 / 실시간 토론</button>
+          <button class="bnav-tab-item" data-tab="exchange">환전 / 계좌 관리</button>
+        </div>
+
+        <!-- Dynamic Main Tab Content Container -->
+        <div id="mainTabContent"></div>
+
       </div>
-    </div>
-
-    <!-- Navigation Bar (Main Tab Switching) -->
-    <div class="nav-tabs">
-      <button class="bnav-tab-item active" data-tab="base">기본 화면 (내 계좌 / 보유주식)</button>
-      <button class="bnav-tab-item" data-tab="watchlist">관심 종목</button>
-      <button class="bnav-tab-item" data-tab="discovery">발견 / 종목 탐색</button>
-      <button class="bnav-tab-item" data-tab="feed">피드 / 실시간 토론</button>
-      <button class="bnav-tab-item" data-tab="exchange">환전 / 계좌 관리</button>
-    </div>
-
-    <!-- Dynamic Main Tab Content Container -->
-    <div id="mainTabContent"></div>
-
+    </main>
   </div>
 
   <!-- ── Currency Exchange Modal ── -->
@@ -279,6 +299,6 @@
   </script>
 
   <!-- App Script -->
-  <script src="app.js?v=20260719_v3"></script>
+  <script src="app.js?v=20260722_v5"></script>
 </body>
 </html>

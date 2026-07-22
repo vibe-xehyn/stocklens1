@@ -460,10 +460,79 @@ function executeManualExchange(fromCurrency, amount) {
 }
 
 // ── Application Main Renderer ──
+let currentMockSidebarMarket = 'kr';
+let currentMockSidebarQuery = '';
+
+function switchMockSidebarMarket(market, btn) {
+  currentMockSidebarMarket = market;
+  if (btn) {
+    document.querySelectorAll('.market-tabs .market-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  renderMockSidebar();
+}
+
+function handleSidebarMockSearch(query) {
+  currentMockSidebarQuery = query;
+  renderMockSidebar();
+}
+
+function renderMockSidebar() {
+  const container = document.getElementById('mockSidebarStockList');
+  if (!container) return;
+
+  const q = (currentMockSidebarQuery || '').trim().toLowerCase();
+  let list = MOCK_STOCK_DEFS;
+
+  if (currentMockSidebarMarket === 'kr') {
+    list = list.filter(s => s.market === 'kr');
+  } else if (currentMockSidebarMarket === 'us') {
+    list = list.filter(s => s.market === 'us');
+  } else if (currentMockSidebarMarket === 'favorites') {
+    list = list.filter(s => MockState.watchlist.has(s.id));
+  }
+
+  if (q) {
+    list = list.filter(s => s.name.toLowerCase().includes(q) || s.ticker.toLowerCase().includes(q));
+  }
+
+  if (!list.length) {
+    container.innerHTML = `<div style="padding:24px 16px;text-align:center;color:var(--muted);font-size:12.5px">종목이 없습니다.</div>`;
+    return;
+  }
+
+  let html = '';
+  list.forEach(def => {
+    const qObj = MockState.quotes[def.id] || def;
+    const up = qObj.changePct >= 0;
+    const sym = def.market === 'kr' ? '₩' : '$';
+    const priceStr = def.market === 'kr' ? Math.round(qObj.price).toLocaleString() : qObj.price.toFixed(2);
+    const chgStr = `${up ? '+' : ''}${qObj.changePct.toFixed(2)}%`;
+    const isActive = MockState.activeDetailStock === def.id;
+
+    html += `
+      <div class="stock-item ${isActive ? 'active' : ''}" onclick="openStockDetailModal('${def.id}')">
+        <div class="stock-left">
+          <div class="ticker">${def.name}</div>
+          <div class="sname">${def.ticker} · ${def.exchange}</div>
+        </div>
+        <div class="stock-right">
+          <div class="sprice">${sym}${priceStr}</div>
+          <div class="schange ${up ? 'up' : 'down'}">${chgStr}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
 function renderApp() {
   const acc = getActiveAccount();
   const root = document.getElementById('appMainRoot');
   if (!root) return;
+
+  renderMockSidebar();
 
   if (!acc && Object.keys(MockState.accounts).length === 0) {
     renderAccountCreationPage(root, 'realtime', false);
