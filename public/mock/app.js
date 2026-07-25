@@ -92,6 +92,12 @@ function setupNavTabListeners() {
   });
 }
 
+let _searchDebounceTimer = null;
+function debouncedGlobalStockSearch(query) {
+  if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => handleGlobalStockSearch(query), 150);
+}
+
 function handleGlobalStockSearch(query) {
   const menu = document.getElementById('globalSearchDropdownMenu');
   if (!menu) return;
@@ -1442,6 +1448,98 @@ function openStockDetailModal(ticker) {
   updateOrderEstTotal();
 
   modal.classList.add('active');
+}
+
+function renderOrderBookDepth(stock) {
+  const container = document.getElementById('mSecOrderBook');
+  if (!container || !stock) return;
+
+  const curPrice = stock.price;
+  const isUsd = stock.market === 'us';
+  const tickStep = isUsd ? 0.05 : (curPrice > 100000 ? 500 : 100);
+
+  // Generate 10 Asks (매도 호가) & 10 Bids (매수 호가)
+  let asks = [];
+  let bids = [];
+
+  for (let i = 10; i >= 1; i--) {
+    const p = Math.max(0.01, curPrice + (i * tickStep));
+    const pct = ((p - curPrice) / curPrice) * 100;
+    const vol = Math.floor(Math.random() * 800) + 120;
+    asks.push({ price: p, changePct: pct, vol });
+  }
+
+  for (let i = 1; i <= 10; i++) {
+    const p = Math.max(0.01, curPrice - (i * tickStep));
+    const pct = ((p - curPrice) / curPrice) * 100;
+    const vol = Math.floor(Math.random() * 850) + 150;
+    bids.push({ price: p, changePct: pct, vol });
+  }
+
+  let html = `
+    <div style="padding:12px; background:var(--surface2); border-radius:var(--radius-sm); border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-size:12px; font-weight:800; color:var(--text);">10단계 실시간 호가 (클릭 시 주문가 자동 입력)</span>
+        <span style="font-size:11px; font-weight:800; color:var(--accent);">체결강도: 166.22%</span>
+      </div>
+
+      <!-- Asks (매도호가 10단계 - Red Tint) -->
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:4px;">
+  `;
+
+  asks.forEach(a => {
+    const priceStr = isUsd ? `$${a.price.toFixed(2)}` : `₩${Math.round(a.price).toLocaleString()}`;
+    const barWidth = Math.min(100, Math.round((a.vol / 1000) * 100));
+    html += `
+      <div onclick="selectOrderBookPrice(${a.price})" style="display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; padding:4px 8px; border-radius:6px; background:rgba(240,68,82,0.05); cursor:pointer; position:relative; overflow:hidden;" onmouseover="this.style.background='rgba(240,68,82,0.15)'" onmouseout="this.style.background='rgba(240,68,82,0.05)'">
+        <div style="position:absolute; right:0; top:0; bottom:0; width:${barWidth}%; background:rgba(240,68,82,0.1); pointer-events:none;"></div>
+        <div style="font-size:12px; font-weight:800; color:var(--up-color); z-index:1;">${priceStr}</div>
+        <div style="font-size:11px; color:var(--up-color); text-align:center; z-index:1;">+${a.changePct.toFixed(2)}%</div>
+        <div style="font-size:11px; font-weight:700; color:var(--muted); text-align:right; z-index:1;">${a.vol}주</div>
+      </div>
+    `;
+  });
+
+  // Current Price Divider
+  const curPriceStr = isUsd ? `$${curPrice.toFixed(2)}` : `₩${Math.round(curPrice).toLocaleString()}`;
+  html += `
+    <div style="padding:8px 12px; background:var(--accent); color:#fff; border-radius:8px; font-weight:900; font-size:13px; text-align:center; margin:4px 0; box-shadow:0 2px 8px rgba(0,102,204,0.2);">
+      현재가: ${curPriceStr} (${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}%)
+    </div>
+    <div style="display:flex; flex-direction:column; gap:2px;">
+  `;
+
+  // Bids (매수호가 10단계 - Blue Tint)
+  bids.forEach(b => {
+    const priceStr = isUsd ? `$${b.price.toFixed(2)}` : `₩${Math.round(b.price).toLocaleString()}`;
+    const barWidth = Math.min(100, Math.round((b.vol / 1000) * 100));
+    html += `
+      <div onclick="selectOrderBookPrice(${b.price})" style="display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; padding:4px 8px; border-radius:6px; background:rgba(49,130,246,0.05); cursor:pointer; position:relative; overflow:hidden;" onmouseover="this.style.background='rgba(49,130,246,0.15)'" onmouseout="this.style.background='rgba(49,130,246,0.05)'">
+        <div style="position:absolute; right:0; top:0; bottom:0; width:${barWidth}%; background:rgba(49,130,246,0.1); pointer-events:none;"></div>
+        <div style="font-size:12px; font-weight:800; color:var(--down-color); z-index:1;">${priceStr}</div>
+        <div style="font-size:11px; color:var(--down-color); text-align:center; z-index:1;">${b.changePct.toFixed(2)}%</div>
+        <div style="font-size:11px; font-weight:700; color:var(--muted); text-align:right; z-index:1;">${b.vol}주</div>
+      </div>
+    `;
+  });
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+function selectOrderBookPrice(price) {
+  togglePriceMode('limit');
+  const input = document.getElementById('orderPriceInput');
+  if (input) {
+    input.value = price;
+    input.style.display = 'block';
+  }
+  showToast(`[호가 선택] 지정가 주문 가격이 ${price}로 설정되었습니다.`);
+  updateOrderEstTotal();
 }
 
 function switchModalSubTab(tabName) {
