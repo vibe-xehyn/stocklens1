@@ -3,7 +3,7 @@ import compression from 'compression';
 import { execFile, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import crypto from 'crypto';
 import tradeRouter from './tradeRouter.js';
 
@@ -253,9 +253,21 @@ if (!existsSync(USERDATA_FILE)) writeFileSync(USERDATA_FILE, '{}', 'utf-8');
 if (!existsSync(SETTINGS_FILE)) writeFileSync(SETTINGS_FILE, '{}', 'utf-8');
 if (!existsSync(MOCKDATA_FILE)) writeFileSync(MOCKDATA_FILE, '{}', 'utf-8');
 
+const _jsonCache = new Map();
+
 function readJSONFile(filePath) {
   try {
-    return JSON.parse(readFileSync(filePath, 'utf-8'));
+    if (existsSync(filePath)) {
+      const { mtimeMs } = statSync(filePath);
+      const cached = _jsonCache.get(filePath);
+      if (cached && cached.mtimeMs === mtimeMs) {
+        return cached.data;
+      }
+      const data = JSON.parse(readFileSync(filePath, 'utf-8'));
+      _jsonCache.set(filePath, { mtimeMs, data });
+      return data;
+    }
+    return {};
   } catch (e) {
     return {};
   }
@@ -263,6 +275,10 @@ function readJSONFile(filePath) {
 
 function writeJSONFile(filePath, data) {
   writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  try {
+    const { mtimeMs } = statSync(filePath);
+    _jsonCache.set(filePath, { mtimeMs, data });
+  } catch (e) {}
 }
 
 function hashPassword(password, salt) {
@@ -742,14 +758,15 @@ app.use('/api/trade', tradeRouter);
 
 app.use(compression({ level: 6 })); // gzip 압축
 app.use(express.static(join(__dirname, 'public'), {
-  maxAge: 0,
-  etag: false,
-  lastModified: false,
+  maxAge: '1d',
+  etag: true,
+  lastModified: true,
   setHeaders(res, filePath) {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.setHeader('Surrogate-Control', 'no-store');
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
+    }
   }
 }));
 
