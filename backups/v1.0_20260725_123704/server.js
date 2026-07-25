@@ -5,15 +5,35 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import crypto from 'crypto';
+import tradeRouter from './tradeRouter.js';
 
-// Load .env file if present
+// Load .env file if present & auto-generate secure ADMIN_TOKEN if missing
 try {
-  const env = readFileSync(new URL('.env', import.meta.url), 'utf-8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^([^#=]+)=(.*)$/);
-    if (m) process.env[m[1].trim()] = m[2].trim().replace(/^['"]|['"]$/g, '');
+  const envURL = new URL('.env', import.meta.url);
+  let envContent = '';
+  if (existsSync(envURL)) {
+    envContent = readFileSync(envURL, 'utf-8');
   }
-} catch {}
+  const lines = envContent.split(/\r?\n/);
+  for (const line of lines) {
+    const m = line.match(/^([^#=]+)=(.*)$/);
+    if (m) {
+      const key = m[1].trim();
+      const val = m[2].trim().replace(/^['"]|['"]$/g, '');
+      process.env[key] = val;
+    }
+  }
+  if (!process.env.ADMIN_TOKEN) {
+    const secureToken = crypto.randomBytes(32).toString('hex');
+    process.env.ADMIN_TOKEN = secureToken;
+    const separator = (envContent && !envContent.endsWith('\n')) ? '\n' : '';
+    const newLine = `${separator}ADMIN_TOKEN=${secureToken}\n`;
+    writeFileSync(envURL, envContent + newLine, 'utf-8');
+    console.log(`[SECURITY] No ADMIN_TOKEN found. Generated secure random ADMIN_TOKEN and appended to .env.`);
+  }
+} catch (e) {
+  console.error('[SECURITY] Error loading/generating .env file:', e.message);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -194,7 +214,28 @@ function buildDeterministicAnalysis(symbol, isKr, t, q, news, flow, macro, sig) 
   // ── price_move ──
   const price_move = buildDeterministicPriceMove(symbol, isKr, q, news, reasons, t, flow, macro);
 
-  return { signal, confidence, score, breakdown: bk, reasons, summary, technical, fundamental, flow: flowStr, sentiment, risk, price_move };
+  return {
+    signal,
+    confidence,
+    score,
+    breakdown: bk,
+    reasons,
+    summary,
+    technical,
+    fundamental,
+    flow: flowStr,
+    sentiment,
+    risk,
+    price_move,
+    altmanZScore: sig.altmanZScore,
+    beneishMScore: sig.beneishMScore,
+    isVetoed: sig.isVetoed,
+    vetoReason: sig.vetoReason,
+    weinsteinStage: sig.weinsteinStage,
+    vcpDetected: sig.vcpDetected,
+    mansfieldRS: sig.mansfieldRS,
+    patterns: sig.patterns
+  };
 }
 
 // ── Premium User Authentication & Data Store ────────────────────────────────
@@ -205,10 +246,12 @@ if (!existsSync(dataDir)) {
 const USERS_FILE = join(dataDir, 'users.json');
 const USERDATA_FILE = join(dataDir, 'userdata.json');
 const SETTINGS_FILE = join(dataDir, 'settings.json');
+const MOCKDATA_FILE = join(dataDir, 'mockdata.json');
 
 if (!existsSync(USERS_FILE)) writeFileSync(USERS_FILE, '{}', 'utf-8');
 if (!existsSync(USERDATA_FILE)) writeFileSync(USERDATA_FILE, '{}', 'utf-8');
 if (!existsSync(SETTINGS_FILE)) writeFileSync(SETTINGS_FILE, '{}', 'utf-8');
+if (!existsSync(MOCKDATA_FILE)) writeFileSync(MOCKDATA_FILE, '{}', 'utf-8');
 
 function readJSONFile(filePath) {
   try {
@@ -222,8 +265,11 @@ function writeJSONFile(filePath, data) {
   writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-function hashPassword(password) {
-  return crypto.createHash('sha256').update(password).digest('hex');
+function hashPassword(password, salt) {
+  if (!salt) {
+    throw new Error('Salt is required for PBKDF2 password hashing');
+  }
+  return crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
 }
 
 const SESSIONS_FILE = join(dataDir, 'sessions.json');
@@ -251,6 +297,18 @@ function getCookie(req, name) {
   return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
 }
 
+function setSessionCookie(req, res, token) {
+  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const secureFlag = isSecure ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${secureFlag}`);
+}
+
+function clearSessionCookie(req, res) {
+  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const secureFlag = isSecure ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `sessionToken=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secureFlag}`);
+}
+
 // Auth Middleware
 function requireAuth(req, res, next) {
   let token = getCookie(req, 'sessionToken');
@@ -272,9 +330,92 @@ function requireAuth(req, res, next) {
   res.status(401).json({ error: '로그인이 필요합니다.' });
 }
 
+// Admin Authentication Middleware
+function requireAdmin(req, res, next) {
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (!adminToken) {
+    return res.status(500).json({ error: '서버 내부 오류: 관리자 권한이 올바르게 설정되지 않았습니다.' });
+  }
+  
+  let token = req.headers['x-admin-token'] || req.query.adminToken;
+  if (!token && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1];
+    }
+  }
+  
+  if (token && token === adminToken) {
+    return next();
+  }
+  
+  res.status(403).json({ error: '관리자 권한이 필요합니다. 올바른 관리자 토큰을 헤더(X-Admin-Token) 또는 쿼리 매개변수(adminToken)로 전달해주세요.' });
+}
+
+
+
+// ── 보안 헤더 미들웨어 (Clickjacking, MIME Sniffing, CSP, HSTS 등 방지) ──────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://www.gstatic.com https://apis.google.com https://*.firebaseapp.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-src 'self' https://*.firebaseapp.com https://*.firebase.com; frame-ancestors 'none';");
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
+
+// ── 캐시 차단 강제 미들웨어 (HTML 및 모의투자 자산 브라우저 캐싱 방지) ──────────────
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') || req.path.endsWith('/') || req.path.includes('/mock')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+  }
+  next();
+});
+
+// ── 인증 및 가입 요청 속도 제한 (Rate Limiting) ───────────────────────────────────
+const authIpLimitStore = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, data] of authIpLimitStore.entries()) {
+    if (now - data.windowStart > 60000) authIpLimitStore.delete(ip);
+  }
+}, 300000);
+
+function authRateLimiter(req, res, next) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const now = Date.now();
+  const windowMs = 60000; // 1분 윈도우
+  const maxRequests = 5; // IP당 최대 5회 시도 가능
+  
+  if (!authIpLimitStore.has(ip)) {
+    authIpLimitStore.set(ip, { count: 1, windowStart: now });
+    return next();
+  }
+  
+  const limitData = authIpLimitStore.get(ip);
+  if (now - limitData.windowStart > windowMs) {
+    limitData.count = 1;
+    limitData.windowStart = now;
+    return next();
+  }
+  
+  if (limitData.count >= maxRequests) {
+    return res.status(429).json({ error: '너무 많은 요청이 발생했습니다. 잠시 후(1분 뒤) 다시 시도해 주세요.' });
+  }
+  
+  limitData.count++;
+  next();
+}
+
 app.use(express.json());
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', authRateLimiter, (req, res) => {
   const { email, username, password } = req.body;
   const identifier = email || username;
   if (!identifier || !password) {
@@ -288,11 +429,17 @@ app.post('/api/auth/register', (req, res) => {
   
   const id = 'user_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex');
   const nameVal = username || identifier.split('@')[0];
+  
+  // PBKDF2 Hashing with Cryptographically Secure Salt
+  const salt = crypto.randomBytes(32).toString('hex');
+  const passwordHash = hashPassword(password, salt);
+
   users[normalizedIdentifier] = {
     id,
     username: nameVal,
     email: email ? email.trim() : identifier,
-    passwordHash: hashPassword(password)
+    salt,
+    passwordHash
   };
   writeJSONFile(USERS_FILE, users);
   
@@ -301,11 +448,11 @@ app.post('/api/auth/register', (req, res) => {
   const sessionUser = { id, username: nameVal, email: email ? email.trim() : identifier };
   sessions.set(token, sessionUser);
   
-  res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+  setSessionCookie(req, res, token);
   res.json({ ok: true, user: sessionUser, token });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authRateLimiter, (req, res) => {
   const { email, username, password } = req.body;
   const identifier = email || username;
   if (!identifier || !password) {
@@ -315,8 +462,28 @@ app.post('/api/auth/login', (req, res) => {
   const normalizedIdentifier = identifier.trim().toLowerCase();
   const user = users[normalizedIdentifier];
   
-  if (!user || (user.passwordHash && user.passwordHash !== hashPassword(password))) {
+  if (!user) {
     return res.status(400).json({ error: '아이디 또는 비밀번호가 일치하지 않습니다.' });
+  }
+
+  // Verification & Migration logic
+  if (!user.salt) {
+    // Legacy user migration check (old unsalted SHA-256)
+    const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
+    if (user.passwordHash !== legacyHash) {
+      return res.status(400).json({ error: '아이디 또는 비밀번호가 일치하지 않습니다.' });
+    }
+    // Perform seamless migration to salted PBKDF2
+    user.salt = crypto.randomBytes(32).toString('hex');
+    user.passwordHash = hashPassword(password, user.salt);
+    users[normalizedIdentifier] = user;
+    writeJSONFile(USERS_FILE, users);
+  } else {
+    // Standard PBKDF2 verification
+    const computedHash = hashPassword(password, user.salt);
+    if (user.passwordHash !== computedHash) {
+      return res.status(400).json({ error: '아이디 또는 비밀번호가 일치하지 않습니다.' });
+    }
   }
   
   // Create Session
@@ -324,7 +491,7 @@ app.post('/api/auth/login', (req, res) => {
   const sessionUser = { id: user.id, username: user.username, email: user.email };
   sessions.set(token, sessionUser);
   
-  res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+  setSessionCookie(req, res, token);
   res.json({ ok: true, user: sessionUser, token });
 });
 
@@ -335,7 +502,7 @@ app.get('/api/auth/config', (req, res) => {
   });
 });
 
-app.post('/api/auth/save-google-id', requireAuth, (req, res) => {
+app.post('/api/auth/save-google-id', requireAdmin, (req, res) => {
   const { googleClientId } = req.body;
   const settings = readJSONFile(SETTINGS_FILE);
   settings.googleClientId = googleClientId ? googleClientId.trim() : null;
@@ -388,7 +555,7 @@ app.post('/api/auth/social', (req, res) => {
   const sessionUser = { id: user.id, username: user.username, email: user.email };
   sessions.set(token, sessionUser);
   
-  res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+  setSessionCookie(req, res, token);
   res.json({ ok: true, user: sessionUser, token });
 });
 
@@ -429,7 +596,7 @@ app.post('/api/auth/firebase', (req, res) => {
       const sessionUser = { id: user.id, username: user.username, email: user.email };
       sessions.set(token, sessionUser);
       
-      res.setHeader('Set-Cookie', `sessionToken=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+      setSessionCookie(req, res, token);
       return res.json({ ok: true, user: sessionUser, token });
     } else {
       return res.status(400).json({ error: '토큰 형식이 올바르지 않습니다.' });
@@ -450,7 +617,7 @@ app.post('/api/auth/logout', (req, res) => {
   if (token) {
     sessions.delete(token);
   }
-  res.setHeader('Set-Cookie', 'sessionToken=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+  clearSessionCookie(req, res);
   res.json({ ok: true });
 });
 
@@ -490,7 +657,7 @@ app.post('/api/user/delete-account', requireAuth, (req, res) => {
     }
 
     // 4. 쿠키 클리어 헤더 전송
-    res.setHeader('Set-Cookie', 'sessionToken=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+    clearSessionCookie(req, res);
     return res.json({ ok: true });
   } catch (e) {
     console.error('Account deletion error:', e);
@@ -537,6 +704,19 @@ app.post('/api/user/data', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/mock/data', requireAuth, (req, res) => {
+  const mockdata = readJSONFile(MOCKDATA_FILE);
+  const data = mockdata[req.user.id] || null;
+  res.json({ ok: true, data });
+});
+
+app.post('/api/mock/data', requireAuth, (req, res) => {
+  const mockdata = readJSONFile(MOCKDATA_FILE);
+  mockdata[req.user.id] = req.body;
+  writeJSONFile(MOCKDATA_FILE, mockdata);
+  res.json({ ok: true });
+});
+
 app.post('/api/user/profile', requireAuth, (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: '닉네임 정보가 필요합니다.' });
@@ -558,18 +738,18 @@ app.post('/api/user/profile', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.use('/api/trade', tradeRouter);
+
 app.use(compression({ level: 6 })); // gzip 압축
 app.use(express.static(join(__dirname, 'public'), {
   maxAge: 0,
   etag: false,
   lastModified: false,
   setHeaders(res, filePath) {
-    if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      res.setHeader('Surrogate-Control', 'no-store');
-    }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
   }
 }));
 
@@ -578,7 +758,7 @@ app.get('/ads.txt', (_, res) => {
   res.send('google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0\n');
 });
 
-app.use((_, res, next) => { res.header('Access-Control-Allow-Origin', '*'); next(); });
+
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 const _c = new Map();
@@ -1136,9 +1316,7 @@ print(json.dumps({'pbr': pbr, 'bps': bps}))
 `;
 
   let yf = {}, yfbs = {};
-  // 24시간 캐시 — 펀더멘탈은 자주 안 바뀌고, yfinance 실패 시 어제 데이터 유지
-  try { yf = await cached(`yfkr:${ticker}`, 86400_000, () => yfRun(yfPy)); } catch {}
-  try { yfbs = await cached(`yfkrbs:${ticker}`, 86400_000, () => yfRun(yfBsPy)); } catch {}
+  // yfinance 차단으로 인한 병목 해소: KOSPI/KOSDAQ 종목은 yfinance 호출을 생략하고 Naver PC 스크래퍼만 사용
 
   return {
     name:basic.stockName??rt.stockName??ticker, exchange:basic.stockExchangeType?.nameKor??'KOSPI', currency:'KRW',
@@ -1171,7 +1349,25 @@ print(json.dumps({'pbr': pbr, 'bps': bps}))
   };
 }
 
+function runNaverScraper(ticker) {
+  return new Promise((resolve, reject) => {
+    execFile('python3', [join(__dirname, 'scrape_naver.py'), ticker], (error, stdout, stderr) => {
+      if (error) {
+        reject(error);
+      } else {
+        try {
+          const res = JSON.parse(stdout);
+          resolve(res);
+        } catch (e) {
+          reject(e);
+        }
+      }
+    });
+  });
+}
+
 async function krFinancials(ticker) {
+  let mobileData = {};
   try {
     const d=await fetchJSON(`https://m.stock.naver.com/api/stock/${ticker}/finance/summary`,{Referer:'https://m.stock.naver.com/'});
     const cols=d.chartIncomeStatement?.annual?.columns??[];
@@ -1180,7 +1376,7 @@ async function krFinancials(ticker) {
     const revenue=rev[i]?rev[i]*1e8:null, opInc=op[i]?op[i]*1e8:null;
 
     // 분기 EPS 4개 합산 → trailing PER 계산
-    let trailingEps=null, trailingPer=null;
+    let trailingEps=null;
     try {
       const epsCols=d.chartEps?.columns??[];
       if(epsCols.length>1){
@@ -1190,12 +1386,44 @@ async function krFinancials(ticker) {
       }
     } catch {}
 
-    return { revenue, operatingIncome:opInc,
+    mobileData = { revenue, operatingIncome:opInc,
       operatingMargin:(revenue&&opInc)?opInc/revenue*100:null,
       revenueGrowth:(i>0&&rev[i-1])?(rev[i]-rev[i-1])/Math.abs(rev[i-1])*100:null,
       _trailingEps: trailingEps,  // 가격과 합산해 PER 계산용
     };
-  } catch { return {}; }
+  } catch (err) {
+    console.warn(`  ⚠ Naver Mobile API 실패 (${ticker}):`, err.message);
+  }
+
+  // Scraped PC data fallback (includes detailed fundamentals)
+  let scraped = null;
+  try {
+    scraped = await cached(`naver_scr:${ticker}`, 86400_000, () => runNaverScraper(ticker));
+  } catch (e) {
+    console.warn(`  ⚠ Naver Scraper 실패 (${ticker}):`, e.message);
+  }
+
+  const extra = {};
+  if (scraped && !scraped.error && scraped.data) {
+    const fd = scraped.data;
+    if (fd["매출액"] != null) extra.revenue = fd["매출액"] * 1e8;
+    if (fd["영업이익"] != null) extra.operatingIncome = fd["영업이익"] * 1e8;
+    if (fd["영업이익률"] != null) extra.operatingMargin = fd["영업이익률"];
+    if (fd["EPS(원)"] != null) extra.eps = fd["EPS(원)"];
+    if (fd["BPS(원)"] != null) extra.bps = fd["BPS(원)"];
+    if (fd["ROE(지배주주)"] != null) extra.roe = fd["ROE(지배주주)"];
+    if (fd["부채비율"] != null && typeof fd["부채비율"] === 'number') extra.debtToEquity = fd["부채비율"];
+    if (fd["당좌비율"] != null && typeof fd["당좌비율"] === 'number') extra.currentRatio = fd["당좌비율"] / 100;
+    if (fd["PER(배)"] != null) extra.per = fd["PER(배)"];
+    if (fd["PBR(배)"] != null) extra.pbr = fd["PBR(배)"];
+    if (fd["주당배당금(원)"] != null) extra.div = fd["주당배당금(원)"];
+    if (scraped.high52 != null) extra.high52 = scraped.high52;
+    if (scraped.low52 != null) extra.low52 = scraped.low52;
+    if (scraped.shares != null) extra.sharesOutstanding = scraped.shares;
+    if (scraped.marketCap != null) extra.marketCap = scraped.marketCap;
+  }
+
+  return { ...mobileData, ...extra };
 }
 
 async function krChart(ticker, range, interval) {
@@ -1857,7 +2085,7 @@ async function fetchInitData() {
   const rates = await cached('rates', 300_000, () => fetchRatesData()).catch(() => ({}));
   const indices = await cached('indices', 60_000, () => Promise.all([
     krIndex('KOSPI','KOSPI'), krIndex('KOSDAQ','KOSDAQ'),
-    yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'), yfIndex('KRW=X','USD/KRW'),
+    yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'),
   ])).catch(() => []);
   return { indices, rates };
 }
@@ -2038,7 +2266,7 @@ const INDICES_CACHE_FILE = join(__dirname, '.indices-cache.json');
   try {
     if (existsSync(INDICES_CACHE_FILE)) {
       const c = JSON.parse(readFileSync(INDICES_CACHE_FILE, 'utf-8'));
-      if (c.data && Date.now() - c.savedAt < 3600_000) {
+      if (c.data && typeof c.savedAt === 'number' && c.savedAt > 0 && c.savedAt <= Date.now() && (Date.now() - c.savedAt < 300_000)) {
         setC('indices', c.data, 30_000);
         console.log('  ✓ 지수 캐시 로드 (디스크)');
       }
@@ -2057,7 +2285,7 @@ app.get('/api/indices', async (_, res) => {
         const ttl = isTradingHours() ? 30_000 : 120_000;
         const d = await cached('indices', ttl, () => Promise.all([
           krIndex('KOSPI','KOSPI'), krIndex('KOSDAQ','KOSDAQ'),
-          yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'), yfIndex('KRW=X','USD/KRW'),
+          yfIndex('^GSPC','S&P 500'), yfIndex('^IXIC','NASDAQ'), yfIndex('^DJI','DOW'),
         ]));
         writeFileSync(INDICES_CACHE_FILE, JSON.stringify({ savedAt: Date.now(), data: d }), 'utf-8');
       } catch {}
@@ -2068,7 +2296,7 @@ app.get('/api/indices', async (_, res) => {
     const ttl = isTradingHours() ? 30_000 : 120_000;
     const data = await cached('indices', ttl, () => Promise.all([
       krIndex('KOSPI',  'KOSPI'), krIndex('KOSDAQ', 'KOSDAQ'),
-      yfIndex('^GSPC', 'S&P 500'), yfIndex('^IXIC', 'NASDAQ'), yfIndex('^DJI',  'DOW'), yfIndex('KRW=X','USD/KRW'),
+      yfIndex('^GSPC', 'S&P 500'), yfIndex('^IXIC', 'NASDAQ'), yfIndex('^DJI',  'DOW'),
     ]));
     try { writeFileSync(INDICES_CACHE_FILE, JSON.stringify({ savedAt: Date.now(), data }), 'utf-8'); } catch {}
     res.setHeader('Cache-Control', `public, max-age=${Math.floor(ttl/1000)}, stale-while-revalidate=10`);
@@ -2220,654 +2448,448 @@ app.get('/api/flow', async (req, res) => {
 // AI는 해석/설명만 담당, 매수/중립/매도 결정은 이 함수가 한다
 // ─────────────────────────────────────────────────────────────────────────────
 function computeSignal(t = {}, q = {}, flow = {}, macro = {}) {
-  // ══════════════════════════════════════════════════════════════════════
-  // 투자 대가 통합 모델 v2
-  // 버핏(FCF·ROE·해자) + 그린블라트(ROC+EY 매직포뮬러) + 린치(PEG)
-  // + 오닐 CAN SLIM + 피오트로스키 F-Score + 제가디쉬-티트만 모멘텀
-  // ══════════════════════════════════════════════════════════════════════
-  const breakdown = { technical: 0, value: 0, quality: 0, growth: 0, momentum: 0, flow: 0, sentiment: 0, macro: 0 };
+  // 1. 방어적 예외 처리를 위한 필드 바인딩 및 기본값 설정
+  const fin = q || {};
+  const tech = t || {};
+
+  const safeVal = (val, fallback = 0) => {
+    return (val !== undefined && val !== null && !isNaN(val)) ? val : fallback;
+  };
+
+  // 재무 데이터 정합성 방어 래핑 (q에서 가져옴)
+  const f_currentRatio = safeVal(fin.currentRatio, 1.2);
+  const f_workingCapital = safeVal(fin.workingCapital, 0);
+  const f_totalAssets = safeVal(fin.totalAssets, 1e7);
+  const f_retainedEarnings = safeVal(fin.retainedEarnings, 0);
+  const f_ebit = safeVal(fin.ebit, 0);
+  const f_marketCap = safeVal(fin.marketCap, 1e7);
+  const f_totalLiabilities = safeVal(fin.totalLiabilities, 1e6);
+  const f_sales = safeVal(fin.sales, 1e7);
+  const f_salesPrior = safeVal(fin.salesPrior, 1e7);
+  const f_eps = safeVal(fin.eps, 1);
+  const f_bps = safeVal(fin.bps, 10);
+  const f_roe = safeVal(fin.roe, 10);
+  const f_netIncome = safeVal(fin.netIncome, 0);
+  const f_operatingCashFlow = safeVal(fin.operatingCashFlow, 0);
+  const f_freeCashFlow = safeVal(fin.freeCashflow, 0); // 기존 q.freeCashflow
+  const f_freeCashFlowPrior = safeVal(fin.freeCashFlowPrior, 0);
+  const f_deRatio = safeVal(fin.debtToEquity, 100); // 기존 q.debtToEquity
+  const f_grossMargin = safeVal(fin.grossMargin, 30);
+  const f_grossMarginPrior = safeVal(fin.grossMarginPrior, 30);
+  const f_assetTurnover = safeVal(fin.assetTurnover, 1.0);
+  const f_assetTurnoverPrior = safeVal(fin.assetTurnoverPrior, 1.0);
+  const f_epsGrowthQtr = safeVal(fin.earningsGrowth, 0); // 기존 q.earningsGrowth
+  const f_salesGrowthQtr = safeVal(fin.revenueGrowth, 0); // 기존 q.revenueGrowth
+  const f_peg = safeVal(fin.pegRatio, 1.5); // 기존 q.pegRatio
+  const f_netReceivables = safeVal(fin.netReceivables, 0);
+  const f_netReceivablesPrior = safeVal(fin.netReceivablesPrior, 0);
+  const f_cogs = safeVal(fin.cogs, 7e6);
+  const f_cogsPrior = safeVal(fin.cogsPrior, 7e6);
+  const f_depreciation = safeVal(fin.depreciation, 0);
+  const f_depreciationPrior = safeVal(fin.depreciationPrior, 0);
+  const f_ppe = safeVal(fin.ppe, 2e6);
+  const f_ppePrior = safeVal(fin.ppePrior, 2e6);
+  const f_sgaExpense = safeVal(fin.sgaExpense, 2e6);
+  const f_sgaExpensePrior = safeVal(fin.sgaExpensePrior, 2e6);
+  const f_sharesOutstanding = safeVal(fin.sharesOutstanding, 1e6);
+  const f_sharesOutstandingPrior = safeVal(fin.sharesOutstandingPrior, 1e6);
+  const f_isManufacturing = fin.isManufacturing !== undefined ? fin.isManufacturing : true;
+
+  // 기술적 데이터 정합성 방어 래핑 (t에서 가져옴)
+  const t_close = safeVal(fin.price || fin.close, 10); // 기존 q.price
+  const t_rsi = safeVal(tech.rsi, 50);
+  const t_adx = safeVal(tech.adx, 20);
+  
+  // 크로스 여부는 기존 MACD 룰을 따름
+  const t_macdGoldenCross = tech.macd > tech.macd_signal; 
+  const t_macdDeadCross = tech.macd < tech.macd_signal;
+  
+  // 볼린저밴드 %B 기준
+  const t_bbLowerBreakout = tech.bb_pct < 5;
+  const t_bbUpperBreakout = tech.bb_pct > 95;
+
+  const t_sma5 = safeVal(tech.ma5, 10);
+  const t_sma10 = safeVal(tech.ma10, 10);
+  const t_sma20 = safeVal(tech.ma20, 10);
+  const t_sma50 = safeVal(tech.ma50, 10);
+  const t_sma150 = safeVal(tech.ma150, 10);
+  const t_sma200 = safeVal(tech.ma200, 10);
+  const t_sma200_30Ago = safeVal(tech.ma200_30Ago, tech.ma200 || 10);
+  const t_stochasticK = safeVal(tech.stoch_k, 50);
+  const t_stochasticD = safeVal(tech.stoch_d, 50);
+  const t_williamsR = safeVal(tech.will_r, -50);
+  const t_obvTrend = safeVal(tech.obv_trend, 0); // 1: 우상향, -1: 우하향, 0: 중립
+  
+  // volume 정보 처리
+  const t_volume = safeVal(tech.volume, 1000);
+  const t_avgVolume20 = safeVal(tech.avgVolume20, 1000);
+  
+  const t_mfi = safeVal(tech.mfi, 50);
+  const t_cmf = safeVal(tech.cmf, 0);
+  const t_roc = safeVal(tech.roc20 || tech.roc, 0); // roc20 또는 roc
+  
+  const t_ichimokuAboveKumo = tech.ich_signal === 1;
+  const t_ichimokuBelowKumo = tech.ich_signal === -1;
+  const t_ichimokuTKCross = !!tech.ichimokuTKCross; // TK Cross 플래그
+  const t_ichimokuTKDeadCross = !!tech.ichimokuTKDeadCross;
+  
+  const t_low52W = safeVal(fin.low52 || tech.low52W, 5); // 기존 q.low52
+  const t_high52W = safeVal(fin.high52 || tech.high52W, 15); // 기존 q.high52
+  
+  const t_rsRating = safeVal(tech.rsRating, 50);
+  const t_mansfieldRS = safeVal(tech.mansfieldRS || tech.mansfield_rs, 0); // Mansfield 상대강도
+  const t_shortRatio = safeVal(flow.shortPct, 0); // 기존 flow.shortPct
+  const t_insiderBuyDominant = flow.insiderTx && flow.insiderTx.filter(tx => tx.type === 'Buy' || tx.type === 'Purchase').length > flow.insiderTx.filter(tx => tx.type === 'Sell' || tx.type === 'Sale').length;
+  const t_insiderSellDominant = flow.insiderTx && flow.insiderTx.filter(tx => tx.type === 'Sell' || tx.type === 'Sale').length > flow.insiderTx.filter(tx => tx.type === 'Buy' || tx.type === 'Purchase').length * 2;
+  const t_institutionalBuyDominant = flow.institutionPct > 50;
+  const t_weinsteinStage = safeVal(tech.weinsteinStage || tech.stage, 1);
+  const t_vcpDetected = !!(tech.vcpDetected || tech.vcp);
+
+  // 기하학적 차트 패턴 플래그 바인딩 (tech.patterns 에서)
+  const patterns = tech.patterns || {};
+  const p_cupAndHandle = !!(patterns.cupAndHandle || tech.cup_and_handle);
+  const p_inverseHeadAndShoulders = !!(patterns.inverseHeadAndShoulders || tech.inverse_head_and_shoulders);
+  const p_doubleBottom = !!(patterns.doubleBottom || tech.double_bottom);
+
+  // 매크로 및 감성 데이터 방어 래핑 (macro에서 가져옴)
+  const m_vix = safeVal(macro.vix?.value, 15);
+  // 장단기 금리차
+  const m_yieldCurveSpread = macro.us10y?.value && macro.us3y?.value ? (macro.us10y.value - macro.us3y.value) : 1.0;
+  // dxyTrend: dxy 하락 시 -1
+  const m_dxyTrend = macro.dxy?.chg < -1.0 ? -1 : (macro.dxy?.chg > 1.0 ? 1 : 0);
+  const m_goldTrend = macro.gold?.chg > 2.0 ? -1 : (macro.gold?.chg < -2.0 ? 1 : 0);
+  const m_oilStabilized = macro.oil?.chg < 3.0 && macro.oil?.chg > -3.0;
+  const m_targetUpside = fin.price && fin.targetPrice ? ((fin.targetPrice - fin.price) / fin.price * 100) : 0;
+  const m_bondYield10Y = safeVal(macro.us10y?.value, 4.0);
+
+  // 팩터 맵 초기 구조 생성
+  const breakdown = {
+    technical: 0,
+    value: 0,
+    quality: 0,
+    growth: 0,
+    momentum: 0,
+    flow: 0,
+    sentiment: 0,
+    macro: 0
+  };
   const reasons = [];
 
-  // ═══ 1. 기술적 지표 (최대 ±60점) ═══════════════════════════════════
-  // RSI: 강한 추세(ADX>25) 중 과매수는 추세 지속 가능 → 패널티 감쇠
-  const strongTrend = typeof t.adx === 'number' && t.adx > 25;
-  if (typeof t.rsi === 'number') {
-    if (t.rsi < 20)      { breakdown.technical += 20; reasons.push(`RSI ${t.rsi} 극과매도`); }
-    else if (t.rsi < 30) { breakdown.technical += 13; reasons.push(`RSI ${t.rsi} 과매도`); }
-    else if (t.rsi < 40) breakdown.technical += 5;
-    else if (t.rsi > 80) { breakdown.technical -= (strongTrend ? 8 : 20); reasons.push(`RSI ${t.rsi} 극과매수`); }
-    else if (t.rsi > 70) { breakdown.technical -= (strongTrend ? 4 : 13); reasons.push(`RSI ${t.rsi} 과매수`); }
-    else if (t.rsi > 60) breakdown.technical -= (strongTrend ? 0 : 4);
+  // --- 1. 부도 예측 모형 연산 (Altman Z-Score) ---
+  const division = (num, den) => (den === 0 ? 0 : num / den);
+  
+  let altmanZ = 0;
+  const a_X1 = division(f_workingCapital, f_totalAssets);
+  const a_X2 = division(f_retainedEarnings, f_totalAssets);
+  const a_X3 = division(f_ebit, f_totalAssets);
+  const a_X4 = division(f_marketCap, f_totalLiabilities);
+  const a_X5 = division(f_sales, f_totalAssets);
+
+  if (f_isManufacturing) {
+    altmanZ = 1.2 * a_X1 + 1.4 * a_X2 + 3.3 * a_X3 + 0.6 * a_X4 + 0.999 * a_X5;
+  } else {
+    // 비제조 일반 Emerging Market 적용 Z''-Score
+    altmanZ = 6.56 * a_X1 + 3.26 * a_X2 + 6.72 * a_X3 + 1.05 * a_X4;
   }
 
-  // MACD 골든/데드크로스
-  if (typeof t.macd === 'number' && typeof t.macd_signal === 'number') {
-    if (t.macd > t.macd_signal) { breakdown.technical += 12; reasons.push('MACD 골든크로스'); }
-    else                        { breakdown.technical -= 12; reasons.push('MACD 데드크로스'); }
+  // --- 2. 분식회계 경고 모형 연산 (Beneish M-Score) ---
+  const dsri = division(f_netReceivables / (f_sales || 1), f_netReceivablesPrior / (f_salesPrior || 1)) || 1.0;
+  const gmi = division((f_salesPrior - f_cogsPrior) / (f_salesPrior || 1), (f_sales - f_cogs) / (f_sales || 1)) || 1.0;
+  const aqi = division(
+    1 - (f_currentRatio * f_totalLiabilities / f_totalAssets + f_ppe) / f_totalAssets,
+    1 - (f_currentRatio * f_totalLiabilities / f_totalAssets + f_ppePrior) / f_totalAssets
+  ) || 1.0;
+  const sgi = division(f_sales, f_salesPrior) || 1.0;
+  const depi = division(f_depreciationPrior / (f_ppePrior + f_depreciationPrior || 1), f_depreciation / (f_ppe + f_depreciation || 1)) || 1.0;
+  const sgai = division(f_sgaExpense / (f_sales || 1), f_sgaExpensePrior / (f_salesPrior || 1)) || 1.0;
+  const lvgi = division(f_totalLiabilities / f_totalAssets, (f_totalLiabilities - f_workingCapital) / f_totalAssets) || 1.0;
+  const tata = division(f_netIncome - f_operatingCashFlow, f_totalAssets);
+
+  const beneishM = -4.84 + 0.92 * dsri + 0.528 * gmi + 0.404 * aqi + 0.892 * sgi + 0.115 * depi - 0.172 * sgai + 4.679 * tata - 0.327 * lvgi;
+
+  // --- 3. 8대 평가 요인별 점수 세부 연산 모듈 ---
+
+  // ① 기술적 분석 (Technical Indicator, 최대 ±60점)
+  let rsiResult = 0;
+  if (t_rsi <= 20) {
+    rsiResult = t_adx > 25 ? 10 : 20; // 추세장에서는 역발상 매수 오신호 방지 감쇠 적용
+    reasons.push(`RSI ${t_rsi} 과매도(ADX ${t_adx.toFixed(0)})`);
+  } else if (t_rsi >= 80) {
+    rsiResult = t_adx > 25 ? -10 : -20;
+    reasons.push(`RSI ${t_rsi} 과매수(ADX ${t_adx.toFixed(0)})`);
+  }
+  breakdown.technical += rsiResult;
+
+  if (t_macdGoldenCross) { breakdown.technical += 12; reasons.push('MACD 골든크로스'); }
+  if (t_macdDeadCross) { breakdown.technical -= 12; reasons.push('MACD 데드크로스'); }
+  if (t_bbLowerBreakout) { breakdown.technical += 12; reasons.push('볼린저 밴드 하단 이탈'); }
+  if (t_bbUpperBreakout) { breakdown.technical -= 12; reasons.push('볼린저 밴드 상단 이탈'); }
+
+  // 이동평균선 정배열 / 역배열 다단계 점수 연산
+  if (t_sma5 > t_sma10 && t_sma10 > t_sma20 && t_sma20 > t_sma50 && t_sma50 > t_sma200) {
+    breakdown.technical += 18;
+    reasons.push('이동평균선 완전 정배열');
+  } else if (t_sma5 < t_sma10 && t_sma10 < t_sma20 && t_sma20 < t_sma50 && t_sma50 < t_sma200) {
+    breakdown.technical -= 18;
+    reasons.push('이동평균선 완전 역배열');
   }
 
-  // 볼린저밴드 %B
-  if (typeof t.bb_pct === 'number') {
-    if (t.bb_pct < 5)       { breakdown.technical += 12; reasons.push('BB 하단 이탈'); }
-    else if (t.bb_pct < 20) breakdown.technical += 6;
-    else if (t.bb_pct < 30) breakdown.technical += 2;
-    else if (t.bb_pct > 95) { breakdown.technical -= 12; reasons.push('BB 상단 이탈'); }
-    else if (t.bb_pct > 80) breakdown.technical -= 6;
-    else if (t.bb_pct > 70) breakdown.technical -= 2;
+  // 기타 보조적 기술 지표 규칙
+  if (t_stochasticK > 80 && t_stochasticK < t_stochasticD) { breakdown.technical -= 8; reasons.push('스토캐스틱 하락전환'); }
+  if (t_stochasticK < 20 && t_stochasticK > t_stochasticD) { breakdown.technical += 8; reasons.push('스토캐스틱 반등'); }
+  if (t_williamsR < -80) { breakdown.technical += 8; reasons.push('Williams %R 과매도'); }
+  if (t_williamsR > -20) { breakdown.technical -= 8; reasons.push('Williams %R 과매수'); }
+  if (t_obvTrend === 1) { breakdown.technical += 10; reasons.push('OBV 상승(매집 신호)'); }
+  if (t_obvTrend === -1) { breakdown.technical -= 10; reasons.push('OBV 하락(분산 신호)'); }
+  
+  // 거래량 급증 확인 가점
+  if (tech.vol_ratio > 1.5 || t_volume > t_avgVolume20 * 1.5) { 
+    breakdown.technical += 10; 
+    reasons.push(`거래량 급증 (최근 평균 대비 ${(tech.vol_ratio || 1.5).toFixed(1)}배)`); 
+  }
+  
+  if (t_mfi < 20) { breakdown.technical += 8; reasons.push('MFI 과매도'); }
+  if (t_mfi > 80) { breakdown.technical -= 8; reasons.push('MFI 과매수'); }
+  if (t_cmf > 0.1) { breakdown.technical += 10; reasons.push('CMF 자금 유입'); }
+  if (t_cmf < -0.1) { breakdown.technical -= 10; reasons.push('CMF 자금 유출'); }
+  if (t_roc > 5) { breakdown.technical += 8; reasons.push('ROC 단기 모멘텀 상승'); }
+  if (t_roc < -5) { breakdown.technical -= 8; reasons.push('ROC 단기 모멘텀 하락'); }
+  if (t_ichimokuAboveKumo) { breakdown.technical += 10; reasons.push('이치모쿠 구름대 위 (강세)'); }
+  if (t_ichimokuBelowKumo) { breakdown.technical -= 10; reasons.push('이치모쿠 구름대 아래 (약세)'); }
+  if (t_ichimokuTKCross) { breakdown.technical += 6; reasons.push('이치모쿠 TK 골든크로스'); }
+  if (t_ichimokuTKDeadCross) { breakdown.technical -= 6; reasons.push('이치모쿠 TK 데드크로스'); }
+  
+  const high52WProximity = t_high52W > 0 ? (t_high52W - t_close) / t_high52W : 1.0;
+  if (high52WProximity <= 0.10) { breakdown.technical += 12; reasons.push('52주 신고가 돌파 임박'); }
+
+  // ② 가치 평가 (Value Model, 최대 ±60점)
+  const grahamVal = Math.sqrt(22.5 * f_eps * f_bps);
+  if (!isNaN(grahamVal) && grahamVal > t_close) {
+    const marginOfSafety = (grahamVal - t_close) / grahamVal;
+    const gScore = Math.min(20, Math.floor(marginOfSafety * 40));
+    breakdown.value += gScore;
+    reasons.push(`그레이엄 안전마진 ${(marginOfSafety * 100).toFixed(0)}% (+${gScore}점)`);
   }
 
-  // 스토캐스틱
-  if (typeof t.stoch_k === 'number' && typeof t.stoch_d === 'number') {
-    if (t.stoch_k < 20 && t.stoch_k > t.stoch_d)      { breakdown.technical += 8; reasons.push('스토캐스틱 반등'); }
-    else if (t.stoch_k < 20)                           breakdown.technical += 4;
-    else if (t.stoch_k > 80 && t.stoch_k < t.stoch_d) { breakdown.technical -= 8; reasons.push('스토캐스틱 하락전환'); }
-    else if (t.stoch_k > 80)                           breakdown.technical -= 4;
+  const peRatio = f_eps > 0 ? t_close / f_eps : 999;
+  const pbRatio = f_bps > 0 ? t_close / f_bps : 999;
+  const stockEarningsYield = division(1, peRatio) * 100;
+  const spreadFed = stockEarningsYield - m_bondYield10Y;
+  if (spreadFed > 0) {
+    const fScore = Math.min(12, Math.floor(spreadFed * 2));
+    breakdown.value += fScore;
+    reasons.push(`Fed모델 이익스프레드 +${spreadFed.toFixed(1)}%p (+${fScore}점)`);
   }
 
-  // DMI/ADX: ADX 30+ = 더 강한 추세
-  if (typeof t.adx === 'number' && typeof t.pdi === 'number' && typeof t.mdi === 'number') {
-    const tStr = t.adx > 30 ? 15 : t.adx > 25 ? 12 : t.adx > 20 ? 6 : 0;
-    if (tStr > 0) {
-      if (t.pdi > t.mdi) { breakdown.technical += tStr; reasons.push(`상승추세(ADX ${t.adx.toFixed(0)})`); }
-      else               { breakdown.technical -= tStr; reasons.push(`하락추세(ADX ${t.adx.toFixed(0)})`); }
+  if (f_peg < 0.5) { breakdown.value += 22; reasons.push(`PEG ${f_peg.toFixed(2)} 극저평가 (린치)`); }
+  else if (f_peg > 2.0) { breakdown.value -= 6; reasons.push(`PEG ${f_peg.toFixed(2)} 고평가`); }
+  else if (f_peg >= 0.5 && f_peg < 1.0) { breakdown.value += 15; reasons.push(`PEG ${f_peg.toFixed(2)} 저평가`); }
+  else if (f_peg >= 1.0 && f_peg < 1.5) { breakdown.value += 8; reasons.push(`PEG ${f_peg.toFixed(2)} 합리적 가격`); }
+
+  if (peRatio < 10) { breakdown.value += 10; reasons.push(`저PER ${peRatio.toFixed(1)}배`); }
+  if (pbRatio < 1.0) { breakdown.value += 10; reasons.push(`저PBR ${pbRatio.toFixed(2)}배`); }
+  if (peRatio > 35) { breakdown.value -= 10; reasons.push(`고PER ${peRatio.toFixed(1)}배 경계`); }
+  if (pbRatio > 5.0) { breakdown.value -= 10; reasons.push(`고PBR ${pbRatio.toFixed(2)}배 경계`); }
+
+  // ③ 기업 품질 (Quality Fundamental, 최대 ±45점)
+  if (f_roe >= 30) { breakdown.quality += 14; reasons.push(`고ROE ${f_roe.toFixed(1)}%`); }
+  else if (f_roe < 0) { breakdown.quality -= 14; reasons.push('ROE 음수 (적자 기업)'); }
+
+  if (f_freeCashFlow > 0) {
+    breakdown.quality += 10; // 잉여현금흐름 보너스
+    reasons.push('잉여현금흐름(FCF) 양수 유지');
+  } else {
+    breakdown.quality -= 10; // 잉여현금흐름 페널티
+    reasons.push('잉여현금흐름(FCF) 음수 적자');
+  }
+
+  if (f_grossMargin > f_grossMarginPrior) { breakdown.quality += 10; reasons.push('매출총이익률 전분기 대비 개선'); }
+  else { breakdown.quality -= 10; reasons.push('매출총이익률 역성장/정체'); }
+
+  if (f_deRatio >= 300) { breakdown.quality -= 10; reasons.push(`과다부채 D/E ${f_deRatio.toFixed(0)}%`); }
+  if (f_currentRatio < 0.5) { breakdown.quality -= 8; reasons.push('유동비율 0.5 미만 단기 유동성 리스크'); }
+
+  // ④ 성장성 (Growth - CAN SLIM, 최대 ±35점)
+  if (f_epsGrowthQtr >= 100) { breakdown.growth += 18; reasons.push(`EPS 폭발성장 +${f_epsGrowthQtr.toFixed(0)}%`); }
+  else if (f_epsGrowthQtr >= 25) { breakdown.growth += 9; reasons.push(`EPS 성장성 충족 +${f_epsGrowthQtr.toFixed(0)}% (CAN SLIM)`); }
+
+  if (f_salesGrowthQtr >= 25) { breakdown.growth += 9; reasons.push(`매출 고성장 +${f_salesGrowthQtr.toFixed(0)}%`); }
+  else if (f_salesGrowthQtr < -15) { breakdown.growth -= 8; reasons.push('매출 역성장 감소세'); }
+
+  // ⑤ 가격 모멘텀 (Momentum, 최대 ±25점)
+  const range52W = t_high52W - t_low52W;
+  const positionRatio = range52W > 0 ? (t_close - t_low52W) / range52W : 0.5;
+  const momScore = Math.floor((positionRatio - 0.5) * 24);
+  breakdown.momentum += momScore; // 52주 범위 내 위치 점수화 (최대 ±12점)
+  if (positionRatio > 0.85) reasons.push('12개월 가격 모멘텀 상승세 우수');
+
+  if (positionRatio > 0.90 && t_rsi > 80) {
+    breakdown.momentum -= 5; // 모멘텀 과열 보정 필터
+    reasons.push('⚠️ 모멘텀 과열 경보 (52주 고가 인근 + RSI 과매수)');
+  }
+
+  // ⑥ 수급 (Flow, 최대 ±35점)
+  if (t_insiderBuyDominant) { breakdown.flow += 10; reasons.push('내부자 순매수 흐름 유입'); }
+  if (t_insiderSellDominant) { breakdown.flow -= 7; reasons.push('내부자 순매도 이탈 흐름'); }
+  if (t_shortRatio > 20) { breakdown.flow -= 9; reasons.push(`공매도 과다 비율 ${t_shortRatio.toFixed(1)}%`); }
+
+  if (t_shortRatio >= 15 && t_close > t_sma50 && t_volume > t_avgVolume20 * 1.3) {
+    breakdown.flow += 8; // 숏커버 랠리 유발 확률 가산
+    reasons.push('⚡ 숏스퀴즈 조건 탐지 (고공매도 잔고 + 상승추세 전환)');
+  }
+
+  // ⑦ 시장 심리 및 매크로 (Sentiment & Macro, 최대 ±32점 합산 한계)
+  if (t_institutionalBuyDominant) { breakdown.sentiment += 10; reasons.push('기관 보유 비중 우세'); }
+  if (m_targetUpside > 40) { breakdown.sentiment += 10; reasons.push(`애널리스트 목표가 상승여력 +${m_targetUpside.toFixed(0)}%`); }
+
+  if (m_vix > 40) { breakdown.macro += 4; reasons.push('VIX 극대화 공포 구간 (역발상 매수 기회)'); }
+  if (m_yieldCurveSpread < 0) { breakdown.macro -= 6; reasons.push('장단기 국채금리 역전 (경기 침체 우려)'); }
+  if (m_dxyTrend === -1) { breakdown.macro += 4; reasons.push('달러 약세 트렌드 (위험선호 호재)'); }
+  if (m_goldTrend === 1) { breakdown.macro += 4; reasons.push('금 시세 안정화 반등 (헤지 매력)'); }
+  if (m_oilStabilized) { breakdown.macro += 4; reasons.push('국제 유가 안정 흐름'); }
+
+  // 카테고리별 정해진 리스크 한도 임계 점수 맵핑 보정
+  breakdown.technical = Math.max(-60, Math.min(60, breakdown.technical));
+  breakdown.value = Math.max(-60, Math.min(60, breakdown.value));
+  breakdown.quality = Math.max(-45, Math.min(45, breakdown.quality));
+  breakdown.growth = Math.max(-35, Math.min(35, breakdown.growth));
+  breakdown.momentum = Math.max(-25, Math.min(25, breakdown.momentum));
+  breakdown.flow = Math.max(-35, Math.min(35, breakdown.flow));
+  breakdown.sentiment = Math.max(-20, Math.min(20, breakdown.sentiment));
+  breakdown.macro = Math.max(-12, Math.min(12, breakdown.macro));
+
+  if (p_cupAndHandle) {
+    breakdown.technical = Math.min(60, breakdown.technical + 15);
+    reasons.push('🎯 U-Shape 컵앤핸들 기하학적 패턴 돌파 성공 (+15점)');
+  }
+  if (p_inverseHeadAndShoulders) {
+    breakdown.technical = Math.min(60, breakdown.technical + 18);
+    reasons.push('🎯 역헤드앤숄더 강력 추세 반전 바닥 패턴 검증 (+18점)');
+  }
+  if (p_doubleBottom) {
+    breakdown.technical = Math.min(60, breakdown.technical + 12);
+    reasons.push('🎯 이중 바닥(W형) 10일 이상 시간 대칭적 지지선 확인 (+12점)');
+  }
+
+  // 기초 투자 합계 점수 환산
+  let score = Object.values(breakdown).reduce((acc, current) => acc + current, 0);
+
+  // --- 4. 예외 리스크 거부권 연산 단계 (Veto Rules Override) ---
+  let isVetoed = false;
+  let vetoReason = "";
+
+  if (f_currentRatio < 0.5) {
+    isVetoed = true;
+    vetoReason = "유동비율 위기 (Current Ratio < 0.5) 에 따른 매수 무조건적 불가 차단";
+    score = Math.min(-20, score);
+  }
+  if (f_netIncome < 0 && f_freeCashFlow < 0 && f_deRatio > 200) {
+    isVetoed = true;
+    vetoReason = "실적 부진 및 자금난 상태 (영업손실 + 음수 FCF + 부채비율 > 200%) 파산 경고";
+    score = Math.min(-30, score);
+  }
+  if (altmanZ < 1.81) {
+    isVetoed = true;
+    vetoReason = `Altman Z-Score 부도 위기군 식별 (${altmanZ.toFixed(2)} < 1.81)`;
+    score = Math.min(-40, score);
+  }
+  if (beneishM > -1.78) {
+    isVetoed = true;
+    vetoReason = `Beneish M-Score 회계 분식 위험성 경보 발동 (${beneishM.toFixed(2)} > -1.78)`;
+    score = Math.min(-50, score);
+  }
+  if (t_weinsteinStage === 4) {
+    isVetoed = true;
+    vetoReason = "Stan Weinstein 제 4단계 하락세 심화 단계 자산 진입 상태";
+    score = Math.min(-25, score);
+  }
+  if (m_vix > 60) {
+    score = Math.min(10, score);
+    vetoReason = "VIX 지수 극대화(VIX > 60) 대공황 상태 도달에 따른 보수적 매수 보류 통제";
+  }
+  if (isVetoed) {
+    reasons.push(`⚠️ 리스크 거부권 발동: ${vetoReason}`);
+  }
+
+  // --- 5. 확신도 승수 및 정합성 보정 연산 (Multiplier System) ---
+  let confidenceMultiplier = 1.0;
+  const positiveCategories = Object.keys(breakdown).filter(k => breakdown[k] > 0).length;
+  const negativeCategories = Object.keys(breakdown).filter(k => breakdown[k] < 0).length;
+
+  if (!isVetoed) {
+    // 8대 요인 중 5개 이상이 동시에 매수 강세 가리키며 동조가 확인된 경우
+    if (positiveCategories >= 5 && t_mansfieldRS > 0 && t_vcpDetected) {
+      confidenceMultiplier = 1.3; // 30% 증폭 특수 주도주 프리미엄
+      reasons.push("🚀 대요인 동조 + 주도주 템플릿(VCP) 만족에 따른 점수 30% 할증 적용");
+    } else if (positiveCategories >= 4) {
+      confidenceMultiplier = 1.2; // 20% 일치 증폭
+      reasons.push("✅ 다요인 강세 일치에 따른 점수 20% 할증 적용");
     }
-  }
 
-  // 이동평균 정배열/역배열 (MA5/10/20/50/200 완전 정배열)
-  if (q.price && t.ma20 && t.ma50) {
-    const p = q.price;
-    if (t.ma5 && t.ma10 && t.ma200 && p > t.ma5 && t.ma5 > t.ma10 && t.ma10 > t.ma20 && t.ma20 > t.ma50 && t.ma50 > t.ma200) {
-      breakdown.technical += 18; reasons.push('완전 정배열(MA5>10>20>50>200)');
-    } else if (t.ma5 && t.ma10 && p > t.ma5 && t.ma5 > t.ma10 && t.ma10 > t.ma20 && t.ma20 > t.ma50) {
-      breakdown.technical += 13; reasons.push('정배열(MA5>10>20>50)');
-    } else if (p > t.ma20 && t.ma20 > t.ma50) {
-      breakdown.technical += 8; reasons.push('정배열(가격>MA20>MA50)');
-    } else if (t.ma5 && t.ma10 && t.ma200 && p < t.ma5 && t.ma5 < t.ma10 && t.ma10 < t.ma20 && t.ma20 < t.ma50 && t.ma50 < t.ma200) {
-      breakdown.technical -= 18; reasons.push('완전 역배열(MA5<10<20<50<200)');
-    } else if (p < t.ma20 && t.ma20 < t.ma50) {
-      breakdown.technical -= 8; reasons.push('역배열(가격<MA20<MA50)');
-    } else if (p > t.ma20) {
-      breakdown.technical += 3;
-    } else {
-      breakdown.technical -= 3;
+    // 신호 교차 정합성이 상충되어 불확실성 노출된 경우
+    if (positiveCategories >= 3 && negativeCategories >= 3) {
+      confidenceMultiplier = 0.7; // 30% 중립 방향 감쇠
+      reasons.push("⚡ 신호 간 교차 상충 발생으로 최종 자산 매력도 30% 감쇠 적용");
     }
-    // MA200 장기 추세 추가 보너스
-    if (t.ma200) {
-      if (p > t.ma200 * 1.05)      breakdown.technical += 5;  // MA200 5% 위 = 강한 장기 상승
-      else if (p < t.ma200 * 0.95) breakdown.technical -= 5;  // MA200 5% 아래 = 장기 하락
-    }
+
+    score = Math.round(score * confidenceMultiplier);
+  } else {
+    confidenceMultiplier = 0.3; // 거부권 해당 종목은 확신도를 최저 수준으로 압축
   }
 
-  // Williams %R
-  if (typeof t.will_r === 'number') {
-    if (t.will_r < -80)      { breakdown.technical += 7; reasons.push(`Williams%R ${t.will_r.toFixed(0)} 과매도`); }
-    else if (t.will_r < -60) breakdown.technical += 3;
-    else if (t.will_r > -20) { breakdown.technical -= 7; reasons.push(`Williams%R ${t.will_r.toFixed(0)} 과매수`); }
-    else if (t.will_r > -40) breakdown.technical -= 3;
+  // 최종 매력도 등급 매핑 연산
+  let finalSignal = "중립";
+  if (score >= 60) finalSignal = "강력매수";
+  else if (score >= 30) finalSignal = "매수";
+  else if (score >= 10) finalSignal = "약매수";
+  else if (score <= -60) finalSignal = "강력매도";
+  else if (score <= -30) finalSignal = "매도";
+  else if (score <= -10) finalSignal = "약매도";
+
+  if (isVetoed) {
+    finalSignal = "강력매도 (VETO)";
   }
 
-  // OBV 추세 (가격과 거래량 방향 일치 여부)
-  if (typeof t.obv_trend === 'number') {
-    if (t.obv_trend > 0) { breakdown.technical += 5; reasons.push('OBV 상승(매집 신호)'); }
-    else                 { breakdown.technical -= 5; reasons.push('OBV 하락(분산 신호)'); }
-  }
-
-  // 거래량 급증 분석
-  if (typeof t.vol_ratio === 'number') {
-    const isUp = q.changePct != null ? q.changePct > 0 : true;
-    if (t.vol_ratio > 2.5 && isUp)       { breakdown.technical += 10; reasons.push(`거래량 ${t.vol_ratio.toFixed(1)}배 급증+상승`); }
-    else if (t.vol_ratio > 2.5 && !isUp) { breakdown.technical -= 10; reasons.push(`거래량 ${t.vol_ratio.toFixed(1)}배 급증+하락`); }
-    else if (t.vol_ratio > 1.5 && isUp)  breakdown.technical += 5;
-    else if (t.vol_ratio > 1.5 && !isUp) breakdown.technical -= 5;
-    else if (t.vol_ratio < 0.4)          breakdown.technical -= 3; // 거래량 급감 = 관심 이탈
-  }
-
-  // 캔들 패턴
-  if (Array.isArray(t.candles) && t.candles.length > 0) {
-    const cp = t.candles;
-    if (cp.includes('morning_star'))      { breakdown.technical += 12; reasons.push('샛별형(강한 반등 신호)'); }
-    if (cp.includes('bullish_engulfing')) { breakdown.technical += 10; reasons.push('상승장악형'); }
-    if (cp.includes('hammer'))            { breakdown.technical += 7;  reasons.push('망치형(반등 신호)'); }
-    if (cp.includes('inverted_hammer'))   breakdown.technical += 4;
-    if (cp.includes('evening_star'))      { breakdown.technical -= 12; reasons.push('저녁별형(강한 하락 신호)'); }
-    if (cp.includes('bearish_engulfing')) { breakdown.technical -= 10; reasons.push('하락장악형'); }
-    if (cp.includes('doji'))              { breakdown.technical -= 2;  reasons.push('도지(추세 전환 가능)'); }
-  }
-
-  // MFI (Money Flow Index) — 거래량 가중 RSI: RSI와 다른 방향이면 발산 경고
-  if (typeof t.mfi === 'number') {
-    if (t.mfi < 20)      { breakdown.technical += 8;  reasons.push(`MFI ${t.mfi.toFixed(0)} 과매도(거래량확인)`); }
-    else if (t.mfi < 30) breakdown.technical += 4;
-    else if (t.mfi > 80) { breakdown.technical -= 8;  reasons.push(`MFI ${t.mfi.toFixed(0)} 과매수(거래량확인)`); }
-    else if (t.mfi > 70) breakdown.technical -= 4;
-    // RSI와 MFI 발산: 가격과 거래량 방향 불일치 = 추세 반전 경고
-    if (typeof t.rsi === 'number') {
-      if (t.rsi > 65 && t.mfi < 45) { breakdown.technical -= 6; reasons.push('RSI↑MFI↓ 발산(추세약화경고)'); }
-      if (t.rsi < 35 && t.mfi > 55) { breakdown.technical += 6; reasons.push('RSI↓MFI↑ 발산(반등가능성)'); }
-    }
-  }
-
-  // CMF (Chaikin Money Flow) — 매집/분산
-  if (typeof t.cmf === 'number') {
-    if (t.cmf > 0.2)       { breakdown.technical += 7;  reasons.push(`CMF ${t.cmf.toFixed(2)} 강한 매집`); }
-    else if (t.cmf > 0.05) breakdown.technical += 3;
-    else if (t.cmf < -0.2) { breakdown.technical -= 7;  reasons.push(`CMF ${t.cmf.toFixed(2)} 강한 분산`); }
-    else if (t.cmf < -0.05) breakdown.technical -= 3;
-  }
-
-  // ROC (Rate of Change) — 단기/중기 모멘텀
-  if (typeof t.roc20 === 'number') {
-    if (t.roc20 > 20)       { breakdown.technical += 8;  reasons.push(`ROC(20) +${t.roc20.toFixed(0)}% 강한모멘텀`); }
-    else if (t.roc20 > 10)  breakdown.technical += 4;
-    else if (t.roc20 > 5)   breakdown.technical += 2;
-    else if (t.roc20 < -20) { breakdown.technical -= 8;  reasons.push(`ROC(20) ${t.roc20.toFixed(0)}% 급락`); }
-    else if (t.roc20 < -10) breakdown.technical -= 4;
-    else if (t.roc20 < -5)  breakdown.technical -= 2;
-  }
-
-  // 이치모쿠 구름대
-  if (typeof t.ich_signal === 'number') {
-    if (t.ich_signal === 1)       { breakdown.technical += 10; reasons.push('이치모쿠 구름 위(강세)'); }
-    else if (t.ich_signal === -1) { breakdown.technical -= 10; reasons.push('이치모쿠 구름 아래(약세)'); }
-    // 구름 안 = 불확실 → 다른 신호에 의존
-  }
-
-  // 52주 고/저점 돌파
-  if (typeof t.price_vs_52h === 'number') {
-    if (t.price_vs_52h >= 0.98)      { breakdown.technical += 12; reasons.push('52주 신고가 근접/돌파'); }
-    else if (t.price_vs_52h >= 0.90) breakdown.technical += 5;
-    else if (t.price_vs_52h <= 1.02 && t.price_vs_52l != null && t.price_vs_52l <= 1.05)
-      { breakdown.technical -= 12; reasons.push('52주 신저가 근접'); }
-  }
-
-  // ═══ 2. 가치 지표 - 그린블라트 매직포뮬러 + 린치 PEG + 그레이엄 (최대 ±60점) ═
-  // [그레이엄 넘버] 적정가 = sqrt(22.5 × EPS × BPS). 현재가가 밑이면 저평가
-  if (q.eps > 0 && q.bps > 0) {
-    const graham = Math.sqrt(22.5 * q.eps * q.bps);
-    const margin = (graham - q.price) / graham; // 안전마진
-    if (margin > 0.5)       { breakdown.value += 20; reasons.push(`그레이엄 안전마진 ${(margin*100).toFixed(0)}% 극저평가`); }
-    else if (margin > 0.3)  { breakdown.value += 14; reasons.push(`그레이엄 안전마진 ${(margin*100).toFixed(0)}%`); }
-    else if (margin > 0.1)  { breakdown.value += 7;  reasons.push(`그레이엄 넘버 하회(저평가)`); }
-    else if (margin < -0.5) { breakdown.value -= 12; reasons.push(`그레이엄 넘버 ${(Math.abs(margin)*100).toFixed(0)}% 초과(과평가)`); }
-    else if (margin < -0.2) breakdown.value -= 6;
-  }
-
-  // [Fed 모델] 이익수익률(EY) vs 10년 국채금리: EY > 국채금리면 주식이 싸다
-  if (typeof q.per === 'number' && q.per > 0 && macro.us10y?.value > 0) {
-    const ey = 100 / q.per;
-    const bondYield = macro.us10y.value;
-    const spread = ey - bondYield; // 양수 = 주식이 채권보다 유리
-    if (spread > 5)       { breakdown.value += 12; reasons.push(`Fed모델 EY-국채 스프레드 +${spread.toFixed(1)}%p 저평가`); }
-    else if (spread > 2)  { breakdown.value += 7;  reasons.push(`Fed모델 스프레드 +${spread.toFixed(1)}%p`); }
-    else if (spread > 0)  breakdown.value += 3;
-    else if (spread < -3) { breakdown.value -= 10; reasons.push(`Fed모델 스프레드 ${spread.toFixed(1)}%p 주식 고평가`); }
-    else if (spread < -1) breakdown.value -= 4;
-  }
-
-  // [린치 핵심] PEG: 성장 대비 가격. PEG<1=저평가, <0.5=극저평가
-  if (typeof q.pegRatio === 'number' && q.pegRatio > 0) {
-    if (q.pegRatio < 0.5)       { breakdown.value += 22; reasons.push(`PEG ${q.pegRatio.toFixed(2)} 극저평가(린치)`); }
-    else if (q.pegRatio < 0.75) { breakdown.value += 16; reasons.push(`PEG ${q.pegRatio.toFixed(2)} 저평가`); }
-    else if (q.pegRatio < 1.0)  { breakdown.value += 10; reasons.push(`PEG ${q.pegRatio.toFixed(2)} 양호`); }
-    else if (q.pegRatio < 1.5)  breakdown.value += 4;
-    else if (q.pegRatio > 3.0)  { breakdown.value -= 12; reasons.push(`PEG ${q.pegRatio.toFixed(1)} 고평가`); }
-    else if (q.pegRatio > 2.0)  breakdown.value -= 6;
-    else if (q.pegRatio > 1.5)  breakdown.value -= 2;
-  }
-
-  // [그린블라트] 이익수익률(1/PER): 높을수록 저평가
-  if (typeof q.per === 'number' && q.per > 0) {
-    const ey = 100 / q.per;
-    if (ey > 15)      { breakdown.value += 14; reasons.push(`저PER ${q.per.toFixed(1)}배`); }
-    else if (ey > 10) breakdown.value += 10;
-    else if (ey > 7)  breakdown.value += 5;
-    else if (ey > 5)  breakdown.value += 2;
-    else if (q.per > 50) { breakdown.value -= 10; reasons.push(`고PER ${q.per.toFixed(0)}배`); }
-    else if (q.per > 35) breakdown.value -= 5;
-    else if (q.per > 25) breakdown.value -= 2;
-  }
-
-  // PBR: 자산 대비 가격
-  if (typeof q.pbr === 'number' && q.pbr > 0) {
-    if (q.pbr < 1)        { breakdown.value += 8; reasons.push(`저PBR ${q.pbr.toFixed(2)}배`); }
-    else if (q.pbr < 1.5) breakdown.value += 4;
-    else if (q.pbr < 2.5) breakdown.value += 1;
-    else if (q.pbr > 10)  { breakdown.value -= 8; reasons.push(`고PBR ${q.pbr.toFixed(1)}배`); }
-    else if (q.pbr > 6)   breakdown.value -= 4;
-  }
-
-  // Forward PER vs Trailing PER: 이익 성장 기대치
-  if (typeof q.forwardPer === 'number' && typeof q.per === 'number' && q.forwardPer > 0 && q.per > 0) {
-    const imp = (q.per - q.forwardPer) / q.per;
-    if (imp > 0.2)        { breakdown.value += 6; reasons.push('이익 20%+ 성장 전망'); }
-    else if (imp > 0.1)   breakdown.value += 3;
-    else if (imp < -0.15) { breakdown.value -= 5; reasons.push('이익 감소 전망'); }
-  }
-
-  // ═══ 3. 품질 지표 - 버핏 해자 + 피오트로스키 (최대 ±45점) ══════════
-  // [버핏 핵심] ROE: 15% 이상 지속이 해자의 증거
-  if (typeof q.roe === 'number') {
-    if (q.roe > 30)      { breakdown.quality += 14; reasons.push(`고ROE ${q.roe.toFixed(1)}%`); }
-    else if (q.roe > 20) { breakdown.quality += 10; reasons.push(`ROE ${q.roe.toFixed(1)}%`); }
-    else if (q.roe > 15) breakdown.quality += 6;
-    else if (q.roe > 8)  breakdown.quality += 2;
-    else if (q.roe < 0)  { breakdown.quality -= 14; reasons.push('ROE 음수(적자)'); }
-    else if (q.roe < 5)  breakdown.quality -= 4;
-  }
-
-  // [버핏 최우선] FCF: 이익은 조작 가능, FCF는 어렵다
-  if (typeof q.freeCashflow === 'number') {
-    if (q.freeCashflow > 0) {
-      breakdown.quality += 10; reasons.push('양수 FCF(버핏 기준)');
-      if (q.marketCap && q.freeCashflow / q.marketCap > 0.05) {
-        breakdown.quality += 5; reasons.push('FCF수익률 5%+ 우수');
-      }
-    } else {
-      breakdown.quality -= 10; reasons.push('음수 FCF(현금소각)');
-    }
-  }
-
-  // [피오트로스키] 영업이익률
-  if (typeof q.operatingMargin === 'number') {
-    if (q.operatingMargin > 25)      { breakdown.quality += 7; reasons.push(`영업이익률 ${q.operatingMargin.toFixed(0)}%`); }
-    else if (q.operatingMargin > 15) breakdown.quality += 4;
-    else if (q.operatingMargin > 8)  breakdown.quality += 2;
-    else if (q.operatingMargin < 0)  { breakdown.quality -= 10; reasons.push('영업적자'); }
-    else if (q.operatingMargin < 3)  breakdown.quality -= 3;
-  }
-
-  // [피오트로스키] 총이익률: 높은 마진 = 경제적 해자
-  if (typeof q.grossMargin === 'number') {
-    if (q.grossMargin > 50)      { breakdown.quality += 5; reasons.push(`총이익률 ${q.grossMargin.toFixed(0)}% 해자`); }
-    else if (q.grossMargin > 35) breakdown.quality += 3;
-    else if (q.grossMargin > 20) breakdown.quality += 1;
-    else if (q.grossMargin < 10) { breakdown.quality -= 4; reasons.push('낮은 총이익률'); }
-  }
-
-  // [피오트로스키] 부채비율
-  if (typeof q.debtToEquity === 'number') {
-    if (q.debtToEquity < 30)        { breakdown.quality += 6; reasons.push('무부채 수준'); }
-    else if (q.debtToEquity < 60)   breakdown.quality += 3;
-    else if (q.debtToEquity < 100)  breakdown.quality += 1;
-    else if (q.debtToEquity > 300)  { breakdown.quality -= 10; reasons.push(`과다부채 D/E ${q.debtToEquity.toFixed(0)}%`); }
-    else if (q.debtToEquity > 200)  breakdown.quality -= 6;
-    else if (q.debtToEquity > 150)  breakdown.quality -= 3;
-  }
-
-  // [피오트로스키] 유동비율
-  if (typeof q.currentRatio === 'number') {
-    if (q.currentRatio > 2.5)      breakdown.quality += 4;
-    else if (q.currentRatio > 1.5) breakdown.quality += 2;
-    else if (q.currentRatio < 0.8) { breakdown.quality -= 7; reasons.push('유동성 위기'); }
-    else if (q.currentRatio < 1.0) breakdown.quality -= 3;
-  }
-
-  // ═══ 4. 성장 지표 - CAN SLIM (오닐) (최대 ±35점) ═══════════════════
-  // [CAN SLIM C+A] 이익성장률 25%+ = 오닐의 최소 기준
-  if (typeof q.earningsGrowth === 'number') {
-    if (q.earningsGrowth > 100)      { breakdown.growth += 18; reasons.push(`이익 폭발성장 ${q.earningsGrowth.toFixed(0)}%`); }
-    else if (q.earningsGrowth > 50)  { breakdown.growth += 13; reasons.push(`고이익성장 ${q.earningsGrowth.toFixed(0)}%`); }
-    else if (q.earningsGrowth > 25)  { breakdown.growth += 9;  reasons.push(`이익성장 ${q.earningsGrowth.toFixed(0)}%(CAN SLIM)`); }
-    else if (q.earningsGrowth > 10)  breakdown.growth += 4;
-    else if (q.earningsGrowth > 0)   breakdown.growth += 1;
-    else if (q.earningsGrowth < -30) { breakdown.growth -= 14; reasons.push('이익 급감'); }
-    else if (q.earningsGrowth < -10) breakdown.growth -= 7;
-    else                             breakdown.growth -= 2;
-  }
-
-  // 매출성장률
-  if (typeof q.revenueGrowth === 'number') {
-    if (q.revenueGrowth > 30)       { breakdown.growth += 9; reasons.push(`매출 ${q.revenueGrowth.toFixed(0)}% 고성장`); }
-    else if (q.revenueGrowth > 15)  breakdown.growth += 5;
-    else if (q.revenueGrowth > 5)   breakdown.growth += 2;
-    else if (q.revenueGrowth < -15) { breakdown.growth -= 8; reasons.push('매출 급감'); }
-    else if (q.revenueGrowth < -5)  breakdown.growth -= 3;
-    else if (q.revenueGrowth < 0)   breakdown.growth -= 1;
-  }
-
-  // [CAN SLIM N] 52주 신고가 부근 = 강한 매수 신호
-  if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
-    const pct = (q.price - q.low52) / (q.high52 - q.low52);
-    if (pct > 0.95)      { breakdown.growth += 8; reasons.push('52주 신고가 돌파(CAN SLIM N)'); }
-    else if (pct > 0.85) { breakdown.growth += 5; reasons.push('52주 고점 근접'); }
-    else if (pct > 0.70) breakdown.growth += 2;
-    else if (pct < 0.10) { breakdown.growth -= 5; reasons.push('52주 신저가 근접'); }
-    else if (pct < 0.25) breakdown.growth -= 2;
-  }
-
-  // ═══ 5. 모멘텀 - 제가디쉬-티트만 12-1 팩터 (최대 ±25점) ═══════════
-  // 52주 범위 위치 = 12개월 모멘텀 프록시 (30년 검증된 알파 팩터)
-  if (q.price && q.high52 && q.low52 && q.high52 > q.low52) {
-    const range = (q.price - q.low52) / (q.high52 - q.low52);
-    if (range > 0.85)      { breakdown.momentum += 12; reasons.push('12개월 모멘텀 강세'); }
-    else if (range > 0.65) breakdown.momentum += 6;
-    else if (range > 0.45) breakdown.momentum += 1;
-    else if (range < 0.15) { breakdown.momentum -= 12; reasons.push('12개월 모멘텀 약세'); }
-    else if (range < 0.35) breakdown.momentum -= 6;
-  }
-
-  // 단기 모멘텀: MA20 vs MA50
-  if (t.ma20 && t.ma50) {
-    const ratio = (t.ma20 - t.ma50) / t.ma50;
-    if (ratio > 0.08)       { breakdown.momentum += 10; reasons.push('MA 단기 강세'); }
-    else if (ratio > 0.03)  breakdown.momentum += 5;
-    else if (ratio > 0.01)  breakdown.momentum += 2;
-    else if (ratio < -0.08) { breakdown.momentum -= 10; reasons.push('MA 단기 약세'); }
-    else if (ratio < -0.03) breakdown.momentum -= 5;
-    else if (ratio < -0.01) breakdown.momentum -= 2;
-  }
-
-  // 모멘텀 과열 보정: 강한 모멘텀 + 극과매수 = 추격 위험
-  if (breakdown.momentum > 10 && typeof t.rsi === 'number' && t.rsi > 80) {
-    breakdown.momentum -= 5;
-  }
-
-  // ═══ 6. 수급 - CAN SLIM I + 공매도 + 내부자매매 + 숏스퀴즈 (최대 ±35점) ═
-  if (typeof flow.institutionPct === 'number') {
-    if (flow.institutionPct > 85)      { breakdown.flow += 7; reasons.push('기관 집중 보유'); }
-    else if (flow.institutionPct > 70) breakdown.flow += 4;
-    else if (flow.institutionPct > 50) breakdown.flow += 2;
-    else if (flow.institutionPct < 15) breakdown.flow -= 4;
-  }
-
-  if (typeof flow.insiderPct === 'number') {
-    if (flow.insiderPct > 20)      { breakdown.flow += 5; reasons.push('내부자 고지분'); }
-    else if (flow.insiderPct > 10) { breakdown.flow += 3; reasons.push('내부자 지분 높음'); }
-    else if (flow.insiderPct > 3)  breakdown.flow += 1;
-  }
-
-  if (typeof flow.shortPct === 'number') {
-    if (flow.shortPct > 30)      { breakdown.flow -= 6; reasons.push(`공매도 극단 ${flow.shortPct.toFixed(0)}%`); }
-    else if (flow.shortPct > 20) { breakdown.flow -= 9; reasons.push(`공매도 과다 ${flow.shortPct.toFixed(0)}%`); }
-    else if (flow.shortPct > 12) breakdown.flow -= 5;
-    else if (flow.shortPct > 6)  breakdown.flow -= 2;
-    else if (flow.shortPct < 2)  breakdown.flow += 3;
-  }
-
-  if (flow.options && typeof flow.options.putCallRatio === 'number') {
-    const pc = flow.options.putCallRatio;
-    if (pc > 1.5)      { breakdown.flow += 3; reasons.push('풋콜 극비관→역발상'); }
-    else if (pc > 1.2) breakdown.flow -= 3;
-    else if (pc < 0.5) { breakdown.flow -= 3; reasons.push('풋콜 극낙관→과열'); }
-    else if (pc < 0.7) breakdown.flow += 2;
-  }
-
-  // [내부자 매매 방향] 내부자 순매수 = 가장 강력한 매수 신호 중 하나
-  if (Array.isArray(flow.insiderTx) && flow.insiderTx.length > 0) {
-    const recent = flow.insiderTx.slice(0, 5); // 최근 5건
-    const buys  = recent.filter(tx => tx.type === 'Buy'  || tx.type === 'Purchase').length;
-    const sells = recent.filter(tx => tx.type === 'Sell' || tx.type === 'Sale').length;
-    if (buys > 0 && sells === 0)  { breakdown.flow += 10; reasons.push(`내부자 순매수 ${buys}건(강한 신호)`); }
-    else if (buys > sells)        { breakdown.flow += 5;  reasons.push(`내부자 매수 우세(${buys}vs${sells})`); }
-    else if (sells > buys * 2)    { breakdown.flow -= 7;  reasons.push(`내부자 대량매도 ${sells}건`); }
-    else if (sells > buys)        breakdown.flow -= 3;
-  }
-
-  // [숏 스퀴즈 감지] 공매도 많은데 모멘텀 상승 = 숏커버 폭발 가능
-  if (typeof flow.shortPct === 'number' && flow.shortPct > 15 && breakdown.momentum > 5) {
-    breakdown.flow += 8; reasons.push(`숏스퀴즈 가능(공매도 ${flow.shortPct.toFixed(0)}%+상승모멘텀)`);
-  }
-  // 공매도 많은데 하락 중 = 추가 하락 압력
-  if (typeof flow.shortPct === 'number' && flow.shortPct > 20 && breakdown.momentum < -5) {
-    breakdown.flow -= 5; reasons.push('고공매도+하락모멘텀=추가하락위험');
-  }
-
-  // ═══ 7. 심리/애널리스트 (최대 ±20점) ═══════════════════════════════
-  if (typeof q.recommendation === 'string') {
-    const rec = q.recommendation.toLowerCase();
-    if (rec === 'strong_buy')                         { breakdown.sentiment += 10; reasons.push('애널리스트 강력매수'); }
-    else if (rec === 'buy')                           { breakdown.sentiment += 6;  reasons.push('애널리스트 매수'); }
-    else if (rec === 'underperform')                  { breakdown.sentiment -= 6;  reasons.push('애널리스트 비중축소'); }
-    else if (rec === 'sell' || rec === 'strong_sell') { breakdown.sentiment -= 10; reasons.push('애널리스트 매도'); }
-  }
-
-  if (q.price && typeof q.targetPrice === 'number' && q.targetPrice > 0) {
-    const upside = (q.targetPrice - q.price) / q.price * 100;
-    if (upside > 40)       { breakdown.sentiment += 10; reasons.push(`목표가 상승여력 ${upside.toFixed(0)}%`); }
-    else if (upside > 20)  { breakdown.sentiment += 6;  reasons.push(`목표가 +${upside.toFixed(0)}%`); }
-    else if (upside > 10)  breakdown.sentiment += 3;
-    else if (upside < -20) { breakdown.sentiment -= 10; reasons.push(`목표가 하회 ${Math.abs(upside).toFixed(0)}%`); }
-    else if (upside < -10) breakdown.sentiment -= 5;
-    else if (upside < 0)   breakdown.sentiment -= 2;
-  }
-
-  // 배당 성장 투자 (Dividend Growth Investing)
-  if (typeof q.div === 'number' && q.div > 0) {
-    if (q.div > 5 && q.revenueGrowth > 5)       { breakdown.sentiment += 8; reasons.push(`배당 ${q.div.toFixed(1)}%+성장(배당성장주)`); }
-    else if (q.div > 3 && q.revenueGrowth > 0)  { breakdown.sentiment += 5; reasons.push(`배당 ${q.div.toFixed(1)}%(안정 배당)`); }
-    else if (q.div > 2)                          breakdown.sentiment += 2;
-    // 배당수익률 > 국채금리면 주식 보유 유리
-    if (macro.us10y?.value && q.div > macro.us10y.value) {
-      breakdown.sentiment += 4; reasons.push('배당수익률 > 국채금리(매력적)');
-    }
-  }
-
-  // Beta 리스크 조정: 고베타 + 과매수 = 하락 시 큰 폭 손실
-  if (typeof q.beta === 'number') {
-    if (q.beta > 2.0 && t.rsi > 70)       { breakdown.sentiment -= 8;  reasons.push(`고베타${q.beta.toFixed(1)}+과매수=하락위험`); }
-    else if (q.beta > 1.5 && t.rsi > 65)  breakdown.sentiment -= 4;
-    else if (q.beta < 0.5 && t.rsi < 40)  { breakdown.sentiment += 5;  reasons.push(`저베타${q.beta.toFixed(1)}+저RSI=방어적매수`); }
-    else if (q.beta < 0 )                  { breakdown.sentiment += 3;  reasons.push('음의베타(헤지효과)'); }
-  }
-
-  // 애널리스트 커버리지 적으면 = 미발굴 보석 가능 (소형주 숨겨진 알파)
-  if (typeof q.numberOfAnalysts === 'number') {
-    if (q.numberOfAnalysts <= 3 && breakdown.value > 5)  { breakdown.sentiment += 5; reasons.push('소수 커버리지+저평가=숨겨진기회'); }
-    else if (q.numberOfAnalysts >= 30)                    breakdown.sentiment -= 2; // 과도한 관심 = 고평가 위험
-  }
-
-  // ═══ 8. 매크로 - 드러켄밀러식 하향식 (최대 ±12점) ══════════════════
-  if (macro.vix && typeof macro.vix.value === 'number') {
-    const vix = macro.vix.value;
-    if (vix > 40)      { breakdown.macro += 4; reasons.push(`VIX ${vix.toFixed(0)} 극공포→역발상`); }
-    else if (vix > 30) { breakdown.macro -= 6; reasons.push(`VIX ${vix.toFixed(0)} 고변동성`); }
-    else if (vix > 25) breakdown.macro -= 3;
-    else if (vix < 15) breakdown.macro += 3;
-    else if (vix < 12) breakdown.macro += 5;
-  }
-
-  if (macro.us10y && typeof macro.us10y.chg === 'number') {
-    if (macro.us10y.chg > 0.2)       { breakdown.macro -= 5; reasons.push('금리 급등'); }
-    else if (macro.us10y.chg > 0.1)  breakdown.macro -= 2;
-    else if (macro.us10y.chg < -0.2) { breakdown.macro += 5; reasons.push('금리 급락(호재)'); }
-    else if (macro.us10y.chg < -0.1) breakdown.macro += 2;
-  }
-
-  // 장단기 금리차 (수익률 곡선): 역전 = 경기침체 선행지표
-  if (macro.us10y?.value && macro.us3y?.value) {
-    const spread = macro.us10y.value - macro.us3y.value;
-    if (spread > 1.5)       { breakdown.macro += 5; reasons.push(`금리차 +${spread.toFixed(1)}%p(경기확장)`); }
-    else if (spread > 0.5)  breakdown.macro += 2;
-    else if (spread < -0.5) { breakdown.macro -= 6; reasons.push(`수익률곡선역전 ${spread.toFixed(1)}%p(침체위험)`); }
-    else if (spread < 0)    breakdown.macro -= 3;
-  }
-
-  // 달러 강세/약세 영향 (미국주식 기준)
-  if (macro.dxy && typeof macro.dxy.chg === 'number') {
-    if (macro.dxy.chg > 1.0)        { breakdown.macro -= 4; reasons.push('달러 급등(신흥국·원자재 부담)'); }
-    else if (macro.dxy.chg < -1.0)  { breakdown.macro += 4; reasons.push('달러 약세(위험자산 호재)'); }
-  }
-
-  // 금 가격 상승 = 안전자산 선호 = 주식 부정적
-  if (macro.gold && typeof macro.gold.chg === 'number') {
-    if (macro.gold.chg > 2.0)       { breakdown.macro -= 3; reasons.push('금 급등(안전자산선호)'); }
-    else if (macro.gold.chg < -2.0) { breakdown.macro += 2; reasons.push('금 하락(위험선호)'); }
-  }
-
-  // 유가 급등 = 인플레이션 우려 (에너지 섹터 제외 일반적 부정)
-  if (macro.oil && typeof macro.oil.chg === 'number') {
-    if (macro.oil.chg > 3.0)        { breakdown.macro -= 3; reasons.push('유가 급등(인플레이션)'); }
-    else if (macro.oil.chg < -3.0)  { breakdown.macro += 2; reasons.push('유가 하락(소비여력)'); }
-  }
-
-  // ═══ 9. 추가 기술/계절/복합 신호 ═══════════════════════════════════
-
-  // 파라볼릭 SAR
-  if (typeof t.sar_signal === 'number') {
-    if (t.sar_signal === 1)  { breakdown.technical += 6; reasons.push('SAR 매수(추세상승)'); }
-    else                     { breakdown.technical -= 6; reasons.push('SAR 매도(추세하락)'); }
-  }
-
-  // 피보나치 지지/저항
-  if (t.fib_bull) { breakdown.technical += 8; reasons.push('피보나치 지지선 위(매수)'); }
-  if (t.fib_bear) { breakdown.technical -= 8; reasons.push('피보나치 저항선 아래(매도)'); }
-
-  // VPT 추세
-  if (typeof t.vpt_trend === 'number') {
-    if (t.vpt_trend === 1)  breakdown.technical += 4;
-    else                    breakdown.technical -= 4;
-  }
-
-  // 갭 신호
-  if (t.gap_up)   { breakdown.technical += 8; reasons.push('상승 갭(강한 수급)'); }
-  if (t.gap_down) { breakdown.technical -= 8; reasons.push('하락 갭(매도 압력)'); }
-
-  // RSI 다이버전스
-  if (t.bear_div) { breakdown.technical -= 10; reasons.push('베어리시 다이버전스(추세 약화)'); }
-  if (t.bull_div) { breakdown.technical += 10; reasons.push('불리시 다이버전스(반등 가능)'); }
-
-  // EV/EBITDA 근사 (marketCap / ebitda, 부채 무시한 근사치)
-  if (q.ebitda > 0 && q.marketCap > 0) {
-    const evEbitda = q.marketCap / q.ebitda;
-    if (evEbitda < 8)        { breakdown.value += 10; reasons.push(`EV/EBITDA ${evEbitda.toFixed(1)}x 저평가`); }
-    else if (evEbitda < 12)  breakdown.value += 5;
-    else if (evEbitda < 20)  breakdown.value += 1;
-    else if (evEbitda > 40)  { breakdown.value -= 8; reasons.push(`EV/EBITDA ${evEbitda.toFixed(1)}x 고평가`); }
-    else if (evEbitda > 30)  breakdown.value -= 4;
-  }
-
-  // FCF 수익률 (버핏 최선호 가치 지표)
-  if (q.freeCashflow > 0 && q.marketCap > 0) {
-    const fcfYield = q.freeCashflow / q.marketCap * 100;
-    if (fcfYield > 8)       { breakdown.value += 12; reasons.push(`FCF수익률 ${fcfYield.toFixed(1)}%(버핏 기준 우수)`); }
-    else if (fcfYield > 5)  { breakdown.value += 7;  reasons.push(`FCF수익률 ${fcfYield.toFixed(1)}%`); }
-    else if (fcfYield > 3)  breakdown.value += 3;
-    else if (fcfYield < 0)  breakdown.value -= 5;
-  }
-
-  // 이익 품질 (FCF vs EPS 괴리 — 분식회계 탐지)
-  // FCF << 순이익이면 이익이 현금으로 안 들어오는 것 = 회계 조작 가능성
-  if (q.freeCashflow != null && q.eps > 0 && q.marketCap > 0) {
-    const sharesApprox = q.marketCap / (q.price || 1);
-    const netIncomeApprox = q.eps * sharesApprox;
-    if (netIncomeApprox > 0) {
-      const earningsQuality = q.freeCashflow / netIncomeApprox;
-      if (earningsQuality > 1.2)      { breakdown.quality += 8; reasons.push('FCF>순이익(고품질이익)'); }
-      else if (earningsQuality > 0.8) breakdown.quality += 3;
-      else if (earningsQuality < 0.3) { breakdown.quality -= 10; reasons.push('FCF<<순이익(이익품질의심)'); }
-      else if (earningsQuality < 0.5) breakdown.quality -= 5;
-    }
-  }
-
-  // 가치함정 탐지 (저PER이지만 매출 감소 = 함정)
-  if (typeof q.per === 'number' && q.per < 15 && typeof q.revenueGrowth === 'number' && q.revenueGrowth < -10) {
-    breakdown.value -= 12; reasons.push('가치함정 경고: 저PER+매출감소');
-  }
-
-  // 경제적 해자 종합점수 (ROE+마진+성장 동시 충족)
-  const moatScore =
-    (q.roe > 20 ? 1 : 0) +
-    (q.grossMargin > 40 ? 1 : 0) +
-    (q.operatingMargin > 15 ? 1 : 0) +
-    (q.revenueGrowth > 10 ? 1 : 0) +
-    (q.freeCashflow > 0 ? 1 : 0);
-  if (moatScore >= 5)      { breakdown.quality += 15; reasons.push('경제적 해자 최고등급(5/5)'); }
-  else if (moatScore >= 4) { breakdown.quality += 9;  reasons.push('경제적 해자 우수(4/5)'); }
-  else if (moatScore >= 3) breakdown.quality += 4;
-  else if (moatScore <= 1) breakdown.quality -= 5;
-
-  // 계절성 효과 (통계적으로 검증된 패턴)
-  const month = new Date().getMonth() + 1; // 1~12
-  if (month === 1)                         { breakdown.momentum += 5;  reasons.push('1월 효과(소형주 강세)'); }
-  else if (month === 11 || month === 12)   { breakdown.momentum += 4;  reasons.push('Q4 산타랠리 시즌'); }
-  else if (month >= 5 && month <= 9)       { breakdown.momentum -= 2;  } // Sell in May 효과
-
-  // ═══ 최종: 리스크 거부권 + 확신도 승수 ════════════════════════════
-  let rawScore = Object.values(breakdown).reduce((a, b) => a + b, 0);
-
-  // ── 리스크 거부권: 아래 조건 시 매수 신호 강제 차단 ──────────────
-  const riskVetos = [];
-  // 유동성 위기 (currentRatio < 0.5 = 단기 부도 위험)
-  if (q.currentRatio != null && q.currentRatio < 0.5) {
-    riskVetos.push('유동성위기(CR<0.5)');
-    rawScore = Math.min(rawScore, -20); // 매수 불가
-  }
-  // 영업적자 + 음수FCF + 고부채 = 파산 위험 삼각형
-  if (q.operatingMargin < 0 && q.freeCashflow < 0 && q.debtToEquity > 200) {
-    riskVetos.push('파산위험삼각형(영업적자+음FCF+고부채)');
-    rawScore = Math.min(rawScore, -30);
-  }
-  // VIX 60 이상 = 시장 패닉, 강력매수 차단
-  if (macro.vix?.value > 60) {
-    riskVetos.push(`시장패닉(VIX ${macro.vix.value.toFixed(0)})`);
-    rawScore = Math.min(rawScore, 10);
-  }
-  // 수익률곡선 깊은 역전 + 고PER = 이중 위험
-  if (macro.us10y?.value && macro.us3y?.value &&
-      (macro.us10y.value - macro.us3y.value) < -1.0 && q.per > 40) {
-    riskVetos.push('금리역전+고PER=이중위험');
-    rawScore -= 15;
-  }
-  if (riskVetos.length > 0) reasons.push(`⚠️ 리스크거부권: ${riskVetos.join(', ')}`);
-
-  // ── 확신도 승수: 여러 팩터 일치 시 점수 증폭 ──────────────────────
-  const posFactor = [
-    breakdown.technical > 15,
-    breakdown.value > 15,
-    breakdown.quality > 10,
-    breakdown.growth > 8,
-    breakdown.momentum > 8,
-    breakdown.flow > 5,
-  ].filter(Boolean).length;
-  const negFactor = [
-    breakdown.technical < -15,
-    breakdown.value < -10,
-    breakdown.quality < -8,
-    breakdown.growth < -8,
-    breakdown.momentum < -8,
-    breakdown.flow < -5,
-  ].filter(Boolean).length;
-
-  // 4개 이상 팩터 동시 강세 = 확신도 높음, 점수 20% 증폭
-  if (posFactor >= 4 && rawScore > 0) {
-    rawScore = Math.round(rawScore * 1.2);
-    reasons.push(`✅ ${posFactor}개 팩터 동시 강세 — 확신도 높음`);
-  }
-  if (negFactor >= 4 && rawScore < 0) {
-    rawScore = Math.round(rawScore * 1.2);
-    reasons.push(`🔴 ${negFactor}개 팩터 동시 약세 — 하락 확신`);
-  }
-
-  // 상충 신호 (강한 매수+강한 매도 동시) = 점수 감쇠 (불확실성)
-  if (posFactor >= 2 && negFactor >= 2) {
-    rawScore = Math.round(rawScore * 0.7);
-    reasons.push('⚡ 강세·약세 신호 충돌 — 불확실성 높음');
-  }
-
-  const score = rawScore;
-  let signal, confidence;
   const abs = Math.abs(score);
-  if      (score >= 60)  { signal = '강력매수'; confidence = Math.min(95, 72 + abs * 0.15); }
-  else if (score >= 30)  { signal = '매수';     confidence = Math.min(88, 62 + abs * 0.25); }
-  else if (score >= 10)  { signal = '약매수';   confidence = Math.min(75, 52 + abs * 0.45); }
-  else if (score <= -60) { signal = '강력매도'; confidence = Math.min(95, 72 + abs * 0.15); }
-  else if (score <= -30) { signal = '매도';     confidence = Math.min(88, 62 + abs * 0.25); }
-  else if (score <= -10) { signal = '약매도';   confidence = Math.min(75, 52 + abs * 0.45); }
-  else                   { signal = '중립';     confidence = Math.max(40, 58 - abs * 2); }
+  let finalConfidence = 50;
+  if (score >= 60)       finalConfidence = Math.min(95, 72 + abs * 0.15);
+  else if (score >= 30)  finalConfidence = Math.min(88, 62 + abs * 0.25);
+  else if (score >= 10)  finalConfidence = Math.min(75, 52 + abs * 0.45);
+  else if (score <= -60) finalConfidence = Math.min(95, 72 + abs * 0.15);
+  else if (score <= -30) finalConfidence = Math.min(88, 62 + abs * 0.25);
+  else if (score <= -10) finalConfidence = Math.min(75, 52 + abs * 0.45);
+  else                   finalConfidence = Math.max(40, 58 - abs * 2);
+
+  if (isVetoed) {
+    finalConfidence = 10; 
+  }
 
   return {
-    signal,
-    confidence: Math.round(confidence),
-    score: Math.round(score),
-    breakdown: Object.fromEntries(Object.entries(breakdown).map(([k, v]) => [k, Math.round(v)])),
-    reasons,
+    signal: finalSignal,            
+    finalSignal,                    
+    confidence: Math.round(finalConfidence), 
+    score: Math.round(score),       
+    breakdown: Object.fromEntries(Object.entries(breakdown).map(([k, v]) => [k, Math.round(v)])), 
+    breakdownDetails: breakdown,    
+    reasons,                        
+    altmanZScore: parseFloat(altmanZ.toFixed(3)),
+    beneishMScore: parseFloat(beneishM.toFixed(3)),
+    isVetoed,
+    vetoReason,
+    confidenceMultiplier: parseFloat(confidenceMultiplier.toFixed(2)),
+    weinsteinStage: t_weinsteinStage,
+    vcpDetected: t_vcpDetected,
+    mansfieldRS: t_mansfieldRS,
+    patterns: {
+      cupAndHandle: p_cupAndHandle,
+      inverseHeadAndShoulders: p_inverseHeadAndShoulders,
+      doubleBottom: p_doubleBottom
+    }
   };
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 기술적 지표 — JS 폴백 (yfinance 실패 시 NAVER 차트로 계산)
-// ─────────────────────────────────────────────────────────────────────────────
+
 function calcTechnicalsJS(bars) {
   if (!Array.isArray(bars) || bars.length < 30) return null;
   const close = bars.map(b => +b.close);
@@ -2943,10 +2965,9 @@ function calcTechnicalsJS(bars) {
   const pdi = atr[n-1] ? 100 * pdmSm[n-1] / atr[n-1] : 0;
   const mdi = atr[n-1] ? 100 * mdmSm[n-1] / atr[n-1] : 0;
   const dx = (pdi+mdi) ? 100 * Math.abs(pdi-mdi) / (pdi+mdi) : 0;
-  // ADX는 dx의 Wilder 평균 — 마지막 값만 근사
-  const adx = dx; // 단순화 (정확도 약간 손해, 시그널엔 충분)
+  const adx = dx;
 
-  // MFI (Money Flow Index, 14) — 거래량 가중 RSI
+  // MFI (Money Flow Index, 14)
   const vol = bars.map(b => +(b.volume ?? 0));
   const typicalPrice = close.map((c, i) => (c + high[i] + low[i]) / 3);
   const rawMoneyFlow = typicalPrice.map((tp, i) => tp * vol[i]);
@@ -2957,7 +2978,7 @@ function calcTechnicalsJS(bars) {
   }
   const mfi = negMF === 0 ? 100 : 100 - 100 / (1 + posMF / negMF);
 
-  // CMF (Chaikin Money Flow, 20) — 매집/분산 -1~+1
+  // CMF (Chaikin Money Flow, 20)
   let cmfNum = 0, cmfDen = 0;
   for (let i = Math.max(0, n - 20); i < n; i++) {
     const hl = high[i] - low[i];
@@ -2966,7 +2987,7 @@ function calcTechnicalsJS(bars) {
   }
   const cmf = cmfDen > 0 ? cmfNum / cmfDen : 0;
 
-  // ROC (Rate of Change, 20일) — 가격 모멘텀
+  // ROC (Rate of Change, 20일)
   const roc20 = n >= 21 ? (close[n-1] - close[n-21]) / close[n-21] * 100 : null;
   const roc5  = n >= 6  ? (close[n-1] - close[n-6])  / close[n-6]  * 100 : null;
 
@@ -2977,12 +2998,11 @@ function calcTechnicalsJS(bars) {
   const kijun   = n >= 26 ? (ichHigh(high, 26, n-1) + ichLow(low, 26, n-1)) / 2 : null;
   const senkouA = (tenkan != null && kijun != null) ? (tenkan + kijun) / 2 : null;
   const senkouB = n >= 52 ? (ichHigh(high, 52, n-1) + ichLow(low, 52, n-1)) / 2 : null;
-  // 구름 위 = 강세, 구름 아래 = 약세
   const ichCloudTop    = (senkouA != null && senkouB != null) ? Math.max(senkouA, senkouB) : null;
   const ichCloudBottom = (senkouA != null && senkouB != null) ? Math.min(senkouA, senkouB) : null;
   const ichSignal = ichCloudTop != null
     ? (close[n-1] > ichCloudTop ? 1 : close[n-1] < ichCloudBottom ? -1 : 0)
-    : null; // +1=구름위(강세), -1=구름아래(약세), 0=구름안(중립)
+    : null;
 
   // MA5, MA10, MA200
   const ma5  = n >= 5   ? sma(close, 5,   n-1) : null;
@@ -3003,9 +3023,9 @@ function calcTechnicalsJS(bars) {
     obvArr.push(obv);
   }
   const obv20avg = obvArr.slice(n-20, n).reduce((a,b)=>a+b,0) / 20;
-  const obvTrend = obv > obv20avg ? 1 : -1; // +1 상승, -1 하락
+  const obvTrend = obv > obv20avg ? 1 : -1;
 
-  // 거래량 비율 (현재 거래량 / 20일 평균 거래량)
+  // 거래량 비율
   const vol20avg = vol.slice(n-20, n).reduce((a,b)=>a+b,0) / 20;
   const volRatio = vol20avg > 0 ? vol[n-1] / vol20avg : 1;
 
@@ -3018,42 +3038,29 @@ function calcTechnicalsJS(bars) {
   const body1 = Math.abs(c1 - o1), range1 = h1 - l1;
   const candles = [];
 
-  // 도지 (몸통이 전체의 10% 미만 → 추세 전환 가능)
   if (range0 > 0 && body0 / range0 < 0.1) candles.push('doji');
-
-  // 망치형 (하락 후 아래꼬리 길고 몸통 위쪽 → 반등)
   const lowerShadow0 = Math.min(c0, o0) - l0;
   const upperShadow0 = h0 - Math.max(c0, o0);
   if (c1 < o1 && lowerShadow0 > body0 * 2 && upperShadow0 < body0 && body0 > 0)
     candles.push('hammer');
-
-  // 역망치형 (하락 후 위꼬리 길고 몸통 아래쪽 → 반등 가능)
   if (c1 < o1 && upperShadow0 > body0 * 2 && lowerShadow0 < body0 && body0 > 0)
     candles.push('inverted_hammer');
-
-  // 상승 장악형 (전봉 음봉, 현봉 양봉으로 완전히 감쌈 → 강한 반등)
   if (c1 < o1 && c0 > o0 && c0 > o1 && o0 < c1)
     candles.push('bullish_engulfing');
-
-  // 하락 장악형 (전봉 양봉, 현봉 음봉으로 완전히 감쌈 → 강한 하락)
   if (c1 > o1 && c0 < o0 && c0 < o1 && o0 > c1)
     candles.push('bearish_engulfing');
-
-  // 샛별형 Morning Star (양봉-도지/소봉-양봉 → 강한 반등)
   if (c2 < o2 && body1 / (h1 - l1 || 1) < 0.3 && c0 > o0 && c0 > (o2 + c2) / 2)
     candles.push('morning_star');
-
-  // 저녁별형 Evening Star (음봉-도지/소봉-음봉 → 강한 하락)
   if (c2 > o2 && body1 / (h1 - l1 || 1) < 0.3 && c0 < o0 && c0 < (o2 + c2) / 2)
     candles.push('evening_star');
 
-  // 52주 고/저점 (bars가 충분하면 계산, 아니면 null)
+  // 52주 고/저점
   const high52 = n >= 200 ? Math.max(...high.slice(n-252 < 0 ? 0 : n-252, n)) : Math.max(...high);
   const low52  = n >= 200 ? Math.min(...low.slice(n-252 < 0 ? 0 : n-252, n))  : Math.min(...low);
   const priceVs52H = high52 > 0 ? close[n-1] / high52 : null;
   const priceVs52L = low52  > 0 ? close[n-1] / low52  : null;
 
-  // 피보나치 지지/저항 (52주 고/저 기준)
+  // 피보나치
   const fibRange = high52 - low52;
   const fib236 = high52 - fibRange * 0.236;
   const fib382 = high52 - fibRange * 0.382;
@@ -3064,10 +3071,10 @@ function calcTechnicalsJS(bars) {
   const cp = close[n-1];
   const fibNearest = fibLevels.reduce((best, lv) => Math.abs(cp-lv) < Math.abs(cp-best) ? lv : best, fib382);
   const nearFibPct = fibRange > 0 ? Math.abs(cp - fibNearest) / fibRange : 1;
-  const fibBull = nearFibPct < 0.03 && cp >= fibNearest; // 피보나치 지지 위 = 매수
-  const fibBear = nearFibPct < 0.03 && cp <  fibNearest; // 피보나치 저항 아래 = 매도
+  const fibBull = nearFibPct < 0.03 && cp >= fibNearest;
+  const fibBear = nearFibPct < 0.03 && cp <  fibNearest;
 
-  // VPT (Volume Price Trend) — OBV 개선판
+  // VPT
   let vpt = 0;
   const vptArr = [0];
   for (let i = 1; i < n; i++) {
@@ -3093,18 +3100,163 @@ function calcTechnicalsJS(bars) {
       else if (low[i] < sarEP) { sarEP = low[i]; sarAF = Math.min(sarAF + 0.02, 0.2); }
     }
   }
-  const sarSignal = sarBull ? 1 : -1; // +1=가격>SAR(매수), -1=가격<SAR(매도)
+  const sarSignal = sarBull ? 1 : -1;
 
-  // 갭 (오늘 저가 > 전일 고가 = 상승갭)
+  // 갭
   const gapUp   = n >= 2 && low[n-1] > high[n-2];
   const gapDown = n >= 2 && high[n-1] < low[n-2];
 
-  // RSI 다이버전스 (가격 신고 but RSI 낮으면 = 베어리시)
+  // RSI 다이버전스
   const priceHigh20 = Math.max(...close.slice(Math.max(0, n-21), n-1));
   const priceLow20  = Math.min(...close.slice(Math.max(0, n-21), n-1));
   const rsiNow = rsi;
-  const bearDiv = cp > priceHigh20 * 0.99 && rsiNow < 65; // 가격 신고 but RSI 약함
-  const bullDiv = cp < priceLow20  * 1.01 && rsiNow > 35; // 가격 신저 but RSI 강함
+  const bearDiv = cp > priceHigh20 * 0.99 && rsiNow < 65;
+  const bullDiv = cp < priceLow20  * 1.01 && rsiNow > 35;
+
+  // -------------------------------------------------------------
+  // 차세대 기하학적 차트 패턴 판별 휴리스틱 알고리즘 (JS 버전)
+  // -------------------------------------------------------------
+  const sma3_vals = [];
+  for (let i = 0; i < n; i++) {
+    if (i < 2) sma3_vals.push(close[i]);
+    else sma3_vals.push((close[i] + close[i-1] + close[i-2]) / 3);
+  }
+  
+  const w_pivot = 5;
+  const localMins = [];
+  const localMaxs = [];
+  for (let i = w_pivot; i < n - w_pivot; i++) {
+    const val = sma3_vals[i];
+    let isMin = true;
+    let isMax = true;
+    for (let j = i - w_pivot; j <= i + w_pivot; j++) {
+      if (sma3_vals[j] < val) isMin = false;
+      if (sma3_vals[j] > val) isMax = false;
+    }
+    if (isMin) localMins.push({ idx: i, price: low[i] });
+    if (isMax) localMaxs.push({ idx: i, price: high[i] });
+  }
+
+  const jsExtrema = [];
+  localMins.forEach(m => jsExtrema.push({ idx: m.idx, price: m.price, type: 'valley' }));
+  localMaxs.forEach(m => jsExtrema.push({ idx: m.idx, price: m.price, type: 'peak' }));
+  jsExtrema.sort((a, b) => a.idx - b.idx);
+
+  const mergedJsExtrema = [];
+  for (let i = 0; i < jsExtrema.length; i++) {
+    const ext = jsExtrema[i];
+    if (mergedJsExtrema.length === 0) {
+      mergedJsExtrema.push(ext);
+    } else {
+      const last = mergedJsExtrema[mergedJsExtrema.length - 1];
+      if (last.type === ext.type) {
+        if (ext.type === 'peak') {
+          if (ext.price > last.price) mergedJsExtrema[mergedJsExtrema.length - 1] = ext;
+        } else {
+          if (ext.price < last.price) mergedJsExtrema[mergedJsExtrema.length - 1] = ext;
+        }
+      } else {
+        mergedJsExtrema.push(ext);
+      }
+    }
+  }
+
+  // IHS
+  let ihsDetected = false;
+  if (mergedJsExtrema.length >= 5) {
+    const e = mergedJsExtrema.slice(-5);
+    if (e[0].type === 'valley' && e[1].type === 'peak' && e[2].type === 'valley' && e[3].type === 'peak' && e[4].type === 'valley') {
+      const [e1, e2, e3, e4, e5] = [e[0].price, e[1].price, e[2].price, e[3].price, e[4].price];
+      const cond1 = e3 < e1 && e3 < e5;
+      const cond2 = Math.abs(e1 - e5) <= ((e1 + e5) / 2) * 0.05;
+      const cond3 = Math.abs(e2 - e4) <= ((e2 + e4) / 2) * 0.03;
+      if (cond1 && cond2 && cond3) ihsDetected = true;
+    }
+  }
+
+  // 이중 바닥
+  let dbDetected = false;
+  if (mergedJsExtrema.length >= 3) {
+    const e = mergedJsExtrema.slice(-3);
+    if (e[0].type === 'valley' && e[1].type === 'peak' && e[2].type === 'valley') {
+      const [e1, e2, e3] = [e[0].price, e[1].price, e[2].price];
+      const idx1 = e[0].idx, idx3 = e[2].idx;
+      const cond1 = Math.abs(e1 - e3) / Math.min(e1, e3) <= 0.03;
+      const cond2 = (idx3 - idx1) >= 10;
+      
+      const volSlice1 = vol.slice(Math.max(0, idx1 - 2), Math.min(n, idx1 + 3));
+      const volSlice3 = vol.slice(Math.max(0, idx3 - 2), Math.min(n, idx3 + 3));
+      const vol1 = volSlice1.reduce((a,b)=>a+b, 0) / (volSlice1.length || 1);
+      const vol3 = volSlice3.reduce((a,b)=>a+b, 0) / (volSlice3.length || 1);
+      const cond3 = vol3 <= vol1 * 0.85;
+      if (cond1 && cond2 && cond3) dbDetected = true;
+    }
+  }
+
+  // 컵앤핸들
+  let chDetected = false;
+  if (mergedJsExtrema.length >= 4) {
+    const e = mergedJsExtrema.slice(-4);
+    if (e[0].type === 'peak' && e[1].type === 'valley' && e[2].type === 'peak' && e[3].type === 'valley') {
+      const [p_left, p_bottom, p_right, p_handle] = [e[0].price, e[1].price, e[2].price, e[3].price];
+      const [idx_left, idx_bottom, idx_right, idx_handle] = [e[0].idx, e[1].idx, e[2].idx, e[3].idx];
+      const t_down = idx_bottom - idx_left;
+      const t_up = idx_right - idx_bottom;
+      const cond_sym = t_up > 0 && (t_down / t_up >= 0.8 && t_down / t_up <= 1.25);
+      const cup_depth = p_left - p_bottom;
+      const handle_depth = p_right - p_handle;
+      const cond_depth = cup_depth > 0 && (handle_depth <= cup_depth * 0.35);
+      
+      const volSliceBottom = vol.slice(Math.max(0, idx_bottom - 3), Math.min(n, idx_bottom + 4));
+      const volSliceUp = vol.slice(Math.max(0, idx_right - 3), Math.min(n, idx_handle + 1));
+      const vol_bottom = volSliceBottom.reduce((a,b)=>a+b, 0) / (volSliceBottom.length || 1);
+      const vol_up = volSliceUp.reduce((a,b)=>a+b, 0) / (volSliceUp.length || 1);
+      const cond_vol = vol_up >= vol_bottom * 1.4;
+      
+      if (cond_sym && cond_depth && cond_vol) chDetected = true;
+    }
+  }
+
+  // VCP
+  let vcpDetected = false;
+  if (n >= 60) {
+    const recentC = close.slice(-60);
+    const pctChanges = [];
+    for (let i = 1; i < recentC.length; i++) pctChanges.push((recentC[i] - recentC[i-1]) / recentC[i-1]);
+    
+    const getStd = (arr) => {
+      const avg = arr.reduce((a,b)=>a+b, 0) / (arr.length || 1);
+      return Math.sqrt(arr.reduce((a,b)=>a+(b-avg)**2, 0) / (arr.length || 1));
+    };
+    const std10 = getStd(pctChanges.slice(-10));
+    const std20 = getStd(pctChanges.slice(-20));
+    const std40 = getStd(pctChanges.slice(-40));
+    const cond_std = std10 < std20 && std20 < std40;
+    
+    const range10 = high.slice(-10).map((h,i)=>h-low[n-10+i]).reduce((a,b)=>a+b, 0) / 10;
+    const range30 = high.slice(-40, -10).map((h,i)=>h-low[n-40+i]).reduce((a,b)=>a+b, 0) / 30;
+    const cond_range = range10 < range30 * 0.7;
+    
+    const vol10 = vol.slice(-10).reduce((a,b)=>a+b, 0) / 10;
+    const vol30 = vol.slice(-40, -10).reduce((a,b)=>a+b, 0) / 30;
+    const cond_vol = vol10 < vol30;
+    
+    if (cond_std && cond_range && cond_vol) vcpDetected = true;
+  }
+
+  // Mansfield RS & Weinstein Stage (JS fallback)
+  const mrsVal = ma200 > 0 ? (close[n-1] / ma200 - 1.0) * 1.5 : 0.1;
+  let weinsteinStage = 1;
+  const sma150 = n >= 150 ? sma(close, 150, n-1) : ma200 || ma50;
+  const sma150_prev = n >= 160 ? sma(close, 150, n-11) : sma150;
+  const lastPrice = close[n-1];
+  if (sma150 != null) {
+    const slope = sma150 - sma150_prev;
+    if (lastPrice > sma150 && slope > 0) weinsteinStage = 2;
+    else if (lastPrice < sma150 && slope < 0) weinsteinStage = 4;
+    else if (lastPrice > sma150 && slope <= 0) weinsteinStage = 3;
+    else weinsteinStage = 1;
+  }
 
   const r = v => v == null ? null : Math.round(v * 10) / 10;
   return {
@@ -3131,10 +3283,20 @@ function calcTechnicalsJS(bars) {
     gap_up: gapUp, gap_down: gapDown,
     bear_div: bearDiv, bull_div: bullDiv,
     price: r(close[n-1]),
+    // New indicators
+    vcpDetected,
+    mansfieldRS: r(mrsVal),
+    weinsteinStage,
+    patterns: {
+      cupAndHandle: chDetected,
+      inverseHeadAndShoulders: ihsDetected,
+      doubleBottom: dbDetected
+    }
   };
 }
 
-// 통합: yfinance 우선, 실패 시 NAVER 차트 + JS 계산으로 폴백
+
+
 async function getTechnicals(symbol, isKr) {
   const cacheKey = `tech:${symbol}`;
   const cached = getC(cacheKey);
@@ -3160,6 +3322,7 @@ async function calcTechnicalsYF(yfticker) {
   const py = `
 import yfinance as yf, json
 import numpy as np
+import pandas as pd
 
 def rsi(close, n=14):
     d = close.diff()
@@ -3223,7 +3386,6 @@ else:
 
     # OBV trend
     obv = (np.where(c.diff() > 0, vol, np.where(c.diff() < 0, -vol, 0))).cumsum()
-    obv_s = obv if not hasattr(obv, 'values') else obv
     obv_last = float(obv[-1]) if hasattr(obv, '__len__') else 0
     obv_avg20 = float(np.mean(obv[-20:])) if len(obv) >= 20 else obv_last
     obv_trend = 1 if obv_last > obv_avg20 else -1
@@ -3233,14 +3395,14 @@ else:
     vol_avg20 = float(np.mean(vol_arr[-20:])) if len(vol_arr) >= 20 else 1
     vol_ratio = round(float(vol_arr[-1]) / vol_avg20, 2) if vol_avg20 > 0 else 1.0
 
-    # MFI(14) — False → 0 채워서 NaN 방지
+    # MFI(14)
     tp = (c + hi + lo) / 3
     rmf = tp * vol
     pos_mf = rmf.where(tp > tp.shift(), 0).rolling(14).sum().iloc[-1]
     neg_mf = rmf.where(tp < tp.shift(), 0).rolling(14).sum().iloc[-1]
     mfi = float(100 - 100 / (1 + pos_mf / neg_mf)) if neg_mf > 0 else 100.0
 
-    # CMF(20) — hl=0 구간 0 처리
+    # CMF(20)
     hl = hi - lo
     clv = ((c - lo) - (hi - c)) / hl.where(hl > 0, np.nan)
     cmf_num = (clv.fillna(0) * vol).rolling(20).sum().iloc[-1]
@@ -3248,8 +3410,8 @@ else:
     cmf = round(float(cmf_num) / cmf_den, 3) if cmf_den > 0 else 0.0
 
     # ROC
-    roc20 = round(float((last - float(c.iloc[-21])) / float(c.iloc[-21]) * 100), 1) if n >= 21 else None
-    roc5  = round(float((last - float(c.iloc[-6]))  / float(c.iloc[-6])  * 100), 1) if n >= 6  else None
+    roc20 = round(float((last - float(c.iloc[-21])) / float(c.iloc[-21] * 100)), 1) if n >= 21 else None
+    roc5  = round(float((last - float(c.iloc[-6]))  / float(c.iloc[-6]  * 100)), 1) if n >= 6  else None
 
     # Ichimoku
     def ich_hl(s_hi, s_lo, p, i): return (s_hi.rolling(p).max().iloc[i] + s_lo.rolling(p).min().iloc[i]) / 2
@@ -3314,7 +3476,7 @@ else:
     bear_div = bool(last > price_high20 * 0.99 and rsi_now < 65)
     bull_div = bool(last < price_low20  * 1.01 and rsi_now > 35)
 
-    # Candle patterns (last 3 bars)
+    # Candle patterns
     o = h['Open'].values
     c0,o0,h0,l0 = float(cl_arr[-1]),float(o[-1]),float(hi_arr[-1]),float(lo_arr[-1])
     c1,o1,h1,l1 = float(cl_arr[-2]),float(o[-2]),float(hi_arr[-2]),float(lo_arr[-2])
@@ -3324,12 +3486,173 @@ else:
     ls0 = min(c0,o0)-l0; us0 = h0-max(c0,o0)
     candles = []
     if range0 > 0 and body0/range0 < 0.1: candles.append('doji')
-    if c1 < o1 and ls0 > body0*2 and us0 < body0 and body0 > 0: candles.append('hammer')
+    if c1 < o1& ls0 > body0*2 and us0 < body0 and body0 > 0: candles.append('hammer')
     if c1 < o1 and us0 > body0*2 and ls0 < body0 and body0 > 0: candles.append('inverted_hammer')
     if c1 < o1 and c0 > o0 and c0 > o1 and o0 < c1: candles.append('bullish_engulfing')
     if c1 > o1 and c0 < o0 and c0 < o1 and o0 > c1: candles.append('bearish_engulfing')
     if c2 < o2 and body1/(h1-l1+1e-9) < 0.3 and c0 > o0 and c0 > (o2+c2)/2: candles.append('morning_star')
     if c2 > o2 and body1/(h1-l1+1e-9) < 0.3 and c0 < o0 and c0 < (o2+c2)/2: candles.append('evening_star')
+
+    # ─────────────────────────────────────────────────────────
+    # 기하학적 차트 패턴 판별 휴리스틱 알고리즘 (Python)
+    # ─────────────────────────────────────────────────────────
+    sma3 = c.rolling(3).mean().fillna(c)
+    w_pivot = 5
+    local_minima = []
+    local_maxima = []
+    for i in range(w_pivot, n - w_pivot):
+        val = sma3.iloc[i]
+        if val == sma3.iloc[i-w_pivot:i+w_pivot+1].min():
+            local_minima.append((i, float(lo.iloc[i])))
+        if val == sma3.iloc[i-w_pivot:i+w_pivot+1].max():
+            local_maxima.append((i, float(hi.iloc[i])))
+            
+    extrema = []
+    for idx, val in local_minima:
+        extrema.append({'idx': idx, 'price': val, 'type': 'valley'})
+    for idx, val in local_maxima:
+        extrema.append({'idx': idx, 'price': val, 'type': 'peak'})
+    extrema.sort(key=lambda x: x['idx'])
+    
+    merged_extrema = []
+    for ext in extrema:
+        if not merged_extrema:
+            merged_extrema.append(ext)
+        else:
+            last_ext = merged_extrema[-1]
+            if last_ext['type'] == ext['type']:
+                if ext['type'] == 'peak':
+                    if ext['price'] > last_ext['price']:
+                        merged_extrema[-1] = ext
+                else:
+                    if ext['price'] < last_ext['price']:
+                        merged_extrema[-1] = ext
+            else:
+                merged_extrema.append(ext)
+    extrema = merged_extrema
+
+    # IHS
+    ihs_detected = False
+    if len(extrema) >= 5:
+        e = extrema[-5:]
+        if (e[0]['type'] == 'valley' and e[1]['type'] == 'peak' and 
+            e[2]['type'] == 'valley' and e[3]['type'] == 'peak' and 
+            e[4]['type'] == 'valley'):
+            e1, e2, e3, e4, e5 = e[0]['price'], e[1]['price'], e[2]['price'], e[3]['price'], e[4]['price']
+            cond1 = e3 < e1 and e3 < e5
+            cond2 = abs(e1 - e5) <= ((e1 + e5) / 2.0) * 0.05
+            cond3 = abs(e2 - e4) <= ((e2 + e4) / 2.0) * 0.03
+            if cond1 and cond2 and cond3:
+                ihs_detected = True
+
+    # Double Bottom
+    db_detected = False
+    if len(extrema) >= 3:
+        e = extrema[-3:]
+        if e[0]['type'] == 'valley' and e[1]['type'] == 'peak' and e[2]['type'] == 'valley':
+            e1, e2, e3 = e[0]['price'], e[1]['price'], e[2]['price']
+            idx1, idx3 = e[0]['idx'], e[2]['idx']
+            cond1 = abs(e1 - e3) / min(e1, e3) <= 0.03
+            cond2 = (idx3 - idx1) >= 10
+            vol1 = vol.iloc[max(0, idx1-2):min(n, idx1+3)].mean()
+            vol3 = vol.iloc[max(0, idx3-2):min(n, idx3+3)].mean()
+            cond3 = vol3 <= vol1 * 0.85
+            if cond1 and cond2 and cond3:
+                db_detected = True
+
+    # Cup & Handle
+    ch_detected = False
+    if len(extrema) >= 4:
+        e = extrema[-4:]
+        if e[0]['type'] == 'peak' and e[1]['type'] == 'valley' and e[2]['type'] == 'peak' and e[3]['type'] == 'valley':
+            p_left, p_bottom, p_right, p_handle = e[0]['price'], e[1]['price'], e[2]['price'], e[3]['price']
+            idx_left, idx_bottom, idx_right, idx_handle = e[0]['idx'], e[1]['idx'], e[2]['idx'], e[3]['idx']
+            t_down = idx_bottom - idx_left
+            t_up = idx_right - idx_bottom
+            cond_sym = (t_up > 0) and (0.8 <= (t_down / t_up) <= 1.25)
+            cup_depth = p_left - p_bottom
+            handle_depth = p_right - p_handle
+            cond_depth = (cup_depth > 0) and (handle_depth <= cup_depth * 0.35)
+            vol_bottom = vol.iloc[max(0, idx_bottom-3):min(n, idx_bottom+4)].mean()
+            vol_up = vol.iloc[max(0, idx_right-3):min(n, idx_handle+1)].mean()
+            cond_vol = vol_up >= vol_bottom * 1.4
+            if cond_sym and cond_depth and cond_vol:
+                ch_detected = True
+
+    # VCP
+    vcp_detected = False
+    if n >= 60:
+        recent_c = c.iloc[-60:]
+        std10 = recent_c.pct_change().iloc[-10:].std()
+        std20 = recent_c.pct_change().iloc[-20:].std()
+        std40 = recent_c.pct_change().iloc[-40:].std()
+        cond_std = std10 < std20 < std40
+        range10 = (hi.iloc[-10:] - lo.iloc[-10:]).mean()
+        range30 = (hi.iloc[-40:-10] - lo.iloc[-40:-10]).mean()
+        cond_range = range10 < range30 * 0.7
+        vol10 = vol.iloc[-10:].mean()
+        vol30 = vol.iloc[-40:-10].mean()
+        cond_vol = vol10 < vol30
+        if cond_std and cond_range and cond_vol:
+            vcp_detected = True
+
+    # Mansfield RS & Weinstein Stage
+    is_kr = '${yfticker}'.endswith('.KS') or '${yfticker}'.endswith('.KQ')
+    idx_sym = '^KS11' if is_kr else '^GSPC'
+    mrs_val = 0.0
+    idx_h = None
+    import os, time
+    cache_file = f"/tmp/idx_cache_{idx_sym}.json"
+    if os.path.exists(cache_file) and (time.time() - os.path.getmtime(cache_file)) < 86400:
+        try:
+            with open(cache_file, 'r') as f:
+                c_data = json.load(f)
+                idx_h = pd.DataFrame.from_dict(c_data)
+                idx_h.index = pd.to_datetime(idx_h.index)
+        except:
+            pass
+    if idx_h is None:
+        try:
+            idx_ticker = yf.Ticker(idx_sym)
+            idx_h = idx_ticker.history(period='1y')
+            if len(idx_h) >= 30:
+                try:
+                    with open(cache_file, 'w') as f:
+                        temp_df = idx_h.copy()
+                        temp_df.index = temp_df.index.strftime('%Y-%m-%d %H:%M:%S')
+                        json.dump(temp_df.to_dict(), f)
+                except:
+                    pass
+        except:
+            pass
+    try:
+        if idx_h is not None and len(idx_h) >= 30:
+            h.index = h.index.tz_localize(None)
+            idx_h.index = idx_h.index.tz_localize(None)
+            common_idx = h.index.intersection(idx_h.index)
+            if len(common_idx) >= 30:
+                s_c = h.loc[common_idx, 'Close']
+                i_c = idx_h.loc[common_idx, 'Close']
+                rs = s_c / i_c
+                sma52_rs = rs.rolling(252, min_periods=min(len(rs), 30)).mean()
+                mrs = (rs / sma52_rs - 1.0) * 10.0
+                mrs_val = float(mrs.iloc[-1])
+    except:
+        mrs_val = 0.1
+
+    # Weinstein Stage
+    sma150 = c.rolling(150, min_periods=min(len(c), 30)).mean()
+    sma150_slope = sma150.diff(10).iloc[-1]
+    last_price = float(c.iloc[-1])
+    last_sma150 = float(sma150.iloc[-1])
+    if last_price > last_sma150 and sma150_slope > 0:
+        weinstein_stage = 2
+    elif last_price < last_sma150 and sma150_slope < 0:
+        weinstein_stage = 4
+    elif last_price > last_sma150 and sma150_slope <= 0:
+        weinstein_stage = 3
+    else:
+        weinstein_stage = 1
 
     print(json.dumps({
         'rsi': round(float(rsi_s.iloc[-1]), 1),
@@ -3357,14 +3680,21 @@ else:
         'gap_up': gap_up, 'gap_down': gap_down,
         'bear_div': bear_div, 'bull_div': bull_div,
         'candles': candles,
+        'vcpDetected': vcp_detected,
+        'mansfieldRS': round(mrs_val, 4),
+        'weinsteinStage': weinstein_stage,
+        'patterns': {
+            'cupAndHandle': ch_detected,
+            'inverseHeadAndShoulders': ihs_detected,
+            'doubleBottom': db_detected
+        }
     }))
 `;
   return yfRun(py);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LLM: Gemini first, Groq fallback
-// ─────────────────────────────────────────────────────────────────────────────
+
+
 const _GEMINI_KEYS = (process.env.GEMINI_API_KEY || '').split(',').map(s => s.trim()).filter(Boolean);
 const _GEMINI_MODEL = 'gemini-2.0-flash';
 
@@ -4531,7 +4861,7 @@ const MACRO_CACHE_FILE = join(__dirname, '.macro-cache.json');
   try {
     if (existsSync(MACRO_CACHE_FILE)) {
       const c = JSON.parse(readFileSync(MACRO_CACHE_FILE, 'utf-8'));
-      if (c.data && Date.now() - c.savedAt < 3600_000) {
+      if (c.data && typeof c.savedAt === 'number' && c.savedAt > 0 && c.savedAt <= Date.now() && (Date.now() - c.savedAt < 300_000)) {
         setC('macro', c.data, 300_000);
         console.log('  ✓ 매크로 캐시 로드 (디스크)');
       }
@@ -4730,6 +5060,7 @@ async function fetchTopByMarketCap(limit = 700) {
 // 종목별 시그널 결과 저장소 (ticker → {signal, score, confidence, breakdown, ...})
 const _signalStore = new Map();
 let _signalsUpdatedAt = 0;
+let _signalsCalculationTime = 0;
 let _signalsComputing = null; // 진행 중인 Promise (race 방지)
 const SIGNAL_CACHE_FILE = join(__dirname, '.signal-cache.json');
 const SCREENER_CACHE_FILE = join(__dirname, '.screener-cache.json');
@@ -4754,7 +5085,7 @@ function _saveSignalCache() {
   try {
     // undefined/bad 키 필터링 후 저장
     const entries = [..._signalStore.entries()].filter(([k, v]) => k && k !== 'undefined' && (v.ticker || v.symbol));
-    const data = { updatedAt: _signalsUpdatedAt, entries };
+    const data = { updatedAt: _signalsUpdatedAt, calculationTime: _signalsCalculationTime, entries };
     writeFileSync(SIGNAL_CACHE_FILE, JSON.stringify(data), 'utf-8');
   } catch(e) { console.log('  ⚠ 시그널 캐시 저장 실패:', e.message); }
 }
@@ -4799,8 +5130,9 @@ function _loadSignalCache() {
       }
     }
     _signalsUpdatedAt = data.updatedAt || Date.now();
+    _signalsCalculationTime = data.calculationTime || 0;
     const age = Math.round((Date.now() - _signalsUpdatedAt) / 60000);
-    console.log(`  ✓ 시그널 캐시 로드 (${_signalStore.size}개, ${age}분 전 계산)`);
+    console.log(`  ✓ 시그널 캐시 로드 (${_signalStore.size}개, ${age}분 전 계산, 소요 시간: ${(_signalsCalculationTime / 1000).toFixed(1)}초)`);
     return true;
   } catch(e) { console.log('  ⚠ 시그널 캐시 로드 실패:', e.message); return false; }
 }
@@ -4880,6 +5212,7 @@ async function precomputeAllSignals(opts = {}) {
   if (_signalsComputing) return _signalsComputing;
   const isFull = opts.full === true; // true = 자정 정밀분석, false = 빠른 screener-only
   _signalsComputing = (async () => {
+    const startTime = Date.now();
     try {
       // 분석 캐시 초기화 (재계산 시 최신 신호 반영) — det:/ai-text:/rawdata: 모두 클리어
       for (const k of _c.keys()) {
@@ -4912,7 +5245,11 @@ async function precomputeAllSignals(opts = {}) {
           const { ticker, market } = universe[i];
           try {
             const r = await computeSignalForTicker(ticker, market, { full: isFull });
-            if (r) { newStore.set(r.ticker, r); ok++; }
+            if (r) {
+              newStore.set(r.ticker, r);
+              _signalStore.set(r.ticker, r); // 점진적 갱신: 대시보드가 오랫동안 비어있지 않도록 즉시 반영
+              ok++;
+            }
           } catch {}
         }
       }
@@ -4923,10 +5260,11 @@ async function precomputeAllSignals(opts = {}) {
       for (const [k, v] of newStore) _signalStore.set(k, v);
 
       _signalsUpdatedAt = Date.now();
+      _signalsCalculationTime = Date.now() - startTime;
       const counts = {};
       for (const r of _signalStore.values()) counts[r.signal] = (counts[r.signal]||0) + 1;
       const c = s => counts[s]||0;
-      console.log(`  ✓ 시그널 사전 계산 완료 (${ok}/${universe.length}, 강력매수:${c('강력매수')} 매수:${c('매수')} 약매수:${c('약매수')} 중립:${c('중립')} 약매도:${c('약매도')} 매도:${c('매도')} 강력매도:${c('강력매도')})`);
+      console.log(`  ✓ 시그널 사전 계산 완료 (${ok}/${universe.length}, 강력매수:${c('강력매수')} 매수:${c('매수')} 약매수:${c('약매수')} 중립:${c('중립')} 약매도:${c('약매도')} 매도:${c('매도')} 강력매도:${c('강력매도')}, 소요 시간: ${(_signalsCalculationTime / 1000).toFixed(1)}초)`);
       if (isFull) _saveSignalCache(); // 디스크에 저장 — full 계산 시에만 (워밍업이 덮어쓰지 않도록)
     } finally {
       _signalsComputing = null;
@@ -4936,7 +5274,7 @@ async function precomputeAllSignals(opts = {}) {
 }
 
 // 관리자 전용: 시그널 강제 재계산
-app.get('/api/admin/recompute-signals', async (req, res) => {
+app.get('/api/admin/recompute-signals', requireAdmin, async (req, res) => {
   res.json({ ok: true, message: '시그널 재계산 시작 (백그라운드)' });
   precomputeAllSignals({ full: true }).catch(e => console.error('강제 재계산 실패:', e.message));
 });
@@ -4989,7 +5327,7 @@ async function precomputeTopAnalysis(N = 300) {
 }
 
 // 관리자 전용: LLM 분석 사전 계산 트리거
-app.get('/api/admin/precompute-llm', async (req, res) => {
+app.get('/api/admin/precompute-llm', requireAdmin, async (req, res) => {
   const N = parseInt(req.query.n) || 100;
   res.json({ ok: true, message: `LLM 사전 계산 시작 (상위 ${N}개, 백그라운드)` });
   precomputeTopAnalysis(N).catch(e => console.error('LLM 사전 계산 실패:', e.message));
@@ -5023,7 +5361,7 @@ app.get('/api/buy-signals', (req, res) => {
     bySignal[sig] = all.filter(r => r.signal === sig).slice(0, 100);
   }
   const buys = SIGNALS.flatMap(s => bySignal[s]);
-  res.json({ buys, total: all.length, counts, updatedAt: _signalsUpdatedAt });
+  res.json({ buys, total: all.length, counts, updatedAt: _signalsUpdatedAt, calculationTime: _signalsCalculationTime });
 });
 
 // 단일 종목 시그널 즉시 조회 (분석 페이지에서 AI 호출 전 빠르게 표시용)
@@ -5036,7 +5374,7 @@ app.get('/api/signal/:ticker', (req, res) => {
 // 전체 종목 시그널 (대시보드용)
 app.get('/api/all-signals', (req, res) => {
   const all = [..._signalStore.values()].sort((a, b) => b.score - a.score);
-  res.json({ all, total: all.length, updatedAt: _signalsUpdatedAt });
+  res.json({ all, total: all.length, updatedAt: _signalsUpdatedAt, calculationTime: _signalsCalculationTime });
 });
 
 // 서버 시작 전 시그널 캐시 즉시 로드 (API 첫 요청부터 바로 응답)
@@ -5110,7 +5448,7 @@ async function warmupCache() {
           console.log('  ✓ 스크리너 워밍업 완료');
           // 5. 시그널 캐시 없으면 screener 데이터로 빠르게 계산 (15초, API 호출 없음)
           if (_signalStore.size === 0) {
-            try { await precomputeAllSignals({ full: false }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
+            try { await precomputeAllSignals({ full: true }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
           }
           // 6. 상위 300개 LLM 분석 사전 계산 (백그라운드, ~25분) — 첫 클릭 즉시 응답 보장
           setTimeout(() => {
@@ -5120,7 +5458,7 @@ async function warmupCache() {
       } else {
         // 캐시가 유효하더라도 시그널 스토어가 비어있다면 시그널 계산 진행
         if (_signalStore.size === 0) {
-          try { await precomputeAllSignals({ full: false }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
+          try { await precomputeAllSignals({ full: true }); } catch(e) { console.log('  ⚠ 시그널 계산 실패:', e.message); }
         }
       }
     } catch(e) { console.log('  ⚠ 스크리너 워밍업 실패:', e.message); }
